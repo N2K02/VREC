@@ -72,6 +72,8 @@ object RecordingStore {
         sourceLabel: String?,
         silent: Boolean,
         durationMs: Long,
+        phoneNumber: String? = extractPhone(peer),
+        contactName: String? = peer?.takeIf { phoneNumber != null && it != phoneNumber },
     ) {
         val started = file.lastModified().takeIf { it > 0 } ?: System.currentTimeMillis()
         val json = JSONObject()
@@ -80,9 +82,9 @@ object RecordingStore {
             .put("endedAt", System.currentTimeMillis())
             .put("direction", direction.name)
             .put("peer", peer ?: JSONObject.NULL)
-            .put("phoneNumber", extractPhone(peer) ?: JSONObject.NULL)
-            .put("contactName", JSONObject.NULL)
-            .put("countryCode", inferCountryCode(extractPhone(peer)) ?: JSONObject.NULL)
+            .put("phoneNumber", phoneNumber ?: JSONObject.NULL)
+            .put("contactName", contactName ?: JSONObject.NULL)
+            .put("countryCode", inferCountryCode(phoneNumber) ?: JSONObject.NULL)
             .put("simLabel", JSONObject.NULL)
             .put("simSlot", JSONObject.NULL)
             .put("carrier", JSONObject.NULL)
