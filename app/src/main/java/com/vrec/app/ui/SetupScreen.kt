@@ -2,6 +2,8 @@ package com.vrec.app.ui
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +50,9 @@ fun SetupScreen() {
     }
     val accessibilityOn = androidx.compose.runtime.remember(tick) { VrecAccessibilityService.isEnabled(context) }
     val notifAccessOn = androidx.compose.runtime.remember(tick) { VoipNotifListener.isEnabled(context) }
+    val overlayAllowed = androidx.compose.runtime.remember(tick) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -88,6 +93,19 @@ fun SetupScreen() {
 
         Step(
             number = "3",
+            title = "Floating recording controls (optional)",
+            done = overlayAllowed,
+            body = "Allow VREC to display a small movable Pause/Resume and Stop panel over other apps while recording. The required silent foreground-service notification remains available as a fallback.",
+            actionLabel = if (overlayAllowed) "Enabled" else "Allow floating controls",
+            onAction = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    context.openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                }
+            },
+        )
+
+        Step(
+            number = "4",
             title = "VoIP calls (optional)",
             done = notifAccessOn,
             body = "To also record WhatsApp, Telegram and similar, give VREC Notification access so it can tell when one of those calls is active, then turn on \"Record VoIP calls\" in Settings.",
@@ -155,6 +173,9 @@ private fun Note(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-private fun Context.openSettings(action: String) {
-    runCatching { startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+private fun Context.openSettings(action: String, uri: Uri? = null) {
+    runCatching {
+        val intent = if (uri != null) Intent(action, uri) else Intent(action)
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 }

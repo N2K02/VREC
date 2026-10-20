@@ -50,6 +50,8 @@ class RecordingEngine(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var activeSource: Source? = null
     private var startedAt = 0L
+    private var accumulatedDurationMs = 0L
+    private var paused = false
     private var target: File? = null
 
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -98,6 +100,8 @@ class RecordingEngine(private val context: Context) {
                 if (last || !probeIsSilent()) {
                     activeSource = source
                     startedAt = SystemClock.elapsedRealtime()
+                    accumulatedDurationMs = 0L
+                    paused = false
                     Log.i("Recording with \"${source.label}\"" + if (last) " (last fallback)" else "")
                     return source
                 }
@@ -112,14 +116,48 @@ class RecordingEngine(private val context: Context) {
         return null
     }
 
+    /** Pauses capture without finalizing the file. Returns false if no active recording exists. */
+    fun pause(): Boolean {
+        if (activeSource == null || paused) return false
+        return try {
+            recorder?.pause() ?: return false
+            accumulatedDurationMs += SystemClock.elapsedRealtime() - startedAt
+            paused = true
+            true
+        } catch (e: Exception) {
+            Log.w("Could not pause recording", e)
+            false
+        }
+    }
+
+    /** Resumes capture in the same file. Returns false if the recorder is not paused. */
+    fun resume(): Boolean {
+        if (activeSource == null || !paused) return false
+        return try {
+            recorder?.resume() ?: return false
+            startedAt = SystemClock.elapsedRealtime()
+            paused = false
+            true
+        } catch (e: Exception) {
+            Log.w("Could not resume recording", e)
+            false
+        }
+    }
+
+    /** Active recording duration, excluding time spent paused. */
+    fun elapsedRecordingMs(): Long =
+        accumulatedDurationMs + if (activeSource != null && !paused) SystemClock.elapsedRealtime() - startedAt else 0L
+
     /** Finalizes the recording and returns what was captured, or null if nothing was recording. */
     fun stop(): Result? {
         val source = activeSource ?: run { restoreAudioSettings(); return null }
         val file = target ?: return null
-        val duration = SystemClock.elapsedRealtime() - startedAt
+        val duration = elapsedRecordingMs()
         stopRecorderQuietly()
         restoreAudioSettings()
         activeSource = null
+        paused = false
+        accumulatedDurationMs = 0L
         val silent = maxAmplitudeSeen < SILENCE_AMP
         if (silent) Log.w("Recording finished but stayed silent — this phone likely blocks call capture on \"${source.label}\"")
         return if (file.exists() && file.length() > 0) {
