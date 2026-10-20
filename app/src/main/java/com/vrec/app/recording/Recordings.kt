@@ -34,8 +34,18 @@ object RecordingStore {
     fun dir(context: Context): File =
         File(context.getExternalFilesDir(null), "recordings").apply { mkdirs() }
 
-    fun newFile(context: Context): File =
-        File(dir(context), "${stamp.format(Date())}.m4a")
+    /** A timestamped file whose name also carries the direction and peer, so shared files read well. */
+    fun newFile(context: Context, direction: CallDirection = CallDirection.UNKNOWN, peer: String? = null): File {
+        val tag = when (direction) {
+            CallDirection.INCOMING -> "IN"
+            CallDirection.OUTGOING -> "OUT"
+            CallDirection.VOIP -> "VOIP"
+            CallDirection.UNKNOWN -> null
+        }
+        val who = peer?.replace(Regex("[^A-Za-z0-9+._-]+"), "_")?.trim('_')?.take(40)?.takeIf { it.isNotBlank() }
+        val name = listOfNotNull(stamp.format(Date()), tag, who).joinToString("_")
+        return File(dir(context), "$name.m4a")
+    }
 
     fun writeMeta(
         file: File,

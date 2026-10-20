@@ -30,7 +30,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +42,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.vrec.app.calls.CallMonitor
+import kotlinx.coroutines.delay
+import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
@@ -123,6 +130,7 @@ private fun App() {
 private fun HomeScreen(onOpenSetup: () -> Unit) {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
+    val recording = recState !is RecordingService.State.Idle
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -131,23 +139,66 @@ private fun HomeScreen(onOpenSetup: () -> Unit) {
         (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
         UpdateCard()
         if (!ready) SetupPromptCard(onOpenSetup)
+        if (ready) ManualRecordButton(recording)
         RecordingsList()
     }
 }
 
 @Composable
+private fun ManualRecordButton(recording: Boolean) {
+    val context = LocalContext.current
+    if (recording) {
+        Button(
+            onClick = { CallMonitor.manualStop(context) },
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("■  Stop recording") }
+    } else {
+        FilledTonalButton(onClick = { CallMonitor.manualStart(context) }, modifier = Modifier.fillMaxWidth()) {
+            Text("●  Record now")
+        }
+    }
+}
+
+@Composable
 private fun RecordingNowCard(state: RecordingService.State.Recording) {
+    val level by RecordingService.level.collectAsState()
+    // Perceptual 0..1 bar; audio amplitude is 0..32767.
+    val fraction = sqrt((level.toFloat() / 32767f).coerceIn(0f, 1f))
+
+    // Only nag about silence after a few seconds, so a normal quiet start isn't flagged.
+    var silentLongEnough by remember { mutableStateOf(false) }
+    LaunchedEffect(state.silentSoFar) {
+        if (state.silentSoFar) { delay(3500); silentLongEnough = true } else silentLongEnough = false
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiary),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("● Recording now", color = MaterialTheme.colorScheme.onTertiary, style = MaterialTheme.typography.titleMedium)
             Text(
                 (state.peer?.let { "$it · " } ?: "") + state.sourceLabel,
                 color = MaterialTheme.colorScheme.onTertiary,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            LinearProgressIndicator(
+                progress = { fraction },
+                color = MaterialTheme.colorScheme.onTertiary,
+                trackColor = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.25f),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (state.silentSoFar && silentLongEnough) {
+                Text(
+                    "No sound yet — this phone may be blocking call capture. Try turning on " +
+                        "\"Put call on loudspeaker\" in Settings, or pick another source.",
+                    color = MaterialTheme.colorScheme.onTertiary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

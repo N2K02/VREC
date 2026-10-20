@@ -81,7 +81,8 @@ class RecordingService : Service() {
                 it.sampleAmplitude()
                 _level.value = it.maxAmplitudeSeen
                 (_state.value as? State.Recording)?.let { s ->
-                    if (!s.silentSoFar && it.maxAmplitudeSeen >= 120) {
+                    // Flip to "not silent" the moment any real sound is captured.
+                    if (s.silentSoFar && it.maxAmplitudeSeen >= 120) {
                         _state.value = s.copy(silentSoFar = false)
                     }
                 }
@@ -117,7 +118,7 @@ class RecordingService : Service() {
 
         val e = RecordingEngine(this)
         engine = e
-        val file = RecordingStore.newFile(this)
+        val file = RecordingStore.newFile(this, direction, peer)
         thread(name = "vrec-record") {
             val source = e.start(file)
             if (source == null) {
@@ -199,7 +200,15 @@ class RecordingService : Service() {
         .setSmallIcon(R.drawable.ic_launcher_foreground)
         .setOngoing(true)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .setContentIntent(openAppPendingIntent())
         .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+
+    private fun openAppPendingIntent() = android.app.PendingIntent.getActivity(
+        this, 0,
+        Intent(this, com.vrec.app.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        android.app.PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun startingNotification(): Notification = baseNotification()
         .setContentTitle("Preparing to record…")
