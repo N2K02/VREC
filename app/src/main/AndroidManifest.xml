@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- User-enabled floating controls over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- In-app updater (same pipeline as the other apps) -->
@@ -48,6 +50,11 @@
             android:name=".recording.RecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Optional floating Pause/Resume and Stop controls. -->
+        <service
+            android:name=".recording.OverlayControlService"
+            android:exported="false" />
 
         <!--
             The privilege holder. Since Android 10 an ordinary app is handed silence while a
