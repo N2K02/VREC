@@ -31,7 +31,7 @@ object CallMonitor {
                 if (recording != Kind.NONE) return
                 val direction = if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING
                 val peer = CallInfo.describe(context, pendingIncomingNumber)
-                startIfArmed(context, Kind.SIM, direction, peer)
+                startIfArmed(context, Kind.SIM, direction, peer, phoneNumber = pendingIncomingNumber)
             }
             "IDLE" -> {
                 sawRinging = false
@@ -72,6 +72,7 @@ object CallMonitor {
         kind: Kind,
         direction: CallDirection,
         peer: String?,
+        phoneNumber: String? = null,
         force: Boolean = false,
     ) {
         if (!force && !Prefs.autoRecord(context)) {
@@ -79,7 +80,7 @@ object CallMonitor {
             return
         }
         recording = kind
-        RecordingService.start(context.applicationContext, direction, peer)
+        RecordingService.start(context.applicationContext, direction, peer, phoneNumber)
     }
 
     private fun stop(context: Context) {
