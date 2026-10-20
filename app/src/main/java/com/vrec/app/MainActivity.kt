@@ -13,13 +13,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
@@ -76,13 +85,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
-    var menuOpen by remember { mutableStateOf(false) }
-
     // Secondary pages should return to Home on Android system back / gesture.
     // Leave the Home screen unhandled so Android can close the activity normally.
     BackHandler(enabled = screen != Screen.HOME) {
         screen = Screen.HOME
-        menuOpen = false
     }
 
     val title = when (screen) {
@@ -105,26 +111,12 @@ private fun App() {
                         }
                     }
                 },
-                actions = {
-                    if (screen == Screen.HOME) {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(text = { Text("Recordings") }, onClick = { menuOpen = false; screen = Screen.RECORDINGS })
-                            DropdownMenuItem(text = { Text("Setup") }, onClick = { menuOpen = false; screen = Screen.SETUP })
-                            DropdownMenuItem(text = { Text("Settings") }, onClick = { menuOpen = false; screen = Screen.SETTINGS })
-                            DropdownMenuItem(text = { Text("Activity log") }, onClick = { menuOpen = false; screen = Screen.LOG })
-                            DropdownMenuItem(text = { Text("Updates") }, onClick = { menuOpen = false; screen = Screen.UPDATE })
-                        }
-                    }
-                },
             )
         },
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(onOpenSetup = { screen = Screen.SETUP })
+                Screen.HOME -> HomeScreen(onOpenSetup = { screen = Screen.SETUP }, onNavigate = { screen = it })
                 Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen()
@@ -136,7 +128,7 @@ private fun App() {
 }
 
 @Composable
-private fun HomeScreen(onOpenSetup: () -> Unit) {
+private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val recording = recState !is RecordingService.State.Idle
@@ -149,6 +141,74 @@ private fun HomeScreen(onOpenSetup: () -> Unit) {
         UpdateCard()
         if (!ready) SetupPromptCard(onOpenSetup)
         if (ready) ManualRecordButton(recording)
+
+        Text("Quick access", style = MaterialTheme.typography.titleMedium)
+        NavigationCard(
+            title = "Recordings",
+            subtitle = "Browse, play and manage saved recordings",
+            icon = Icons.Filled.FolderOpen,
+            onClick = { onNavigate(Screen.RECORDINGS) },
+        )
+        NavigationCard(
+            title = "Setup",
+            subtitle = "Permissions and recording accessibility",
+            icon = Icons.Filled.Tune,
+            onClick = { onNavigate(Screen.SETUP) },
+        )
+        NavigationCard(
+            title = "Settings",
+            subtitle = "Configure recording behavior",
+            icon = Icons.Filled.Settings,
+            onClick = { onNavigate(Screen.SETTINGS) },
+        )
+        NavigationCard(
+            title = "Activity log",
+            subtitle = "Review app events and diagnostics",
+            icon = Icons.Filled.Article,
+            onClick = { onNavigate(Screen.LOG) },
+        )
+        NavigationCard(
+            title = "Updates",
+            subtitle = "Check version and release information",
+            icon = Icons.Filled.SystemUpdate,
+            onClick = { onNavigate(Screen.UPDATE) },
+        )
+    }
+}
+
+
+@Composable
+private fun NavigationCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Open $title",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
