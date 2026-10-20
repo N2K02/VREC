@@ -57,7 +57,7 @@ import com.vrec.app.update.AppUpdater
 import com.vrec.app.update.UpdateCard
 import com.vrec.app.update.UpdateScreen
 
-private enum class Screen { HOME, SETUP, SETTINGS, LOG, UPDATE }
+private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,6 +79,7 @@ private fun App() {
 
     val title = when (screen) {
         Screen.HOME -> "VREC"
+        Screen.RECORDINGS -> "Recordings"
         Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
         Screen.LOG -> "Activity log"
@@ -102,6 +103,7 @@ private fun App() {
                             Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Recordings") }, onClick = { menuOpen = false; screen = Screen.RECORDINGS })
                             DropdownMenuItem(text = { Text("Setup") }, onClick = { menuOpen = false; screen = Screen.SETUP })
                             DropdownMenuItem(text = { Text("Settings") }, onClick = { menuOpen = false; screen = Screen.SETTINGS })
                             DropdownMenuItem(text = { Text("Activity log") }, onClick = { menuOpen = false; screen = Screen.LOG })
@@ -115,6 +117,7 @@ private fun App() {
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.HOME -> HomeScreen(onOpenSetup = { screen = Screen.SETUP })
+                Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen()
                 Screen.LOG -> LogScreen()
@@ -138,7 +141,6 @@ private fun HomeScreen(onOpenSetup: () -> Unit) {
         UpdateCard()
         if (!ready) SetupPromptCard(onOpenSetup)
         if (ready) ManualRecordButton(recording)
-        RecordingsList()
     }
 }
 
