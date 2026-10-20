@@ -3,27 +3,27 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Microphone body -->
+    <!-- Microphone body, vertically optically centered in the adaptive-icon viewport -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,30m-9,0a9,9 0 1,0 18,0a9,9 0 1,0 -18,0" />
+        android:pathData="M54,38.5m-9,0a9,9 0 1,0 18,0a9,9 0 1,0 -18,0" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M45,30 L63,30 L63,48 a9,9 0 0,1 -18,0 Z" />
+        android:pathData="M45,38.5 L63,38.5 L63,56.5 a9,9 0 0,1 -18,0 Z" />
     <!-- Stand -->
     <path
         android:strokeColor="#FFFFFF"
         android:strokeWidth="4"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
-        android:pathData="M39,46 a15,15 0 0,0 30,0" />
+        android:pathData="M39,54.5 a15,15 0 0,0 30,0" />
     <path
         android:strokeColor="#FFFFFF"
         android:strokeWidth="4"
         android:strokeLineCap="round"
-        android:pathData="M54,61 L54,70" />
+        android:pathData="M54,69.5 L54,78.5" />
     <!-- Record dot -->
     <path
         android:fillColor="#FF5252"
-        android:pathData="M54,30m-4,0a4,4 0 1,0 8,0a4,4 0 1,0 -8,0" />
+        android:pathData="M54,38.5m-4,0a4,4 0 1,0 8,0a4,4 0 1,0 -8,0" />
 </vector>
