@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +73,8 @@ private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
+        enableEdgeToEdge()
         setContent { VrecTheme { App() } }
     }
 
