@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -18,7 +17,6 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.vrec.app.R
 
 /**
  * Small movable Pause/Resume + Stop control shown above other apps while VREC records.
@@ -34,7 +32,6 @@ class OverlayControlService : Service() {
     private var root: LinearLayout? = null
     private var title: TextView? = null
     private var pauseButton: Button? = null
-    private var params: WindowManager.LayoutParams? = null
 
     private val refresh = object : Runnable {
         override fun run() {
@@ -61,6 +58,10 @@ class OverlayControlService : Service() {
             return START_NOT_STICKY
         }
         if (root == null) createOverlay()
+        if (root == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         handler.removeCallbacks(refresh)
         handler.post(refresh)
         return START_NOT_STICKY
@@ -146,7 +147,6 @@ class OverlayControlService : Service() {
         root = panel
         title = heading
         pauseButton = pause
-        params = lp
         runCatching { windowManager.addView(panel, lp) }.onFailure {
             root = null
             title = null
