@@ -1,6 +1,9 @@
 package com.vrec.app.ui
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import android.media.MediaPlayer
 import android.os.Build
 import androidx.compose.foundation.clickable
@@ -308,6 +311,7 @@ private fun RecordingDetailsDialog(
     var notes by remember(rec.file.absolutePath) { mutableStateOf(rec.notes) }
     var favorite by remember(rec.file.absolutePath) { mutableStateOf(rec.favorite) }
     var contactName by remember(rec.file.absolutePath) { mutableStateOf(rec.contactName.orEmpty()) }
+    val context = LocalContext.current
     val number = rec.phoneNumber ?: rec.peer?.takeIf { it.any(Char::isDigit) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(rec.displayName) },
         text = {
@@ -341,12 +345,18 @@ private fun RecordingDetailsDialog(
                     TextButton(onClick = onShareAudio) { Icon(Icons.Filled.Share, contentDescription = null); Text("Audio") }
                     TextButton(onClick = onExportDetails) { Icon(Icons.Filled.Info, contentDescription = null); Text("Export details") }
                     if (number != null) TextButton(onClick = {
-                        runCatching { val i = Intent(Intent.ACTION_DIAL).apply { data = android.net.Uri.parse("tel:" + android.net.Uri.encode(number)) }; /* launched by caller unavailable here */ }
-                    }) { Icon(Icons.Filled.Call, contentDescription = null); Text("Dial") }
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_DIAL).apply {
+                                data = android.net.Uri.parse("tel:" + android.net.Uri.encode(number))
+                            })
+                        }.onFailure { Toast.makeText(context, "Unable to open phone dialer", Toast.LENGTH_SHORT).show() }
+                    }) { Icon(Icons.Filled.Call, contentDescription = null); Text("Call back") }
                 }
                 if (number != null) TextButton(onClick = {
-                    // Copy uses Android clipboard directly and does not require a sensitive permission.
-                }) { Icon(Icons.Filled.ContentCopy, contentDescription = null); Text("Number: $number") }
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Phone number", number))
+                    Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
+                }) { Icon(Icons.Filled.ContentCopy, contentDescription = null); Text("Copy number") }
             }
         },
         confirmButton = { TextButton(onClick = { onSave(notes, favorite, contactName) }) { Text("Save details") } },
