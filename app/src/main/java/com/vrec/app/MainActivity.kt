@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -76,6 +77,13 @@ class MainActivity : ComponentActivity() {
 private fun App() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Secondary pages should return to Home on Android system back / gesture.
+    // Leave the Home screen unhandled so Android can close the activity normally.
+    BackHandler(enabled = screen != Screen.HOME) {
+        screen = Screen.HOME
+        menuOpen = false
+    }
 
     val title = when (screen) {
         Screen.HOME -> "VREC"
