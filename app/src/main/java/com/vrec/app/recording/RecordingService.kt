@@ -30,7 +30,18 @@ class RecordingService : Service() {
     sealed interface State {
         data object Idle : State
         data object Starting : State
-        data class Recording(val sourceLabel: String, val peer: String?, val silentSoFar: Boolean) : State
+        data class Recording(
+            val sourceLabel: String,
+            val peer: String?,
+            val silentSoFar: Boolean,
+            val elapsedMs: Long = 0L,
+        ) : State
+        data class Paused(
+            val sourceLabel: String,
+            val peer: String?,
+            val silentSoFar: Boolean,
+            val elapsedMs: Long,
+        ) : State
     }
 
     companion object {
@@ -39,6 +50,8 @@ class RecordingService : Service() {
 
         const val ACTION_START = "com.vrec.app.START"
         const val ACTION_STOP = "com.vrec.app.STOP"
+        const val ACTION_PAUSE = "com.vrec.app.PAUSE"
+        const val ACTION_RESUME = "com.vrec.app.RESUME"
         const val EXTRA_DIRECTION = "direction"
         const val EXTRA_PEER = "peer"
 
@@ -77,15 +90,16 @@ class RecordingService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val sampler = object : Runnable {
         override fun run() {
-            engine?.let {
-                it.sampleAmplitude()
-                _level.value = it.maxAmplitudeSeen
-                (_state.value as? State.Recording)?.let { s ->
-                    // Flip to "not silent" the moment any real sound is captured.
-                    if (s.silentSoFar && it.maxAmplitudeSeen >= 120) {
-                        _state.value = s.copy(silentSoFar = false)
-                    }
-                }
+            val e = engine
+            val current = _state.value as? State.Recording
+            if (e != null && current != null) {
+                e.sampleAmplitude()
+                _level.value = e.maxAmplitudeSeen
+                // Flip to "not silent" the moment any real sound is captured.
+                _state.value = current.copy(
+                    silentSoFar = current.silentSoFar && e.maxAmplitudeSeen < 120,
+                    elapsedMs = e.elapsedRecordingMs(),
+                )
             }
             handler.postDelayed(this, 1000)
         }
@@ -96,6 +110,8 @@ class RecordingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> finish()
+            ACTION_PAUSE -> pauseRecording()
+            ACTION_RESUME -> resumeRecording()
             ACTION_START -> begin(intent)
             else -> finish()
         }
@@ -128,8 +144,31 @@ class RecordingService : Service() {
                 return@thread
             }
             _state.value = State.Recording(source.label, peer, silentSoFar = true)
-            handler.post { update(recordingNotification(source.label)); handler.post(sampler) }
+            handler.post {
+                update(recordingNotification(source.label))
+                startService(Intent(this, OverlayControlService::class.java).setAction(OverlayControlService.ACTION_SHOW))
+                handler.post(sampler)
+            }
         }
+    }
+
+    private fun pauseRecording() {
+        val e = engine ?: return
+        val current = _state.value as? State.Recording ?: return
+        if (!e.pause()) return
+        handler.removeCallbacks(sampler)
+        _level.value = 0
+        _state.value = State.Paused(current.sourceLabel, current.peer, current.silentSoFar, e.elapsedRecordingMs())
+        update(pausedNotification(current.sourceLabel))
+    }
+
+    private fun resumeRecording() {
+        val e = engine ?: return
+        val current = _state.value as? State.Paused ?: return
+        if (!e.resume()) return
+        _state.value = State.Recording(current.sourceLabel, current.peer, current.silentSoFar, current.elapsedMs)
+        update(recordingNotification(current.sourceLabel))
+        handler.post(sampler)
     }
 
     private fun finish() {
@@ -154,6 +193,7 @@ class RecordingService : Service() {
             }
             _state.value = State.Idle
             _level.value = 0
+            stopService(Intent(this, OverlayControlService::class.java))
             stopSelfAndForeground()
         }
     }
@@ -199,6 +239,10 @@ class RecordingService : Service() {
     private fun baseNotification() = NotificationCompat.Builder(this, CHANNEL)
         .setSmallIcon(R.drawable.ic_launcher_foreground)
         .setOngoing(true)
+        .setSilent(true)
+        .setOnlyAlertOnce(true)
+        .setSound(null)
+        .setVibrate(null)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setContentIntent(openAppPendingIntent())
         .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -218,8 +262,22 @@ class RecordingService : Service() {
     private fun recordingNotification(sourceLabel: String): Notification = baseNotification()
         .setContentTitle("Recording call")
         .setContentText((peer?.let { "$it · " } ?: "") + sourceLabel)
-        .addAction(0, "Stop", stopPendingIntent())
+        .addAction(0, "Pause", actionPendingIntent(ACTION_PAUSE, 2))
+        .addAction(0, "Stop", actionPendingIntent(ACTION_STOP, 1))
         .build()
+
+    private fun pausedNotification(sourceLabel: String): Notification = baseNotification()
+        .setContentTitle("Recording paused")
+        .setContentText(peer?.let { "$it · $sourceLabel" } ?: sourceLabel)
+        .addAction(0, "Resume", actionPendingIntent(ACTION_RESUME, 3))
+        .addAction(0, "Stop", actionPendingIntent(ACTION_STOP, 1))
+        .build()
+
+    private fun actionPendingIntent(action: String, requestCode: Int) = android.app.PendingIntent.getService(
+        this, requestCode,
+        Intent(this, RecordingService::class.java).setAction(action),
+        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     private fun stopPendingIntent() = android.app.PendingIntent.getService(
         this, 1,
