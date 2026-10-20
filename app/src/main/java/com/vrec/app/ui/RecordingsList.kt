@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
@@ -18,6 +19,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +55,14 @@ fun RecordingsList() {
     var playingPath by remember { mutableStateOf<String?>(null) }
     val player = remember { MediaPlayer() }
     var confirmDelete by remember { mutableStateOf<Recording?>(null) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+    var search by rememberSaveable { mutableStateOf("") }
+    val totalBytes = recordings.sumOf { it.sizeBytes }
+    val visibleRecordings = recordings.filter { rec ->
+        val query = search.trim()
+        query.isEmpty() || listOfNotNull(rec.peer, directionLabel(rec.direction), rec.sourceLabel,
+            dateFmt.format(Date(rec.startedAt))).any { it.contains(query, ignoreCase = true) }
+    }
 
     DisposableEffect(Unit) {
         player.setOnCompletionListener { playingPath = null }
@@ -82,10 +95,33 @@ fun RecordingsList() {
 
     Text(
         "Recordings",
-        style = MaterialTheme.typography.titleMedium,
+        style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
     )
+    Text(
+        "${recordings.size} recording${if (recordings.size == 1) "" else "s"} · ${formatSize(totalBytes)}",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (recordings.isNotEmpty()) {
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Search recordings") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        )
+        Button(
+            onClick = { confirmDeleteAll = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+        ) {
+            Icon(Icons.Filled.Delete, contentDescription = null)
+            Text("  Delete all recordings")
+        }
+    }
 
     if (recordings.isEmpty()) {
         Text(
@@ -96,8 +132,16 @@ fun RecordingsList() {
         return
     }
 
+    if (visibleRecordings.isEmpty()) {
+        Text(
+            "No recordings match your search.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        recordings.forEach { rec ->
+        visibleRecordings.forEach { rec ->
             RecordingRow(
                 rec = rec,
                 playing = playingPath == rec.file.absolutePath,
@@ -106,6 +150,29 @@ fun RecordingsList() {
                 onDelete = { confirmDelete = rec },
             )
         }
+    }
+
+    if (confirmDeleteAll) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteAll = false },
+            title = { Text("Delete all recordings?") },
+            text = { Text("This permanently deletes all ${recordings.size} recordings and their details from this phone. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (playingPath != null) {
+                        runCatching { player.stop(); player.reset() }
+                        playingPath = null
+                    }
+                    recordings.forEach { RecordingStore.delete(it) }
+                    confirmDeleteAll = false
+                    search = ""
+                    refresh++
+                }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteAll = false }) { Text("Cancel") }
+            },
+        )
     }
 
     confirmDelete?.let { rec ->
@@ -174,7 +241,7 @@ private fun RecordingRow(
     }
 }
 
-private val dateFmt = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
+private val dateFmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
 private fun directionLabel(d: CallDirection): String = when (d) {
     CallDirection.INCOMING -> "Incoming call"
@@ -188,4 +255,14 @@ private fun formatDuration(ms: Long): String {
     val m = totalSec / 60
     val s = totalSec % 60
     return "%d:%02d".format(m, s)
+}
+
+ 
+private fun formatSize(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return "%.1f KB".format(Locale.ROOT, kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return "%.1f MB".format(Locale.ROOT, mb)
+    return "%.2f GB".format(Locale.ROOT, mb / 1024.0)
 }
