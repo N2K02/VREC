@@ -75,7 +75,9 @@ object RecordingStore {
         phoneNumber: String? = extractPhone(peer),
         contactName: String? = peer?.takeIf { phoneNumber != null && it != phoneNumber },
     ) {
-        val started = file.lastModified().takeIf { it > 0 } ?: System.currentTimeMillis()
+        val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
+            ?: file.lastModified().takeIf { it > 0 }
+            ?: System.currentTimeMillis()
         val json = JSONObject()
             .put("schemaVersion", 2)
             .put("startedAt", started)
