@@ -218,8 +218,8 @@ fun RecordingsList() {
         RecordingDetailsDialog(rec = recordings.firstOrNull { it.file == rec.file } ?: rec,
             playing = playingPath == rec.file.absolutePath, speed = speed,
             onDismiss = { currentRecording = null },
-            onSave = { notes, favorite, name ->
-                RecordingStore.updateDetails(rec, notes, favorite, name)
+            onSave = { notes, favorite, name, number, country, sim, carrier ->
+                RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)
                 refresh++
                 currentRecording = null
             },
@@ -305,12 +305,16 @@ private fun RecordingRow(
 @Composable
 private fun RecordingDetailsDialog(
     rec: Recording, playing: Boolean, speed: Float, onDismiss: () -> Unit,
-    onSave: (String, Boolean, String?) -> Unit, onPlay: () -> Unit, onSpeed: () -> Unit,
+    onSave: (String, Boolean, String?, String?, String?, String?, String?) -> Unit, onPlay: () -> Unit, onSpeed: () -> Unit,
     onBookmark: () -> Unit, onShareAudio: () -> Unit, onExportDetails: () -> Unit,
 ) {
     var notes by remember(rec.file.absolutePath) { mutableStateOf(rec.notes) }
     var favorite by remember(rec.file.absolutePath) { mutableStateOf(rec.favorite) }
     var contactName by remember(rec.file.absolutePath) { mutableStateOf(rec.contactName.orEmpty()) }
+    var phoneNumber by remember(rec.file.absolutePath) { mutableStateOf(rec.phoneNumber.orEmpty()) }
+    var countryCode by remember(rec.file.absolutePath) { mutableStateOf(rec.countryCode.orEmpty()) }
+    var simLabel by remember(rec.file.absolutePath) { mutableStateOf(rec.simLabel.orEmpty()) }
+    var carrier by remember(rec.file.absolutePath) { mutableStateOf(rec.carrier.orEmpty()) }
     val context = LocalContext.current
     val number = rec.phoneNumber ?: rec.peer?.takeIf { it.any(Char::isDigit) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(rec.displayName) },
@@ -330,7 +334,11 @@ private fun RecordingDetailsDialog(
                 DetailLine("Status", if (rec.silent) "No sound detected" else "Audio detected / not flagged silent")
                 DetailLine("Bookmarks", if (rec.bookmarksMs.isEmpty()) "None" else rec.bookmarksMs.joinToString { formatDuration(it) })
                 if (!rec.metadataAvailable) Text("This is an older recording. Some details were not saved at recording time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = contactName, onValueChange = { contactName = it }, label = { Text("Contact name (manual label)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = contactName, onValueChange = { contactName = it }, label = { Text("Contact name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = phoneNumber, onValueChange = { phoneNumber = it }, label = { Text("Phone number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = countryCode, onValueChange = { countryCode = it }, label = { Text("Country / calling code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = simLabel, onValueChange = { simLabel = it }, label = { Text("SIM label (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = carrier, onValueChange = { carrier = it }, label = { Text("Carrier (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = notes, onValueChange = { notes = it.take(2000) }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 5)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.Checkbox(checked = favorite, onCheckedChange = { favorite = it })
@@ -359,7 +367,7 @@ private fun RecordingDetailsDialog(
                 }) { Icon(Icons.Filled.ContentCopy, contentDescription = null); Text("Copy number") }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(notes, favorite, contactName) }) { Text("Save details") } },
+        confirmButton = { TextButton(onClick = { onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier) }) { Text("Save details") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
