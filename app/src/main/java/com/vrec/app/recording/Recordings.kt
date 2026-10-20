@@ -96,7 +96,16 @@ object RecordingStore {
         runCatching { sidecar(file).writeText(json.toString()) }
     }
 
-    fun updateDetails(recording: Recording, notes: String, favorite: Boolean, contactName: String? = recording.contactName) {
+    fun updateDetails(
+        recording: Recording,
+        notes: String,
+        favorite: Boolean,
+        contactName: String? = recording.contactName,
+        phoneNumber: String? = recording.phoneNumber,
+        countryCode: String? = recording.countryCode,
+        simLabel: String? = recording.simLabel,
+        carrier: String? = recording.carrier,
+    ) {
         val json = readJson(recording.file) ?: JSONObject()
             .put("startedAt", recording.startedAt)
             .put("direction", recording.direction.name)
@@ -108,6 +117,10 @@ object RecordingStore {
             .put("notes", notes.take(2000))
             .put("favorite", favorite)
             .put("contactName", contactName?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put("phoneNumber", phoneNumber?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put("countryCode", countryCode?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put("simLabel", simLabel?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put("carrier", carrier?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
         runCatching { sidecar(recording.file).writeText(json.toString()) }
     }
 
