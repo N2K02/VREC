@@ -33,6 +33,14 @@ Each source is probed for ~2.5s; if it only produces silence, VREC moves to the 
 still comes out silent, VREC tells you so in the list and the activity log, so you know this device
 blocks call capture on that source. You can also pick a single source by hand in Settings.
 
+## Recording management
+
+The Recordings screen includes caller/search text matching, incoming/outgoing/VoIP/favorites/silent filters, sorting by date, duration, size or caller, multi-select deletion, favorites, notes, manual caller labels, playback speed, bookmarks, audio sharing and JSON detail export. Open a recording to see its metadata and edit caller number, country/calling code, SIM label and carrier when Android did not provide them.
+
+Recordings remain M4A audio files with a JSON sidecar. Older recordings without newer metadata remain visible and playable. Caller and SIM fields are best-effort: Android may not expose the phone number, contact match, or the SIM subscription used for a particular call. VREC shows unknown/unavailable rather than guessing. Country is only suggested for recognised explicit international prefixes; it can be edited manually. SIM label and carrier can be added manually when the call event doesn't identify them.
+
+Bookmarks are saved as timestamps in the sidecar; playback speed is a local playback setting. Recording audio and metadata remain on-device unless you explicitly share/export them. Bulk deletion asks for confirmation.
+
 ## Setup
 
 1. **Microphone & phone permissions** — to record and to notice when a call starts (contacts is
