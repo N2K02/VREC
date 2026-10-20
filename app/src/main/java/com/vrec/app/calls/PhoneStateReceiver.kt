@@ -1,0 +1,29 @@
+package com.vrec.app.calls
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.telephony.TelephonyManager
+
+/**
+ * SIM call detection. Android delivers RINGING / OFFHOOK / IDLE here as the call progresses.
+ * The incoming number is only present when the OS chooses to include it; VREC records either way.
+ * Also re-arms nothing on boot/update — recording is driven live by call state — but the entry is
+ * kept so the app's process is around to receive the first call-state broadcast after a reboot.
+ */
+class PhoneStateReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            TelephonyManager.ACTION_PHONE_STATE_CHANGED -> {
+                val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                @Suppress("DEPRECATION")
+                val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+                CallMonitor.onSimState(context, state, number)
+            }
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                // No persistent state to restore; the manifest-registered receiver is enough to
+                // catch the next call. Nothing to do.
+            }
+        }
+    }
+}
