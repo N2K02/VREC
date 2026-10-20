@@ -15,12 +15,12 @@ val appVersionCode = appVersion.split(".").let { (major, minor) ->
 
 android {
     namespace = "com.vrec.app"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.vrec.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersion
     }
