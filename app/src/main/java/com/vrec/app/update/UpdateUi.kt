@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -283,5 +286,44 @@ fun UpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+
+/** Dedicated update page, matching PCL's in-app updater workflow. */
+@Composable
+fun UpdateScreen() {
+    val state by AppUpdater.state.collectAsState()
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Title("App updates")
+        Text(
+            "Check GitHub for the latest VREC release, review what's new, and download and install updates safely.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Installed version", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("VREC v${AppUpdater.installedVersionName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = { AppUpdater.check(manual = true) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state !is AppUpdater.State.Checking && state !is AppUpdater.State.Downloading,
+                ) {
+                    Text(if (state is AppUpdater.State.Checking) "Checking for updates…" else "Check for updates")
+                }
+                if (state is AppUpdater.State.UpToDate) {
+                    Text("You're using the latest version.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        UpdateCard()
     }
 }
