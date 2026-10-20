@@ -54,6 +54,7 @@ class RecordingService : Service() {
         const val ACTION_RESUME = "com.vrec.app.RESUME"
         const val EXTRA_DIRECTION = "direction"
         const val EXTRA_PEER = "peer"
+        const val EXTRA_PHONE_NUMBER = "phone_number"
 
         private val _state = MutableStateFlow<State>(State.Idle)
         val state: StateFlow<State> = _state
@@ -62,11 +63,12 @@ class RecordingService : Service() {
         private val _level = MutableStateFlow(0)
         val level: StateFlow<Int> = _level
 
-        fun start(context: Context, direction: CallDirection, peer: String?) {
+        fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null) {
             val intent = Intent(context, RecordingService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_DIRECTION, direction.name)
                 .putExtra(EXTRA_PEER, peer)
+                .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
             try {
                 if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent)
                 else context.startService(intent)
@@ -87,6 +89,7 @@ class RecordingService : Service() {
     private var engine: RecordingEngine? = null
     @Volatile private var direction = CallDirection.UNKNOWN
     @Volatile private var peer: String? = null
+    @Volatile private var phoneNumber: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private val sampler = object : Runnable {
         override fun run() {
@@ -123,6 +126,7 @@ class RecordingService : Service() {
         direction = runCatching { CallDirection.valueOf(intent.getStringExtra(EXTRA_DIRECTION) ?: "") }
             .getOrDefault(CallDirection.UNKNOWN)
         peer = intent.getStringExtra(EXTRA_PEER)
+        phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER)
         if (!goForeground(startingNotification())) {
             // Android refused the microphone foreground service (often a background-start block).
             // Abort cleanly rather than risk the "didn't call startForeground" crash.
@@ -184,7 +188,7 @@ class RecordingService : Service() {
             if (result != null) {
                 val keep = !(result.silent && Prefs.discardSilent(this))
                 if (keep) {
-                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs)
+                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.takeIf { phoneNumber != null && it != phoneNumber })
                     Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
                 } else {
                     RecordingStore.delete(RecordingToDelete(result.file))
