@@ -41,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
@@ -55,11 +54,10 @@ import com.vrec.app.ui.SetupScreen
 import com.vrec.app.ui.rememberReadiness
 import com.vrec.app.ui.theme.VrecTheme
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.update.FooterScroll
 import com.vrec.app.update.UpdateCard
-import com.vrec.app.update.UpdateFooterBar
+import com.vrec.app.update.UpdateScreen
 
-private enum class Screen { HOME, SETUP, SETTINGS, LOG }
+private enum class Screen { HOME, SETUP, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,10 +82,10 @@ private fun App() {
         Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
         Screen.LOG -> "Activity log"
+        Screen.UPDATE -> "Updates"
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(FooterScroll.connection),
         topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -107,13 +105,12 @@ private fun App() {
                             DropdownMenuItem(text = { Text("Setup") }, onClick = { menuOpen = false; screen = Screen.SETUP })
                             DropdownMenuItem(text = { Text("Settings") }, onClick = { menuOpen = false; screen = Screen.SETTINGS })
                             DropdownMenuItem(text = { Text("Activity log") }, onClick = { menuOpen = false; screen = Screen.LOG })
-                            DropdownMenuItem(text = { Text("Check for updates") }, onClick = { menuOpen = false; AppUpdater.check(manual = true) })
+                            DropdownMenuItem(text = { Text("Updates") }, onClick = { menuOpen = false; screen = Screen.UPDATE })
                         }
                     }
                 },
             )
         },
-        bottomBar = { if (screen == Screen.HOME) UpdateFooterBar("VREC") },
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
@@ -121,6 +118,7 @@ private fun App() {
                 Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen()
                 Screen.LOG -> LogScreen()
+                Screen.UPDATE -> UpdateScreen()
             }
         }
     }
