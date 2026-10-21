@@ -150,7 +150,7 @@ class RecordingService : Service() {
             _state.value = State.Recording(source.label, peer, silentSoFar = true)
             handler.post {
                 update(recordingNotification(source.label))
-                startService(Intent(this, OverlayControlService::class.java).setAction(OverlayControlService.ACTION_SHOW))
+                if (com.vrec.app.Prefs.showOverlay(this)) startService(Intent(this, OverlayControlService::class.java).setAction(OverlayControlService.ACTION_SHOW))
                 handler.post(sampler)
             }
         }
