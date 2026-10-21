@@ -14,7 +14,9 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.ImageButton
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -31,7 +33,7 @@ class OverlayControlService : Service() {
     private lateinit var windowManager: WindowManager
     private var root: LinearLayout? = null
     private var title: TextView? = null
-    private var pauseButton: Button? = null
+    private var pauseButton: ImageButton? = null
 
     private val refresh = object : Runnable {
         override fun run() {
@@ -70,44 +72,46 @@ class OverlayControlService : Service() {
     private fun createOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(5), dp(4), dp(5), dp(4))
             background = GradientDrawable().apply {
                 setColor(0xF2222222.toInt())
-                cornerRadius = dp(18).toFloat()
+                cornerRadius = dp(28).toFloat()
                 setStroke(dp(1), 0xFF666666.toInt())
             }
             elevation = dp(8).toFloat()
         }
         val heading = TextView(this).apply {
-            text = "● VREC · Recording"
-            setTextColor(0xFFFFFFFF.toInt())
-            textSize = 14f
-            setPadding(dp(2), dp(2), dp(2), dp(8))
-            contentDescription = "Drag to move VREC recording controls"
+            text = "●"
+            textSize = 18f
+            setTextColor(Color.RED)
+            gravity = Gravity.CENTER
+            contentDescription = "Drag recording controls"
         }
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val pause = Button(this).apply {
-            isAllCaps = false
-            text = "Pause"
+        val pause = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_media_pause)
+            contentDescription = "Pause recording"
+            background = ColorDrawable(Color.TRANSPARENT)
+            setColorFilter(Color.WHITE)
             setOnClickListener {
-                val action = if (RecordingService.state.value is RecordingService.State.Paused) {
-                    RecordingService.ACTION_RESUME
-                } else RecordingService.ACTION_PAUSE
+                val action = if (RecordingService.state.value is RecordingService.State.Paused)
+                    RecordingService.ACTION_RESUME else RecordingService.ACTION_PAUSE
                 startService(Intent(this@OverlayControlService, RecordingService::class.java).setAction(action))
             }
         }
-        val stop = Button(this).apply {
-            isAllCaps = false
-            text = "Stop"
+        val stop = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            contentDescription = "Stop recording"
+            background = ColorDrawable(Color.TRANSPARENT)
+            setColorFilter(Color.WHITE)
             setOnClickListener {
                 startService(Intent(this@OverlayControlService, RecordingService::class.java).setAction(RecordingService.ACTION_STOP))
             }
         }
-        controls.addView(pause, LinearLayout.LayoutParams(0, dp(44), 1f))
-        controls.addView(stop, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(6) })
-        panel.addView(heading)
-        panel.addView(controls)
+        panel.addView(heading, LinearLayout.LayoutParams(dp(32), dp(42)))
+        panel.addView(pause, LinearLayout.LayoutParams(dp(44), dp(44)))
+        panel.addView(stop, LinearLayout.LayoutParams(dp(44), dp(44)))
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -158,12 +162,14 @@ class OverlayControlService : Service() {
     private fun render(state: RecordingService.State) {
         when (state) {
             is RecordingService.State.Recording -> {
-                title?.text = "● VREC · ${formatDuration(state.elapsedMs)}"
-                pauseButton?.text = "Pause"
+                title?.text = "●"
+                pauseButton?.setImageResource(android.R.drawable.ic_media_pause)
+                pauseButton?.contentDescription = "Pause recording"
             }
             is RecordingService.State.Paused -> {
-                title?.text = "Ⅱ VREC · Paused · ${formatDuration(state.elapsedMs)}"
-                pauseButton?.text = "Resume"
+                title?.text = "Ⅱ"
+                pauseButton?.setImageResource(android.R.drawable.ic_media_play)
+                pauseButton?.contentDescription = "Resume recording"
             }
             else -> Unit
         }
