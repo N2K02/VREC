@@ -73,6 +73,7 @@ private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.initialize(applicationContext)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
         setContent { VrecTheme { App() } }
@@ -152,7 +153,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
             icon = Icons.Filled.FolderOpen,
             onClick = { onNavigate(Screen.RECORDINGS) },
         )
-        NavigationCard(
+        if (!ready) NavigationCard(
             title = "Setup",
             subtitle = "Permissions and recording accessibility",
             icon = Icons.Filled.Tune,
