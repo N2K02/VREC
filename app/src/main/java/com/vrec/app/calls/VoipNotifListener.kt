@@ -3,6 +3,7 @@ package com.vrec.app.calls
 import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -34,6 +35,7 @@ class VoipNotifListener : NotificationListenerService() {
 
         private const val EXTRA_CALL_TYPE = "android.callType"
         private const val CALL_TYPE_ONGOING = 2
+        private const val CALL_TYPE_INCOMING = 1
 
         private fun isCallStyle(n: Notification): Boolean {
             val ex = n.extras ?: return false
@@ -46,7 +48,9 @@ class VoipNotifListener : NotificationListenerService() {
             val ex = n.extras ?: return false
             if (ex.getInt(EXTRA_CALL_TYPE, 0) == CALL_TYPE_ONGOING) return true
             // Fallback: an ongoing call-category notification that isn't the incoming ring.
-            return n.category == Notification.CATEGORY_CALL && (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+            return n.category == Notification.CATEGORY_CALL &&
+                ex.getInt(EXTRA_CALL_TYPE, 0) != CALL_TYPE_INCOMING &&
+                (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
         }
     }
 
@@ -55,7 +59,13 @@ class VoipNotifListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         Log.i("VoIP notification access active")
+        activeKeys.clear()
         runCatching { activeNotifications.orEmpty().forEach(::onNotificationPosted) }
+    }
+
+    override fun onListenerDisconnected() {
+        activeKeys.clear()
+        Log.i("VoIP notification listener disconnected")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -70,6 +80,7 @@ class VoipNotifListener : NotificationListenerService() {
         if (active) keys.add(sbn.key) else keys.remove(sbn.key)
 
         if (active && keys.isNotEmpty()) {
+            Log.i("VoIP call signal: ${appLabel(pkg)}; type=${n.extras?.getInt(EXTRA_CALL_TYPE, 0)}; callerPresent=${callerName(n) != null}; actions=${n.actions?.size ?: 0}")
             CallMonitor.onVoipState(this, appLabel(pkg), callerName(n), active = true)
         } else if (wasActive && keys.isEmpty()) {
             CallMonitor.onVoipState(this, appLabel(pkg), null, active = false)
@@ -86,10 +97,15 @@ class VoipNotifListener : NotificationListenerService() {
 
     private fun callerName(n: Notification): String? {
         val extras = n.extras ?: return null
-        val person = if (android.os.Build.VERSION.SDK_INT >= 28)
-            extras.getParcelable<android.app.Person>(Notification.EXTRA_CALL_PERSON) else null
+        val person = if (Build.VERSION.SDK_INT >= 33)
+            extras.getParcelable(Notification.EXTRA_CALL_PERSON, android.app.Person::class.java)
+        else if (Build.VERSION.SDK_INT >= 28) {
+            @Suppress("DEPRECATION")
+            extras.getParcelable<android.app.Person>(Notification.EXTRA_CALL_PERSON)
+        } else null
         val candidates = listOf(
             person?.name?.toString(),
+            if (Build.VERSION.SDK_INT >= 28) extras.getParcelableArrayList<android.app.Person>(Notification.EXTRA_PEOPLE_LIST)?.firstOrNull()?.name?.toString() else null,
             extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
             extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
         )
