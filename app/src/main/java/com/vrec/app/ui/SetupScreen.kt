@@ -27,6 +27,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,9 +101,10 @@ fun SetupScreen() {
             number = "2",
             title = "Accessibility service",
             done = accessibilityOn,
-            body = "Switch on \"VREC call recording\" under Accessibility. Since Android 10 an ordinary app is handed silence during a call — an enabled accessibility service is one of the only ways to keep recording. VREC uses it for nothing else.",
+            body = "Enable VREC in Accessibility settings, then return here and tap Check access. This does not guarantee two-sided call audio capture.",
             actionLabel = if (accessibilityOn) "Enabled" else "Open Accessibility settings",
             onAction = { context.openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+            onVerify = { permissionTick++ },
         ) {
             Note(
                 "If the switch is greyed out with \"Restricted setting\" (Android 13+), open " +
@@ -125,7 +130,7 @@ fun SetupScreen() {
             number = "4",
             title = "VoIP calls (optional)",
             done = notifAccessOn,
-            body = "To also record WhatsApp, Telegram and similar, give VREC Notification access so it can tell when one of those calls is active, then turn on \"Record VoIP calls\" in Settings.",
+            body = "Optional: let VREC detect call notifications from supported VoIP apps. This identifies call activity, but does not grant access to protected call audio.",
             actionLabel = if (notifAccessOn) "Granted" else "Open Notification access",
             onAction = { context.openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) },
         )
@@ -152,6 +157,7 @@ private fun Step(
     actionLabel: String,
     onAction: () -> Unit,
     extra: @Composable (() -> Unit)? = null,
+    onVerify: (() -> Unit)? = null,
 ) {
     Card(
         colors = CardDefaults.cardColors(
@@ -176,10 +182,16 @@ private fun Step(
             }
             Text(body, style = MaterialTheme.typography.bodyMedium)
             extra?.invoke()
-            if (done) {
-                OutlinedButton(onClick = onAction, enabled = false) { Text(actionLabel) }
-            } else {
-                Button(onClick = onAction) { Text(actionLabel) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (done) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Granted", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                } else {
+                    Button(onClick = onAction) { Text(actionLabel) }
+                    if (onVerify != null) {
+                        TextButton(onClick = onVerify) { Text("Check access") }
+                    }
+                }
             }
         }
     }
