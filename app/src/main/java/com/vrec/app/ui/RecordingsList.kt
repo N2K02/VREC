@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -29,7 +31,12 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Slider
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -44,6 +51,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +81,8 @@ fun RecordingsList() {
     var refresh by remember { mutableStateOf(0) }
     val recordings = remember(tick, refresh) { RecordingStore.list(context) }
     var playingPath by remember { mutableStateOf<String?>(null) }
+    var playbackPosition by remember { mutableStateOf(0L) }
+    var playbackDuration by remember { mutableStateOf(0L) }
     val player = remember { MediaPlayer() }
     var currentRecording by remember { mutableStateOf<Recording?>(null) }
     var confirmDelete by remember { mutableStateOf<Recording?>(null) }
@@ -112,8 +123,16 @@ fun RecordingsList() {
         }
     }
 
+    LaunchedEffect(playingPath) {
+        while (playingPath != null) {
+            playbackPosition = runCatching { player.currentPosition.toLong() }.getOrDefault(0L)
+            playbackDuration = runCatching { player.duration.toLong() }.getOrDefault(0L).coerceAtLeast(0L)
+            delay(250L)
+        }
+    }
+
     DisposableEffect(Unit) {
-        player.setOnCompletionListener { playingPath = null }
+        player.setOnCompletionListener { playingPath = null; playbackPosition = 0L }
         onDispose { runCatching { player.release() } }
     }
 
@@ -121,6 +140,7 @@ fun RecordingsList() {
         if (playingPath == rec.file.absolutePath) {
             runCatching { player.stop(); player.reset() }
             playingPath = null
+            playbackPosition = 0L
         } else {
             runCatching {
                 player.reset()
@@ -129,6 +149,8 @@ fun RecordingsList() {
                 if (Build.VERSION.SDK_INT >= 23) player.playbackParams = player.playbackParams.setSpeed(speed)
                 player.start()
                 playingPath = rec.file.absolutePath
+                playbackDuration = player.duration.toLong().coerceAtLeast(0L)
+                playbackPosition = 0L
             }
         }
     }
@@ -157,7 +179,7 @@ fun RecordingsList() {
             singleLine = true, label = { Text("Search caller, number, note…") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) })
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { filterMenu = true }, modifier = Modifier.weight(1f)) {
+            TextButton(onClick = { filterMenu = true }) {
                 Icon(Icons.Filled.FilterList, contentDescription = null)
                 Text("  ${filterLabel(filter)}")
             }
@@ -172,25 +194,27 @@ fun RecordingsList() {
                     DropdownMenuItem(text = { Text(sortLabel(item)) }, onClick = { sort = item; sortMenu = false })
                 }
             }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = {
                 selectionMode = !selectionMode
                 selectedPaths = emptySet()
-            }) { Text(if (selectionMode) "Cancel selection" else "Select multiple") }
-            if (selectionMode) {
-                TextButton(onClick = { selectedPaths = if (selectedPaths.size == visibleRecordings.size) emptySet() else visibleRecordings.map { it.file.absolutePath }.toSet() }) {
-                    Text(if (selectedPaths.size == visibleRecordings.size) "Select none" else "Select all")
-                }
-                TextButton(onClick = { if (selectedPaths.isNotEmpty()) confirmDeleteSelected = true }) {
-                    Text("Delete (${selectedPaths.size})", color = MaterialTheme.colorScheme.error)
+            }) { Text(if (selectionMode) "Done" else "Select") }
+        }
+        if (selectionMode) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    selectedPaths = if (selectedPaths.size == visibleRecordings.size) emptySet()
+                        else visibleRecordings.map { it.file.absolutePath }.toSet()
+                }) { Text(if (selectedPaths.size == visibleRecordings.size) "Deselect all" else "Select all") }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                TextButton(onClick = { if (selectedPaths.isNotEmpty()) confirmDeleteSelected = true },
+                    enabled = selectedPaths.isNotEmpty()) {
+                    Text("Delete selected (${selectedPaths.size})", color = MaterialTheme.colorScheme.error)
                 }
             }
-        }
-        Button(onClick = { confirmDeleteAll = true }, modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
-            Icon(Icons.Filled.Delete, contentDescription = null)
-            Text("  Delete all recordings")
+            TextButton(onClick = { confirmDeleteAll = true }) {
+                Text("Delete all recordings", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 
@@ -203,6 +227,8 @@ fun RecordingsList() {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             visibleRecordings.forEach { rec ->
                 RecordingRow(rec = rec, playing = playingPath == rec.file.absolutePath,
+                    progress = if (playingPath == rec.file.absolutePath && playbackDuration > 0L) (playbackPosition.toFloat() / playbackDuration).coerceIn(0f, 1f) else 0f,
+                    positionMs = if (playingPath == rec.file.absolutePath) playbackPosition else 0L,
                     selected = rec.file.absolutePath in selectedPaths, selectionMode = selectionMode,
                     onSelect = {
                         selectedPaths = if (rec.file.absolutePath in selectedPaths) selectedPaths - rec.file.absolutePath
@@ -217,6 +243,9 @@ fun RecordingsList() {
     currentRecording?.let { rec ->
         RecordingDetailsDialog(rec = recordings.firstOrNull { it.file == rec.file } ?: rec,
             playing = playingPath == rec.file.absolutePath, speed = speed,
+            positionMs = if (playingPath == rec.file.absolutePath) playbackPosition else 0L,
+            playbackDurationMs = if (playingPath == rec.file.absolutePath) playbackDuration else rec.durationMs,
+            onSeek = { ms -> if (playingPath == rec.file.absolutePath) runCatching { player.seekTo(ms.toInt()); playbackPosition = ms } },
             onDismiss = { currentRecording = null },
             onSave = { notes, favorite, name, number, country, sim, carrier ->
                 RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)
@@ -269,10 +298,11 @@ fun RecordingsList() {
 
 @Composable
 private fun RecordingRow(
-    rec: Recording, playing: Boolean, selected: Boolean, selectionMode: Boolean,
+    rec: Recording, playing: Boolean, progress: Float, positionMs: Long, selected: Boolean, selectionMode: Boolean,
     onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
     onDelete: () -> Unit, onFavorite: () -> Unit,
 ) {
+    var actionsExpanded by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         modifier = Modifier.fillMaxWidth().clickable { if (selectionMode) onSelect() else onOpen() }) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -289,23 +319,42 @@ private fun RecordingRow(
                     if (rec.callConnectedAt != null && rec.callEndedAt != null && rec.callEndedAt >= rec.callConnectedAt) append(" · Call ~${formatDuration(rec.callEndedAt - rec.callConnectedAt)}")
                     append(" · "); append(formatSize(rec.sizeBytes))
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (playing) {
+                    Slider(value = progress, onValueChange = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(26.dp))
+                    Text("${formatDuration(positionMs)} / ${formatDuration(rec.durationMs)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
                 if (rec.phoneNumber != null && rec.contactName != null) Text(rec.phoneNumber, style = MaterialTheme.typography.bodySmall)
                 if (rec.simLabel != null) Text(rec.simLabel, style = MaterialTheme.typography.bodySmall)
                 if (rec.silent) Text("Silent recording — check audio source/device compatibility", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (rec.notes.isNotBlank()) Text(rec.notes, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onFavorite) { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = if (rec.favorite) "Remove favorite" else "Favorite") }
             if (!selectionMode) {
-                IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Share audio") }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete") }
+                androidx.compose.foundation.layout.Box {
+                    IconButton(onClick = { actionsExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Recording actions")
+                    }
+                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                        DropdownMenuItem(text = { Text(if (rec.favorite) "Remove favorite" else "Add to favorites") },
+                            leadingIcon = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onFavorite() })
+                        DropdownMenuItem(text = { Text("Share audio") },
+                            leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onShare() })
+                        DropdownMenuItem(text = { Text("Delete") },
+                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onDelete() })
+                    }
+                }
             }
         }
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun RecordingDetailsDialog(
-    rec: Recording, playing: Boolean, speed: Float, onDismiss: () -> Unit,
+    rec: Recording, playing: Boolean, speed: Float, positionMs: Long, playbackDurationMs: Long,
+    onSeek: (Long) -> Unit, onDismiss: () -> Unit,
     onSave: (String, Boolean, String?, String?, String?, String?, String?) -> Unit, onPlay: () -> Unit, onSpeed: () -> Unit,
     onBookmark: () -> Unit, onShareAudio: () -> Unit, onExportDetails: () -> Unit,
 ) {
@@ -316,11 +365,31 @@ private fun RecordingDetailsDialog(
     var countryCode by remember(rec.file.absolutePath) { mutableStateOf(rec.countryCode.orEmpty()) }
     var simLabel by remember(rec.file.absolutePath) { mutableStateOf(rec.simLabel.orEmpty()) }
     var carrier by remember(rec.file.absolutePath) { mutableStateOf(rec.carrier.orEmpty()) }
+    var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
     val context = LocalContext.current
     val number = rec.phoneNumber ?: rec.peer?.takeIf { it.any(Char::isDigit) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(rec.displayName) },
-        text = {
-            Column(Modifier.widthIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(rec.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(directionLabel(rec.direction), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { editing = !editing }) { Text(if (editing) "Cancel edit" else "Edit") }
+            }
+            HorizontalDivider()
+            Slider(value = (positionMs.toFloat() / playbackDurationMs.coerceAtLeast(1L)).coerceIn(0f, 1f), onValueChange = { onSeek((it * playbackDurationMs).toLong()) }, enabled = playing && playbackDurationMs > 0L)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatDuration(positionMs), style = MaterialTheme.typography.labelMedium)
+                Text(formatDuration(playbackDurationMs), style = MaterialTheme.typography.labelMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onPlay) { Icon(if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null); Text(if (playing) " Stop" else " Play") }
+                TextButton(onClick = onSpeed) { Text("${speed}x") }
+                TextButton(onClick = onBookmark) { Icon(Icons.Filled.BookmarkAdd, contentDescription = null); Text("Bookmark") }
+            }
+            HorizontalDivider()
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 DetailLine("Call type", directionLabel(rec.direction))
                 DetailLine("Phone number", number ?: "Unavailable")
                 DetailLine("Country", rec.countryCode ?: "Unknown — no international prefix")
@@ -338,6 +407,7 @@ private fun RecordingDetailsDialog(
                 DetailLine("Status", if (rec.silent) "No sound detected" else "Audio detected / not flagged silent")
                 DetailLine("Bookmarks", if (rec.bookmarksMs.isEmpty()) "None" else rec.bookmarksMs.joinToString { formatDuration(it) })
                 if (!rec.metadataAvailable) Text("This is an older recording. Some details were not saved at recording time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (editing) {
                 OutlinedTextField(value = contactName, onValueChange = { contactName = it }, label = { Text("Contact name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = phoneNumber, onValueChange = { phoneNumber = it }, label = { Text("Phone number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = countryCode, onValueChange = { countryCode = it }, label = { Text("Country / calling code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -348,11 +418,7 @@ private fun RecordingDetailsDialog(
                     androidx.compose.material3.Checkbox(checked = favorite, onCheckedChange = { favorite = it })
                     Text("Favorite")
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onPlay) { Icon(if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null); Text(if (playing) "Stop" else "Play") }
-                    TextButton(onClick = onSpeed) { Icon(Icons.Filled.Speed, contentDescription = null); Text("${speed}x") }
-                    TextButton(onClick = onBookmark) { Icon(Icons.Filled.BookmarkAdd, contentDescription = null); Text("Bookmark") }
-                }
+                } // editing
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = onShareAudio) { Icon(Icons.Filled.Share, contentDescription = null); Text("Audio") }
                     TextButton(onClick = onExportDetails) { Icon(Icons.Filled.Info, contentDescription = null); Text("Export details") }
@@ -370,10 +436,12 @@ private fun RecordingDetailsDialog(
                     Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
                 }) { Icon(Icons.Filled.ContentCopy, contentDescription = null); Text("Copy number") }
             }
-        },
-        confirmButton = { TextButton(onClick = { onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier) }) { Text("Save details") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Close") }
+                if (editing) Button(onClick = { onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier) }) { Text("Save changes") }
+            }
+        }
+    }
 }
 
 @Composable
