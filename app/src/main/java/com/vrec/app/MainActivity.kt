@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
+import com.vrec.app.calls.VoipNotifListener
 import kotlinx.coroutines.delay
 import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
@@ -296,7 +297,9 @@ private fun SetupPromptCard(onOpenSetup: () -> Unit) {
 /** Mic + accessibility together are the minimum for recording to work. */
 fun isReady(context: Context): Boolean {
     val mic = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    return mic && com.vrec.app.calls.VrecAccessibilityService.isEnabled(context)
+    val phone = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+    val accessibility = com.vrec.app.calls.VrecAccessibilityService.isEnabled(context)
+    return mic && phone && accessibility
 }
 
 /** Build the runtime permission set VREC asks for, by SDK level. */
