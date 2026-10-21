@@ -1,5 +1,11 @@
 package com.vrec.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -42,12 +48,17 @@ fun rememberReadiness(): Boolean {
 @Composable
 fun SetupScreen() {
     val context = LocalContext.current
-    val tick = rememberOnResumeTick()
+    val resumeTick = rememberOnResumeTick()
+    var permissionTick by remember { mutableIntStateOf(0) }
+    val tick = resumeTick + permissionTick
 
     val micGranted = androidx.compose.runtime.remember(tick) {
         context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
     }
+    val phoneGranted = androidx.compose.runtime.remember(tick) { context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED }
+    val contactsGranted = androidx.compose.runtime.remember(tick) { context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
+    val notificationsGranted = androidx.compose.runtime.remember(tick) { Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED }
     val accessibilityOn = androidx.compose.runtime.remember(tick) { VrecAccessibilityService.isEnabled(context) }
     val notifAccessOn = androidx.compose.runtime.remember(tick) { VoipNotifListener.isEnabled(context) }
     val overlayAllowed = androidx.compose.runtime.remember(tick) {
@@ -56,7 +67,7 @@ fun SetupScreen() {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { /* readiness refreshes on resume */ }
+    ) { permissionTick++ }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -70,10 +81,16 @@ fun SetupScreen() {
         Step(
             number = "1",
             title = "Microphone & phone permissions",
-            done = micGranted,
+            done = micGranted && phoneGranted,
             body = "Needed to record and to notice when a call starts. Contacts is optional and only used to show who you were talking to.",
-            actionLabel = if (micGranted) "Granted" else "Grant permissions",
-            onAction = { permissionLauncher.launch(corePermissions()) },
+            actionLabel = if (micGranted && phoneGranted) "Granted" else "Grant permissions",
+            onAction = { permissionLauncher.launch(corePermissions().filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()) },
+            extra = {
+                Note("Microphone: ${if (micGranted) "Granted" else "Not granted"}")
+                Note("Phone state: ${if (phoneGranted) "Granted" else "Not granted"}")
+                Note("Contacts (optional): ${if (contactsGranted) "Granted" else "Not granted"}")
+                if (Build.VERSION.SDK_INT >= 33) Note("Notifications (optional): ${if (notificationsGranted) "Granted" else "Not granted"}")
+            },
         )
 
         Step(
@@ -160,7 +177,7 @@ private fun Step(
             Text(body, style = MaterialTheme.typography.bodyMedium)
             extra?.invoke()
             if (done) {
-                OutlinedButton(onClick = onAction) { Text(actionLabel) }
+                OutlinedButton(onClick = onAction, enabled = false) { Text(actionLabel) }
             } else {
                 Button(onClick = onAction) { Text(actionLabel) }
             }
