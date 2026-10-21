@@ -105,13 +105,14 @@ fun SetupScreen() {
             actionLabel = if (accessibilityOn) "Enabled" else "Open Accessibility settings",
             onAction = { context.openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
             onVerify = { permissionTick++ },
-        ) {
+            extra = {
             Note(
                 "If the switch is greyed out with \"Restricted setting\" (Android 13+), open " +
                     "Settings ▸ Apps ▸ VREC ▸ ⋮ ▸ Allow restricted settings, then try again. " +
                     "On Android 16 you can't turn accessibility on during a call, so set this up beforehand.",
             )
-        }
+            },
+        )
 
         Step(
             number = "3",
