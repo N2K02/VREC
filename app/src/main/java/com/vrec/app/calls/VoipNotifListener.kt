@@ -55,6 +55,7 @@ class VoipNotifListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         Log.i("VoIP notification access active")
+        runCatching { activeNotifications.orEmpty().forEach(::onNotificationPosted) }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -68,7 +69,7 @@ class VoipNotifListener : NotificationListenerService() {
         val wasActive = keys.isNotEmpty()
         if (active) keys.add(sbn.key) else keys.remove(sbn.key)
 
-        if (!wasActive && keys.isNotEmpty()) {
+        if (active && keys.isNotEmpty()) {
             CallMonitor.onVoipState(this, appLabel(pkg), callerName(n), active = true)
         } else if (wasActive && keys.isEmpty()) {
             CallMonitor.onVoipState(this, appLabel(pkg), null, active = false)
@@ -83,8 +84,22 @@ class VoipNotifListener : NotificationListenerService() {
         }
     }
 
-    private fun callerName(n: Notification): String? =
-        n.extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() }
+    private fun callerName(n: Notification): String? {
+        val extras = n.extras ?: return null
+        val person = if (android.os.Build.VERSION.SDK_INT >= 28)
+            extras.getParcelable<android.app.Person>(Notification.EXTRA_CALL_PERSON) else null
+        val candidates = listOf(
+            person?.name?.toString(),
+            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
+        return candidates.firstOrNull { value ->
+            !value.isNullOrBlank() && value.length <= 100 &&
+                !value.equals("Ongoing call", true) &&
+                !value.equals("Incoming call", true) &&
+                !value.equals("Call in progress", true)
+        }?.trim()
+    }
 
     private fun appLabel(pkg: String): String = runCatching {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()

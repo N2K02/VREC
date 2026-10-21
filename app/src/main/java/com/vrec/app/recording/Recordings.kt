@@ -31,6 +31,8 @@ data class Recording(
     val favorite: Boolean = false,
     val bookmarksMs: List<Long> = emptyList(),
     val endedAt: Long? = null,
+    val callConnectedAt: Long? = null,
+    val callEndedAt: Long? = null,
     val metadataAvailable: Boolean = true,
 ) {
     val sizeBytes: Long get() = file.length()
@@ -74,12 +76,18 @@ object RecordingStore {
         durationMs: Long,
         phoneNumber: String? = extractPhone(peer),
         contactName: String? = peer?.takeIf { phoneNumber != null && it != phoneNumber },
+        callConnectedAt: Long? = null,
+        callEndedAt: Long? = null,
     ) {
         val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
             ?: System.currentTimeMillis()
         val json = JSONObject()
-            .put("schemaVersion", 2)
+            .put("schemaVersion", 3)
+            .put("callConnectedAt", callConnectedAt ?: JSONObject.NULL)
+            .put("callEndedAt", callEndedAt ?: JSONObject.NULL)
+            .put("callDurationMs", if (callConnectedAt != null && callEndedAt != null && callEndedAt >= callConnectedAt) callEndedAt - callConnectedAt else JSONObject.NULL)
+            .put("callTimingEstimated", true)
             .put("startedAt", started)
             .put("endedAt", System.currentTimeMillis())
             .put("direction", direction.name)
@@ -186,6 +194,8 @@ object RecordingStore {
             favorite = meta?.optBoolean("favorite", false) ?: false,
             bookmarksMs = bookmarks,
             endedAt = meta?.optLong("endedAt")?.takeIf { it > 0 },
+            callConnectedAt = meta?.optLong("callConnectedAt")?.takeIf { it > 0 },
+            callEndedAt = meta?.optLong("callEndedAt")?.takeIf { it > 0 },
             metadataAvailable = meta != null,
         )
     }
