@@ -19,6 +19,7 @@ object CallMonitor {
     private var pendingIncomingNumber: String? = null
     private var sawRinging = false
     private var activeVoipApp: String? = null
+    private var connectedAt: Long? = null
 
     @Synchronized
     fun onSimState(context: Context, state: String?, number: String?) {
@@ -32,7 +33,7 @@ object CallMonitor {
                 if (recording != Kind.NONE) return
                 val direction = if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING
                 val peer = CallInfo.describe(context, pendingIncomingNumber)
-                startIfArmed(context, Kind.SIM, direction, peer, phoneNumber = pendingIncomingNumber)
+                startIfArmed(context, Kind.SIM, direction, peer, phoneNumber = pendingIncomingNumber, callConnectedAt = System.currentTimeMillis())
             }
             "IDLE" -> {
                 sawRinging = false
@@ -53,7 +54,7 @@ object CallMonitor {
             }
             if (recording != Kind.NONE) return // SIM or another VoIP call already recording
             activeVoipApp = appLabel
-            startIfArmed(context, Kind.VOIP, CallDirection.VOIP, peer)
+            startIfArmed(context, Kind.VOIP, CallDirection.VOIP, peer, callConnectedAt = System.currentTimeMillis())
         } else {
             if (recording == Kind.VOIP && activeVoipApp == appLabel) stop(context)
         }
@@ -80,18 +81,21 @@ object CallMonitor {
         peer: String?,
         phoneNumber: String? = null,
         force: Boolean = false,
+        callConnectedAt: Long? = null,
     ) {
         if (!force && !Prefs.autoRecord(context)) {
             Log.i("Auto-record is off; not recording this call")
             return
         }
         recording = kind
-        RecordingService.start(context.applicationContext, direction, peer, phoneNumber)
+        connectedAt = callConnectedAt
+        RecordingService.start(context.applicationContext, direction, peer, phoneNumber, callConnectedAt)
     }
 
     private fun stop(context: Context) {
         recording = Kind.NONE
         activeVoipApp = null
-        RecordingService.stop(context.applicationContext)
+        connectedAt = null
+        RecordingService.stop(context.applicationContext, System.currentTimeMillis())
     }
 }
