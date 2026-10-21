@@ -56,6 +56,8 @@ class RecordingService : Service() {
         const val EXTRA_DIRECTION = "direction"
         const val EXTRA_PEER = "peer"
         const val EXTRA_PHONE_NUMBER = "phone_number"
+        const val EXTRA_CALL_CONNECTED_AT = "call_connected_at"
+        const val EXTRA_CALL_ENDED_AT = "call_ended_at"
 
         private val _state = MutableStateFlow<State>(State.Idle)
         val state: StateFlow<State> = _state
@@ -64,12 +66,13 @@ class RecordingService : Service() {
         private val _level = MutableStateFlow(0)
         val level: StateFlow<Int> = _level
 
-        fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null) {
+        fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null, callConnectedAt: Long? = null) {
             val intent = Intent(context, RecordingService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_DIRECTION, direction.name)
                 .putExtra(EXTRA_PEER, peer)
                 .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
+                .putExtra(EXTRA_CALL_CONNECTED_AT, callConnectedAt ?: 0L)
             try {
                 if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent)
                 else context.startService(intent)
@@ -82,9 +85,9 @@ class RecordingService : Service() {
             runCatching { context.startService(Intent(context, RecordingService::class.java).setAction(ACTION_UPDATE_PEER).putExtra(EXTRA_PEER, newPeer)) }
         }
 
-        fun stop(context: Context) {
+        fun stop(context: Context, callEndedAt: Long? = null) {
             try {
-                context.startService(Intent(context, RecordingService::class.java).setAction(ACTION_STOP))
+                context.startService(Intent(context, RecordingService::class.java).setAction(ACTION_STOP).putExtra(EXTRA_CALL_ENDED_AT, callEndedAt ?: 0L))
             } catch (e: Exception) {
                 Log.w("Couldn't deliver stop to the recording service", e)
             }
@@ -95,6 +98,8 @@ class RecordingService : Service() {
     @Volatile private var direction = CallDirection.UNKNOWN
     @Volatile private var peer: String? = null
     @Volatile private var phoneNumber: String? = null
+    private var callConnectedAt: Long? = null
+    private var callEndedAt: Long? = null
     private val handler = Handler(Looper.getMainLooper())
     private val sampler = object : Runnable {
         override fun run() {
@@ -117,7 +122,10 @@ class RecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> finish()
+            ACTION_STOP -> {
+                callEndedAt = intent.getLongExtra(EXTRA_CALL_ENDED_AT, 0L).takeIf { it > 0L }
+                finish()
+            }
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
             ACTION_UPDATE_PEER -> {
@@ -145,6 +153,8 @@ class RecordingService : Service() {
             .getOrDefault(CallDirection.UNKNOWN)
         peer = intent.getStringExtra(EXTRA_PEER)
         phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER)
+        callConnectedAt = intent.getLongExtra(EXTRA_CALL_CONNECTED_AT, 0L).takeIf { it > 0L }
+        callEndedAt = null
         if (!goForeground(startingNotification())) {
             // Android refused the microphone foreground service (often a background-start block).
             // Abort cleanly rather than risk the "didn't call startForeground" crash.
@@ -206,7 +216,7 @@ class RecordingService : Service() {
             if (result != null) {
                 val keep = !(result.silent && Prefs.discardSilent(this))
                 if (keep) {
-                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.substringBefore(" (")?.takeIf { direction == CallDirection.VOIP && it.isNotBlank() && it != peer || phoneNumber != null && it != phoneNumber })
+                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.substringBefore(" (")?.takeIf { direction == CallDirection.VOIP && it.isNotBlank() && it != peer || phoneNumber != null && it != phoneNumber }, callConnectedAt = callConnectedAt, callEndedAt = callEndedAt)
                     Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
                 } else {
                     RecordingStore.delete(RecordingToDelete(result.file))
