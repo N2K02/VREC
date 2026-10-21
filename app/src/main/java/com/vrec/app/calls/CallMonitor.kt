@@ -18,6 +18,7 @@ object CallMonitor {
     private var recording = Kind.NONE
     private var pendingIncomingNumber: String? = null
     private var sawRinging = false
+    private var activeVoipApp: String? = null
 
     @Synchronized
     fun onSimState(context: Context, state: String?, number: String?) {
@@ -45,11 +46,16 @@ object CallMonitor {
     fun onVoipState(context: Context, appLabel: String, caller: String?, active: Boolean) {
         if (!Prefs.recordVoip(context)) return
         if (active) {
-            if (recording != Kind.NONE) return // SIM or another VoIP call already recording
             val peer = caller?.takeIf { it.isNotBlank() }?.let { "$it ($appLabel)" } ?: appLabel
+            if (recording == Kind.VOIP && activeVoipApp == appLabel) {
+                RecordingService.updateVoipPeer(context, peer)
+                return
+            }
+            if (recording != Kind.NONE) return // SIM or another VoIP call already recording
+            activeVoipApp = appLabel
             startIfArmed(context, Kind.VOIP, CallDirection.VOIP, peer)
         } else {
-            if (recording == Kind.VOIP) stop(context)
+            if (recording == Kind.VOIP && activeVoipApp == appLabel) stop(context)
         }
     }
 
@@ -85,6 +91,7 @@ object CallMonitor {
 
     private fun stop(context: Context) {
         recording = Kind.NONE
+        activeVoipApp = null
         RecordingService.stop(context.applicationContext)
     }
 }
