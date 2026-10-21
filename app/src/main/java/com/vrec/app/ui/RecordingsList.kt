@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
 import androidx.compose.material3.HorizontalDivider
@@ -177,7 +179,7 @@ fun RecordingsList() {
             singleLine = true, label = { Text("Search caller, number, note…") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) })
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { filterMenu = true }, modifier = Modifier.weight(1f)) {
+            TextButton(onClick = { filterMenu = true }) {
                 Icon(Icons.Filled.FilterList, contentDescription = null)
                 Text("  ${filterLabel(filter)}")
             }
@@ -192,25 +194,27 @@ fun RecordingsList() {
                     DropdownMenuItem(text = { Text(sortLabel(item)) }, onClick = { sort = item; sortMenu = false })
                 }
             }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = {
                 selectionMode = !selectionMode
                 selectedPaths = emptySet()
-            }) { Text(if (selectionMode) "Cancel selection" else "Select multiple") }
-            if (selectionMode) {
-                TextButton(onClick = { selectedPaths = if (selectedPaths.size == visibleRecordings.size) emptySet() else visibleRecordings.map { it.file.absolutePath }.toSet() }) {
-                    Text(if (selectedPaths.size == visibleRecordings.size) "Select none" else "Select all")
-                }
-                TextButton(onClick = { if (selectedPaths.isNotEmpty()) confirmDeleteSelected = true }) {
-                    Text("Delete (${selectedPaths.size})", color = MaterialTheme.colorScheme.error)
+            }) { Text(if (selectionMode) "Done" else "Select") }
+        }
+        if (selectionMode) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    selectedPaths = if (selectedPaths.size == visibleRecordings.size) emptySet()
+                        else visibleRecordings.map { it.file.absolutePath }.toSet()
+                }) { Text(if (selectedPaths.size == visibleRecordings.size) "Deselect all" else "Select all") }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                TextButton(onClick = { if (selectedPaths.isNotEmpty()) confirmDeleteSelected = true },
+                    enabled = selectedPaths.isNotEmpty()) {
+                    Text("Delete selected (${selectedPaths.size})", color = MaterialTheme.colorScheme.error)
                 }
             }
-        }
-        Button(onClick = { confirmDeleteAll = true }, modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
-            Icon(Icons.Filled.Delete, contentDescription = null)
-            Text("  Delete all recordings")
+            TextButton(onClick = { confirmDeleteAll = true }) {
+                Text("Delete all recordings", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 
@@ -298,6 +302,7 @@ private fun RecordingRow(
     onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
     onDelete: () -> Unit, onFavorite: () -> Unit,
 ) {
+    var actionsExpanded by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         modifier = Modifier.fillMaxWidth().clickable { if (selectionMode) onSelect() else onOpen() }) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -322,10 +327,23 @@ private fun RecordingRow(
                 if (rec.silent) Text("Silent recording — check audio source/device compatibility", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (rec.notes.isNotBlank()) Text(rec.notes, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onFavorite) { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = if (rec.favorite) "Remove favorite" else "Favorite") }
             if (!selectionMode) {
-                IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Share audio") }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete") }
+                androidx.compose.foundation.layout.Box {
+                    IconButton(onClick = { actionsExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Recording actions")
+                    }
+                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                        DropdownMenuItem(text = { Text(if (rec.favorite) "Remove favorite" else "Add to favorites") },
+                            leadingIcon = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onFavorite() })
+                        DropdownMenuItem(text = { Text("Share audio") },
+                            leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onShare() })
+                        DropdownMenuItem(text = { Text("Delete") },
+                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onDelete() })
+                    }
+                }
             }
         }
     }
