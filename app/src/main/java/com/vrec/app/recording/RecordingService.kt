@@ -51,6 +51,7 @@ class RecordingService : Service() {
         const val ACTION_START = "com.vrec.app.START"
         const val ACTION_STOP = "com.vrec.app.STOP"
         const val ACTION_PAUSE = "com.vrec.app.PAUSE"
+        const val ACTION_UPDATE_PEER = "com.vrec.app.UPDATE_PEER"
         const val ACTION_RESUME = "com.vrec.app.RESUME"
         const val EXTRA_DIRECTION = "direction"
         const val EXTRA_PEER = "peer"
@@ -75,6 +76,10 @@ class RecordingService : Service() {
             } catch (e: Exception) {
                 Log.w("Android blocked starting the recording service from the background", e)
             }
+        }
+
+        fun updateVoipPeer(context: Context, newPeer: String) {
+            runCatching { context.startService(Intent(context, RecordingService::class.java).setAction(ACTION_UPDATE_PEER).putExtra(EXTRA_PEER, newPeer)) }
         }
 
         fun stop(context: Context) {
@@ -115,6 +120,19 @@ class RecordingService : Service() {
             ACTION_STOP -> finish()
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
+            ACTION_UPDATE_PEER -> {
+                if (direction == CallDirection.VOIP && engine != null) {
+                    val newPeer = intent.getStringExtra(EXTRA_PEER)
+                    if (!newPeer.isNullOrBlank() && (peer.isNullOrBlank() || !newPeer.substringBefore(" (").equals(peer?.substringBefore(" ("), true))) {
+                        peer = newPeer
+                        when (val current = _state.value) {
+                            is State.Recording -> { _state.value = current.copy(peer = newPeer); update(recordingNotification(current.sourceLabel)) }
+                            is State.Paused -> { _state.value = current.copy(peer = newPeer); update(pausedNotification(current.sourceLabel)) }
+                            else -> Unit
+                        }
+                    }
+                }
+            }
             ACTION_START -> begin(intent)
             else -> finish()
         }
@@ -188,7 +206,7 @@ class RecordingService : Service() {
             if (result != null) {
                 val keep = !(result.silent && Prefs.discardSilent(this))
                 if (keep) {
-                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.takeIf { phoneNumber != null && it != phoneNumber })
+                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.substringBefore(" (")?.takeIf { direction == CallDirection.VOIP && it.isNotBlank() && it != peer || phoneNumber != null && it != phoneNumber })
                     Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
                 } else {
                     RecordingStore.delete(RecordingToDelete(result.file))
