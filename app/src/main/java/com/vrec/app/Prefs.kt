@@ -31,6 +31,10 @@ object Prefs {
     /** Discard a finished recording that turned out to be silent. */
     const val DISCARD_SILENT = "discard_silent"
 
+    const val SHOW_OVERLAY = "show_overlay"
+
+    fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, false)
+
     fun of(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
