@@ -349,6 +349,7 @@ private fun RecordingRow(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun RecordingDetailsDialog(
     rec: Recording, playing: Boolean, speed: Float, positionMs: Long, playbackDurationMs: Long,
