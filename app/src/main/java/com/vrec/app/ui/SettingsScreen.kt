@@ -40,6 +40,7 @@ fun SettingsScreen() {
     var inComm by remember { mutableStateOf(prefs.getBoolean(Prefs.IN_COMM_MODE, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
+    var showOverlay by remember { mutableStateOf(prefs.getBoolean(Prefs.SHOW_OVERLAY, false)) }
     var sourceMode by remember { mutableStateOf(Prefs.sourceMode(context)) }
 
     fun putBool(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
@@ -87,6 +88,12 @@ fun SettingsScreen() {
                 "Helps some phones route the far side to the recording. If calls sound odd while recording, turn this off.",
                 inComm,
             ) { inComm = it; putBool(Prefs.IN_COMM_MODE, it) }
+        }
+
+        SettingCard("Floating controls") {
+            ToggleRow("Show compact overlay", "Optional icon-only Pause/Resume and Stop controls during recording. Requires Display over other apps permission in Setup.", showOverlay) {
+                showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
+            }
         }
 
         SettingCard("VoIP") {
