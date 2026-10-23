@@ -301,13 +301,11 @@ fun UpdateScreen() {
             headlineContent = { Text("VREC") },
             supportingContent = { Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME) },
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Experimental updates", style = MaterialTheme.typography.titleMedium)
-                Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.")
-            }
-            Switch(checked = experimentalEnabled, onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled)
-        }
+        androidx.compose.material3.ListItem(
+            headlineContent = { Text("Experimental updates") },
+            supportingContent = { Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.") },
+            trailingContent = { Switch(checked = experimentalEnabled, onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
+        )
         androidx.compose.material3.HorizontalDivider()
         dev.n2k02.updater.N2K02UpdateScreen(
             controller = com.vrec.app.LiveUpdater.controller,
