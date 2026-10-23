@@ -130,7 +130,7 @@ private fun App() {
                 actions = {
                     Box {
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More options") }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier) {
                             listOf(
                                 Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
                                 Triple(Screen.SETUP, "Setup", Icons.Filled.Tune),
@@ -222,7 +222,7 @@ private fun NavigationCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -310,7 +310,7 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
 @Composable
 private fun SetupPromptCard(onOpenSetup: () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
