@@ -95,7 +95,7 @@ fun VrecTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography(),
-        shapes = ExpressiveShapes,
+        shapes = ExpressiveShapes.copy(extraSmall = RoundedCornerShape(28.dp), large = RoundedCornerShape(32.dp)),
         content = content,
     )
 }
