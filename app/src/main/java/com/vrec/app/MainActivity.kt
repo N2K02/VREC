@@ -39,12 +39,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -98,11 +92,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
-    var menuOpen by remember { mutableStateOf(false) }
     // Secondary pages should return to Home on Android system back / gesture.
     // Leave the Home screen unhandled so Android can close the activity normally.
-    BackHandler(enabled = menuOpen) { menuOpen = false }
-    BackHandler(enabled = screen != Screen.HOME && !menuOpen) {
+    BackHandler(enabled = screen != Screen.HOME) {
         screen = Screen.HOME
     }
 
@@ -126,22 +118,6 @@ private fun App() {
                         }
                     }
                 },
-                actions = {
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More options") }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier) {
-                            listOf(
-                                Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
-                                Triple(Screen.SETUP, "Setup", Icons.Filled.Tune),
-                                Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
-                                Triple(Screen.LOG, "Activity log", Icons.Filled.Article),
-                                Triple(Screen.UPDATE, "About & updates", Icons.Filled.SystemUpdate),
-                            ).forEach { (destination, label, icon) ->
-                                DropdownMenuItem(text = { Text(label) }, leadingIcon = { Icon(icon, contentDescription = null) }, onClick = { screen = destination; menuOpen = false })
-                            }
-                        }
-                    }
-                },
             )
         },
         bottomBar = {
@@ -161,7 +137,11 @@ private fun App() {
                 Screen.HOME -> HomeScreen(onOpenSetup = { screen = Screen.SETUP }, onNavigate = { screen = it })
                 Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
-                Screen.SETTINGS -> SettingsScreen()
+                Screen.SETTINGS -> SettingsScreen(
+                    onOpenSetup = { screen = Screen.SETUP },
+                    onOpenLog = { screen = Screen.LOG },
+                    onOpenUpdates = { screen = Screen.UPDATE },
+                )
                 Screen.LOG -> LogScreen()
                 Screen.UPDATE -> UpdateScreen()
             }
