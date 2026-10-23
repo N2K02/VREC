@@ -37,6 +37,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,9 +99,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var menuOpen by remember { mutableStateOf(false) }
     // Secondary pages should return to Home on Android system back / gesture.
     // Leave the Home screen unhandled so Android can close the activity normally.
-    BackHandler(enabled = screen != Screen.HOME) {
+    BackHandler(enabled = menuOpen) { menuOpen = false }
+    BackHandler(enabled = screen != Screen.HOME && !menuOpen) {
         screen = Screen.HOME
     }
 
@@ -103,7 +113,7 @@ private fun App() {
         Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
         Screen.LOG -> "Activity log"
-        Screen.UPDATE -> "Updates"
+        Screen.UPDATE -> "About & updates"
     }
 
     Scaffold(
@@ -117,7 +127,34 @@ private fun App() {
                         }
                     }
                 },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More options") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
+                            listOf(
+                                Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
+                                Triple(Screen.SETUP, "Setup", Icons.Filled.Tune),
+                                Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
+                                Triple(Screen.LOG, "Activity log", Icons.Filled.Article),
+                                Triple(Screen.UPDATE, "About & updates", Icons.Filled.SystemUpdate),
+                            ).forEach { (destination, label, icon) ->
+                                DropdownMenuItem(text = { Text(label) }, leadingIcon = { Icon(icon, contentDescription = null) }, onClick = { screen = destination; menuOpen = false })
+                            }
+                        }
+                    }
+                },
             )
+        },
+        bottomBar = {
+            NavigationBar {
+                listOf(
+                    Triple(Screen.HOME, "Home", Icons.Filled.FolderOpen),
+                    Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
+                    Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
+                ).forEach { (destination, label, icon) ->
+                    NavigationBarItem(selected = screen == destination, onClick = { screen = destination }, icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
+                }
+            }
         },
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
@@ -171,12 +208,6 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
             subtitle = "Review app events and diagnostics",
             icon = Icons.Filled.Article,
             onClick = { onNavigate(Screen.LOG) },
-        )
-        NavigationCard(
-            title = "Updates",
-            subtitle = "Check version and release information",
-            icon = Icons.Filled.SystemUpdate,
-            onClick = { onNavigate(Screen.UPDATE) },
         )
     }
 }
