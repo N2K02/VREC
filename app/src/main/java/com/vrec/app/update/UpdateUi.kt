@@ -84,7 +84,7 @@ object FooterScroll {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun UpdateCard(modifier: Modifier = Modifier) {
+fun LegacyUpdateCard(modifier: Modifier = Modifier) {
     val state by AppUpdater.state.collectAsState()
     var diagnosticsVisible by remember { mutableStateOf(false) }
     LaunchedEffect(state) { if (state !is AppUpdater.State.Failed) diagnosticsVisible = false }
@@ -203,7 +203,7 @@ private fun Notes(release: AppUpdater.Release) {
  * update is in progress. Put it in the Scaffold's bottomBar.
  */
 @Composable
-fun UpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
+fun LegacyUpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
     val state by AppUpdater.state.collectAsState()
     val activity = LocalContext.current.activity()
     val busy = state is AppUpdater.State.Downloading || state is AppUpdater.State.Ready ||
@@ -294,46 +294,22 @@ fun UpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
 /** Dedicated update page, matching PCL's in-app updater workflow. */
 @Composable
 fun UpdateScreen() {
-    val state by AppUpdater.state.collectAsState()
-    val experimentalEnabled by AppUpdater.experimentalEnabled.collectAsState()
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Title("App updates")
-        Text(
-            "Check GitHub for the latest VREC release, review what's new, and download and install updates safely.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val experimentalEnabled by com.vrec.app.LiveUpdater.experimentalEnabled.collectAsState()
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("About & updates", style = MaterialTheme.typography.headlineMedium)
+        androidx.compose.material3.ListItem(
+            headlineContent = { Text("VREC") },
+            supportingContent = { Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME) },
         )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text("Experimental updates", style = MaterialTheme.typography.titleSmall)
-                Text("Opt in to preview builds. Stable releases stay the default.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = experimentalEnabled, onCheckedChange = AppUpdater::setExperimentalEnabled)
-        }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Installed version", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("VREC v${AppUpdater.installedVersionName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Button(
-                    onClick = { AppUpdater.check(manual = true) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = state !is AppUpdater.State.Checking && state !is AppUpdater.State.Downloading,
-                ) {
-                    Text(if (state is AppUpdater.State.Checking) "Checking for updates…" else "Check for updates")
-                }
-                if (state is AppUpdater.State.UpToDate) {
-                    Text("You're using the latest version.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-        UpdateCard()
+        androidx.compose.material3.ListItem(
+            headlineContent = { Text("Experimental updates") },
+            supportingContent = { Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.") },
+            trailingContent = { Switch(checked = experimentalEnabled, onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
+        )
+        androidx.compose.material3.HorizontalDivider()
+        dev.n2k02.updater.N2K02UpdateScreen(
+            controller = com.vrec.app.LiveUpdater.controller,
+            installGuard = com.vrec.app.LiveUpdater.installGuard,
+        )
     }
 }

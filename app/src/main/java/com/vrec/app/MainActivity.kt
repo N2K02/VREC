@@ -37,6 +37,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,7 +68,6 @@ import com.vrec.app.ui.SetupScreen
 import com.vrec.app.ui.rememberReadiness
 import com.vrec.app.ui.theme.VrecTheme
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.update.UpdateCard
 import com.vrec.app.update.UpdateScreen
 
 private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
@@ -75,6 +76,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.initialize(applicationContext)
+        LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
         setContent { VrecTheme { App() } }
@@ -82,7 +84,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        AppUpdater.onResume(this)
+        LiveUpdater.onResume(this)
     }
 }
 
@@ -102,7 +104,7 @@ private fun App() {
         Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
         Screen.LOG -> "Activity log"
-        Screen.UPDATE -> "Updates"
+        Screen.UPDATE -> "About & updates"
     }
 
     Scaffold(
@@ -118,13 +120,28 @@ private fun App() {
                 },
             )
         },
+        bottomBar = {
+            NavigationBar {
+                listOf(
+                    Triple(Screen.HOME, "Home", Icons.Filled.FolderOpen),
+                    Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
+                    Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
+                ).forEach { (destination, label, icon) ->
+                    NavigationBarItem(selected = screen == destination, onClick = { screen = destination }, icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
+                }
+            }
+        },
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.HOME -> HomeScreen(onOpenSetup = { screen = Screen.SETUP }, onNavigate = { screen = it })
                 Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
-                Screen.SETTINGS -> SettingsScreen()
+                Screen.SETTINGS -> SettingsScreen(
+                    onOpenSetup = { screen = Screen.SETUP },
+                    onOpenLog = { screen = Screen.LOG },
+                    onOpenUpdates = { screen = Screen.UPDATE },
+                )
                 Screen.LOG -> LogScreen()
                 Screen.UPDATE -> UpdateScreen()
             }
@@ -143,7 +160,6 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-        UpdateCard()
         if (!ready) SetupPromptCard(onOpenSetup)
         if (ready) ManualRecordButton(recording)
 
@@ -172,12 +188,6 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
             icon = Icons.Filled.Article,
             onClick = { onNavigate(Screen.LOG) },
         )
-        NavigationCard(
-            title = "Updates",
-            subtitle = "Check version and release information",
-            icon = Icons.Filled.SystemUpdate,
-            onClick = { onNavigate(Screen.UPDATE) },
-        )
     }
 }
 
@@ -191,7 +201,7 @@ private fun NavigationCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -279,7 +289,7 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
 @Composable
 private fun SetupPromptCard(onOpenSetup: () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
