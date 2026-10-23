@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.initialize(applicationContext)
+        LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
         setContent { VrecTheme { App() } }
@@ -82,7 +83,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        AppUpdater.onResume(this)
+        LiveUpdater.onResume(this)
     }
 }
 
