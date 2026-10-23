@@ -74,7 +74,6 @@ import com.vrec.app.ui.SetupScreen
 import com.vrec.app.ui.rememberReadiness
 import com.vrec.app.ui.theme.VrecTheme
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.update.UpdateCard
 import com.vrec.app.update.UpdateScreen
 
 private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
