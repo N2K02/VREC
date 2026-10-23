@@ -14,7 +14,8 @@ internal object LiveUpdater {
     private lateinit var app: Context
     private var instance: UpdaterController? = null
     val experimentalEnabled = MutableStateFlow(false)
-    val installGuard = UpdateInstallGuard { true }
+    // Fail closed until recording state can be checked reliably.
+    val installGuard = UpdateInstallGuard { false }
 
     fun init(context: Context) {
         app = context.applicationContext
