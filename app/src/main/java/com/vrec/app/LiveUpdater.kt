@@ -14,8 +14,8 @@ internal object LiveUpdater {
     private lateinit var app: Context
     private var instance: UpdaterController? = null
     val experimentalEnabled = MutableStateFlow(false)
-    // Fail closed until recording state can be checked reliably.
-    val installGuard = UpdateInstallGuard { false }
+    // Block installation while recording is starting, active, or paused.
+    val installGuard = UpdateInstallGuard { com.vrec.app.recording.RecordingService.state.value is com.vrec.app.recording.RecordingService.State.Idle }
 
     fun init(context: Context) {
         app = context.applicationContext
