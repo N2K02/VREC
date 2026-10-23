@@ -84,7 +84,7 @@ object FooterScroll {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun UpdateCard(modifier: Modifier = Modifier) {
+fun LegacyUpdateCard(modifier: Modifier = Modifier) {
     val state by AppUpdater.state.collectAsState()
     var diagnosticsVisible by remember { mutableStateOf(false) }
     LaunchedEffect(state) { if (state !is AppUpdater.State.Failed) diagnosticsVisible = false }
@@ -203,7 +203,7 @@ private fun Notes(release: AppUpdater.Release) {
  * update is in progress. Put it in the Scaffold's bottomBar.
  */
 @Composable
-fun UpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
+fun LegacyUpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
     val state by AppUpdater.state.collectAsState()
     val activity = LocalContext.current.activity()
     val busy = state is AppUpdater.State.Downloading || state is AppUpdater.State.Ready ||
