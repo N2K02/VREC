@@ -144,7 +144,6 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-        UpdateCard()
         if (!ready) SetupPromptCard(onOpenSetup)
         if (ready) ManualRecordButton(recording)
 
