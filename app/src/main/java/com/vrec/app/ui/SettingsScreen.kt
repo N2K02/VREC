@@ -16,6 +16,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +43,12 @@ import com.vrec.app.Prefs
 import com.vrec.app.recording.RecordingEngine
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    onOpenSetup: () -> Unit = {},
+    onOpenLog: () -> Unit = {},
+    onOpenUpdates: () -> Unit = {},
+) {
+    var section by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val prefs = remember { Prefs.of(context) }
 
@@ -50,7 +68,27 @@ fun SettingsScreen() {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SettingCard("Recording") {
+        if (section == null) {
+            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            listOf(
+                Triple("Recording", "Automatic recording and silent files", Icons.Filled.Mic),
+                Triple("Microphone source", "Choose the audio input", Icons.Filled.Tune),
+                Triple("Capturing the other side", "Speaker and communication mode", Icons.Filled.Call),
+                Triple("Floating controls", "Recording overlay", Icons.Filled.Notifications),
+                Triple("VoIP", "Internet call recording", Icons.Filled.Call),
+            ).forEach { (name, detail, icon) ->
+                Card(modifier = Modifier.fillMaxWidth().clickable { section = name }) {
+                    ListItem(headlineContent = { Text(name) }, supportingContent = { Text(detail) }, leadingContent = { Icon(icon, null) })
+                }
+            }
+            HorizontalDivider()
+            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSetup)) { ListItem(headlineContent = { Text("Setup & permissions") }, supportingContent = { Text("Configure recording access") }, leadingContent = { Icon(Icons.Filled.Settings, null) }) }
+            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLog)) { ListItem(headlineContent = { Text("Activity log") }, supportingContent = { Text("Events and diagnostics") }, leadingContent = { Icon(Icons.Filled.Article, null) }) }
+            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUpdates)) { ListItem(headlineContent = { Text("About & updates") }, supportingContent = { Text("Version, experimental builds and check for updates") }, leadingContent = { Icon(Icons.Filled.SystemUpdate, null) }) }
+        } else {
+            Text("‹  Settings", modifier = Modifier.fillMaxWidth().clickable { section = null }.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+            Text(section ?: "", style = MaterialTheme.typography.headlineSmall)
+        if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
             }
@@ -61,7 +99,7 @@ fun SettingsScreen() {
             ) { discardSilent = it; putBool(Prefs.DISCARD_SILENT, it) }
         }
 
-        SettingCard("Microphone source") {
+        if (section == "Microphone source") SettingCard("Microphone source") {
             Text(
                 "Automatic tries each source and keeps the first with sound. Pick one yourself only if you know what works on your phone.",
                 style = MaterialTheme.typography.bodySmall,
@@ -77,7 +115,7 @@ fun SettingsScreen() {
             }
         }
 
-        SettingCard("Capturing the other side") {
+        if (section == "Capturing the other side") SettingCard("Capturing the other side") {
             ToggleRow(
                 "Put call on loudspeaker",
                 "Last-resort way to catch both sides: the mic records the room. Turns the speaker on while recording and restores it after.",
@@ -90,13 +128,13 @@ fun SettingsScreen() {
             ) { inComm = it; putBool(Prefs.IN_COMM_MODE, it) }
         }
 
-        SettingCard("Floating controls") {
+        if (section == "Floating controls") SettingCard("Floating controls") {
             ToggleRow("Show compact overlay", "Optional icon-only Pause/Resume and Stop controls during recording. Requires Display over other apps permission in Setup.", showOverlay) {
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
             }
         }
 
-        SettingCard("VoIP") {
+        if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
                 "Record VoIP calls",
                 "WhatsApp, Telegram and similar, detected through Notification access (grant it in Setup). These usually need loudspeaker to catch both sides.",
@@ -104,11 +142,12 @@ fun SettingsScreen() {
             ) { recordVoip = it; putBool(Prefs.RECORD_VOIP, it) }
         }
 
-        Text(
+        if (section == "Recording") Text(
             "Recordings are saved privately inside VREC's own storage and never leave your phone unless you share them.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        }
     }
 }
 
