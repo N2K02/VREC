@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.widget.Toast
 import android.media.MediaPlayer
 import android.os.Build
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -183,13 +184,13 @@ fun RecordingsList() {
                 Icon(Icons.Filled.FilterList, contentDescription = null)
                 Text("  ${filterLabel(filter)}")
             }
-            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }) {
+            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }, modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))) {
                 RecordingFilter.entries.forEach { item ->
                     DropdownMenuItem(text = { Text(filterLabel(item)) }, onClick = { filter = item; filterMenu = false })
                 }
             }
             TextButton(onClick = { sortMenu = true }) { Text("Sort") }
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }, modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))) {
                 RecordingSort.entries.forEach { item ->
                     DropdownMenuItem(text = { Text(sortLabel(item)) }, onClick = { sort = item; sortMenu = false })
                 }
@@ -333,7 +334,7 @@ private fun RecordingRow(
                     IconButton(onClick = { actionsExpanded = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Recording actions")
                     }
-                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }, modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp))) {
                         DropdownMenuItem(text = { Text(if (rec.favorite) "Remove favorite" else "Add to favorites") },
                             leadingIcon = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = null) },
                             onClick = { actionsExpanded = false; onFavorite() })
@@ -368,7 +369,7 @@ private fun RecordingDetailsDialog(
     var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
     val context = LocalContext.current
     val number = rec.phoneNumber ?: rec.peer?.takeIf { it.any(Char::isDigit) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
