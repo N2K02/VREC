@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Call
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Check
@@ -183,15 +186,15 @@ fun RecordingsList() {
                 Icon(Icons.Filled.FilterList, contentDescription = null)
                 Text("  ${filterLabel(filter)}")
             }
-            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }) {
+            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
                 RecordingFilter.entries.forEach { item ->
-                    DropdownMenuItem(text = { Text(filterLabel(item)) }, onClick = { filter = item; filterMenu = false })
+                    DropdownMenuItem(text = { Text(filterLabel(item)) }, leadingIcon = { Icon(Icons.Filled.FilterList, contentDescription = null) }, onClick = { filter = item; filterMenu = false })
                 }
             }
             TextButton(onClick = { sortMenu = true }) { Text("Sort") }
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
                 RecordingSort.entries.forEach { item ->
-                    DropdownMenuItem(text = { Text(sortLabel(item)) }, onClick = { sort = item; sortMenu = false })
+                    DropdownMenuItem(text = { Text(sortLabel(item)) }, leadingIcon = { Icon(Icons.Filled.Sort, contentDescription = null) }, onClick = { sort = item; sortMenu = false })
                 }
             }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
@@ -333,7 +336,7 @@ private fun RecordingRow(
                     IconButton(onClick = { actionsExpanded = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Recording actions")
                     }
-                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
                         DropdownMenuItem(text = { Text(if (rec.favorite) "Remove favorite" else "Add to favorites") },
                             leadingIcon = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = null) },
                             onClick = { actionsExpanded = false; onFavorite() })
@@ -368,7 +371,7 @@ private fun RecordingDetailsDialog(
     var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
     val context = LocalContext.current
     val number = rec.phoneNumber ?: rec.peer?.takeIf { it.any(Char::isDigit) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
