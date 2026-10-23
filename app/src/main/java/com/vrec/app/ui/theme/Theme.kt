@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.vrec.app.ui.theme
 
 import android.app.Activity
@@ -5,6 +7,8 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -92,7 +96,8 @@ fun VrecTheme(
         }
     }
 
-    MaterialTheme(
+    MaterialExpressiveTheme(
+        motionScheme = MotionScheme.expressive(),
         colorScheme = colorScheme,
         typography = Typography(),
         shapes = ExpressiveShapes.copy(extraSmall = RoundedCornerShape(28.dp), large = RoundedCornerShape(32.dp)),
