@@ -2,6 +2,7 @@ package com.vrec.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.vrec.app.experimental.adb.ExperimentalRecording
 
 /**
  * All of VREC's settings in one place. [AudioSource] values below are stored by name.
@@ -36,10 +37,11 @@ object Prefs {
 
     const val SHOW_OVERLAY = "show_overlay"
 
-    /** Opt-in detection experiment. Stable installations stay on the legacy detector. */
+    /** Advanced Telecom detection is only active in the explicitly selected ADB mode. */
     const val EXPERIMENTAL_CALL_DETECTION = "experimental_call_detection"
     fun experimentalCallDetection(c: Context) =
-        of(c).getBoolean(EXPERIMENTAL_CALL_DETECTION, false)
+        ExperimentalRecording.method(c) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+            of(c).getBoolean(EXPERIMENTAL_CALL_DETECTION, false)
 
     fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, false)
 
