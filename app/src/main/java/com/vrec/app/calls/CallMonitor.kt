@@ -465,8 +465,12 @@ object CallMonitor {
     }
 
     private fun dismissOverlay(context: Context) {
-        runCatching { context.startService(Intent(context, OverlayControlService::class.java)
-            .setAction(OverlayControlService.ACTION_DISMISS)) }
+        // Stopping an existing overlay service is allowed while VRec is in the
+        // background; sending ACTION_DISMISS with startService() can be rejected
+        // by Android background-service restrictions.
+        runCatching {
+            context.stopService(Intent(context, OverlayControlService::class.java))
+        }.onFailure { Log.w("Could not dismiss recording overlay", it) }
     }
 
     /**
