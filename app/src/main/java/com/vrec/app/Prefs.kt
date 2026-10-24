@@ -9,7 +9,10 @@ import android.content.SharedPreferences
 object Prefs {
     private const val NAME = "vrec"
 
-    /** Record calls automatically as they happen. */
+    /** Master switch. No automatic or manual recording may start while this is off. */
+    const val RECORDING_ENABLED = "recording_enabled"
+
+    /** Record calls automatically as they happen after recording has been enabled. */
     const val AUTO_RECORD = "auto_record"
 
     /**
@@ -37,6 +40,11 @@ object Prefs {
 
     fun of(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+
+    fun recordingEnabled(c: Context) = of(c).getBoolean(RECORDING_ENABLED, false)
+    fun setRecordingEnabled(c: Context, enabled: Boolean) {
+        of(c).edit().putBoolean(RECORDING_ENABLED, enabled).apply()
+    }
 
     fun autoRecord(c: Context) = of(c).getBoolean(AUTO_RECORD, true)
     fun autoSpeaker(c: Context) = of(c).getBoolean(AUTO_SPEAKER, false)

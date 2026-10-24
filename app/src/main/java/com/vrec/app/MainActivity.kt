@@ -44,6 +44,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -172,17 +173,28 @@ private fun App() {
 
 @Composable
 private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
+    val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val recording = recState !is RecordingService.State.Idle
+    var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-        if (!ready) SetupPromptCard(onOpenSetup)
-        if (ready) ManualRecordButton(recording)
+        RecordingMasterCard(
+            enabled = recordingEnabled,
+            onEnabledChange = { enabled ->
+                CallMonitor.setRecordingEnabled(context, enabled)
+                recordingEnabled = enabled
+            },
+        )
+        if (recordingEnabled) {
+            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+            if (!ready) SetupPromptCard(onOpenSetup)
+            if (ready) ManualRecordButton(recording)
+        }
 
         Text("Quick access", style = MaterialTheme.typography.titleMedium)
         NavigationCard(
@@ -212,6 +224,45 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     }
 }
 
+
+@Composable
+private fun RecordingMasterCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onEnabledChange(!enabled) }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("Recording", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (enabled) "On — automatic and manual recording are available."
+                    else "Off — VREC will not record calls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+            )
+        }
+    }
+}
 
 @Composable
 private fun NavigationCard(
