@@ -146,7 +146,8 @@ object ExperimentalRecording {
         selectTransport(context, requested)
         status.value = status.value.copy(busy = true, connected = false,
             connectedTransport = null, shellUid = null,
-            message = "Connecting via ${if (wirelessOnly) "Wireless debugging" else "TCP/5555"}…")
+            message = if (wirelessOnly) "Connecting via Wireless debugging…"
+                else "Connecting to TCP/5555. Approve VREC's Android ADB authorization prompt if it appears.")
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 if (manualPort == null)
@@ -245,6 +246,10 @@ object ExperimentalRecording {
                 // Restart duration varies across Android versions and OEMs.
                 for (attempt in 1..8) {
                     delay(1500L)
+                    status.value = status.value.copy(
+                        message = "Verifying TCP/5555 (attempt $attempt/8). " +
+                            "If Android asks to authorize this ADB key, unlock the phone and tap Allow."
+                    )
                     if (!tcpPresent()) continue
                     // A failed TLS/RSA handshake can poison libadb's manager;
                     // use a new one on each attempt until the shell is verified.
