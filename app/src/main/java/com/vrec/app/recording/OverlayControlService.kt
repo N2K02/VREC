@@ -60,14 +60,19 @@ class OverlayControlService : Service() {
             when (state) {
                 is RecordingService.State.Recording, is RecordingService.State.Paused ->
                     if (stoppingSince != null) renderStopping() else render(state)
-                is RecordingService.State.Starting, is RecordingService.State.Stopping ->
-                    renderStopping()
+                is RecordingService.State.Starting -> renderStarting()
+                is RecordingService.State.Stopping -> renderStopping()
                 is RecordingService.State.Idle -> {
                     stoppingSince = null
                     slowStopReported = false
                     if (Prefs.recordingEnabled(this@OverlayControlService) &&
                         CallMonitor.canRecordAgain()) {
                         renderStopped()
+                    } else if (Prefs.recordingEnabled(this@OverlayControlService) &&
+                        CallMonitor.isRecording) {
+                        // Record-again was tapped, but the service START intent
+                        // has not yet been handled. Preserve the same overlay.
+                        renderStarting()
                     } else {
                         removeOverlay()
                         stopSelf()
@@ -288,6 +293,25 @@ class OverlayControlService : Service() {
                 }
             }
             else -> Unit
+        }
+    }
+
+    /** A new segment is being prepared; no controls can race source setup. */
+    private fun renderStarting() {
+        stopBlinking()
+        statusDot?.apply {
+            setStatusColor(0xFF2196F3.toInt())
+            contentDescription = "Preparing recording. Drag controls"
+        }
+        pauseButton?.apply {
+            setImageResource(android.R.drawable.ic_media_play)
+            contentDescription = "Preparing recording"
+            isEnabled = false
+            alpha = 0.45f
+        }
+        stopButton?.apply {
+            isEnabled = false
+            alpha = 0.45f
         }
     }
 

@@ -224,7 +224,9 @@ class RecordingService : Service() {
     }
 
     private fun begin(intent: Intent) {
-        if (engine != null) return // already recording
+        // Reject a new segment until the previous recording has fully saved.
+        if (engine != null || finalizing || stopPending ||
+            _state.value !is State.Idle) return
         // The preference may change between enqueueing ACTION_START and delivery.
         if (!Prefs.recordingEnabled(this)) {
             _state.value = State.Idle
