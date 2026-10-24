@@ -1,6 +1,8 @@
 package com.vrec.app.calls
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.telecom.Call
 import android.telecom.TelecomManager
 import com.vrec.app.Log
@@ -34,6 +36,7 @@ object CallMonitor {
     }
 
     private val sessions = linkedMapOf<String, Session>()
+    private val handler = Handler(Looper.getMainLooper())
     private val suppressed = mutableSetOf<String>()
     private var recordingId: String? = null
     private var sawRinging = false
@@ -209,7 +212,26 @@ object CallMonitor {
         if (recordingId == id) {
             recordingId = null
             RecordingService.stop(context.applicationContext, System.currentTimeMillis())
+            // RecordingEngine finalizes asynchronously. Only start a waiting second call
+            // after the previous foreground recording service has returned to Idle.
+            scheduleWaitingCall(context.applicationContext, 0)
+        } else {
+            reconcile(context)
         }
+    }
+
+    private fun scheduleWaitingCall(context: Context, retry: Int) {
+        if (retry > 30 || sessions.values.none { it.active }) return
+        handler.postDelayed({
+            synchronized(this) {
+                if (recordingId != null || sessions.values.none { it.active }) return@synchronized
+                if (RecordingService.state.value is RecordingService.State.Idle) {
+                    reconcile(context)
+                } else {
+                    scheduleWaitingCall(context, retry + 1)
+                }
+            }
+        }, 300L)
     }
 
     private fun reconcile(context: Context) {
@@ -220,6 +242,7 @@ object CallMonitor {
         }
         // Do not start a second recording until the current one is finished.
         if (recordingId != null || !Prefs.autoRecord(context)) return
+        if (RecordingService.state.value !is RecordingService.State.Idle) return
         val selected = sessions.values.firstOrNull {
             it.active && it.id !in suppressed && (!it.isVoip || Prefs.recordVoip(context))
         } ?: return

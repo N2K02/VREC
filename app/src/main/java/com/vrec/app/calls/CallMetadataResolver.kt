@@ -69,16 +69,22 @@ object CallMetadataResolver {
 
     /** In-app Accessibility labels are accepted only if an exact unique contact or explicit number matches. */
     fun fromVisibleLabels(context: Context, labels: Collection<String>): CallerMetadata? {
-        for (text in labels.take(16)) {
-            val number = directNumber(text)
-            if (number != null) return resolve(context, CallerMetadata(number = number, source = "accessibility"))
+        // Ambiguous windows are ignored. An active call does not make arbitrary chat
+        // participants or visible numbers safe to attach to its identity.
+        val numbers = labels.mapNotNull(::directNumber)
+            .distinctBy { it.filter(Char::isDigit) }
+        if (numbers.size == 1) {
+            return resolve(context, CallerMetadata(number = numbers.single(), source = "accessibility"))
         }
-        for (text in labels.take(16)) {
-            val name = cleanName(text) ?: continue
-            val number = uniqueContactNumber(context, name) ?: continue
-            return CallerMetadata(name, number, "accessibility", inferredNumber = true)
-        }
-        return null
+        if (numbers.size > 1) return null
+        val matches = labels.mapNotNull { text ->
+            val name = cleanName(text) ?: return@mapNotNull null
+            val number = uniqueContactNumber(context, name) ?: return@mapNotNull null
+            name to number
+        }.distinctBy { it.second.filter(Char::isDigit) }
+        if (matches.size != 1) return null
+        return CallerMetadata(matches.single().first, matches.single().second,
+            "accessibility", inferredNumber = true)
     }
 
     fun resolve(context: Context, candidate: CallerMetadata): CallerMetadata {

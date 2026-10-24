@@ -55,18 +55,28 @@ class VrecAccessibilityService : AccessibilityService() {
         if (root.packageName?.toString() != pkg) return
         val nodes: ArrayDeque<AccessibilityNodeInfo> = ArrayDeque()
         val labels = linkedSetOf<String>()
+        var hasEndCallControl = false
         nodes.add(root)
         var examined = 0
         while (nodes.isNotEmpty() && examined++ < 90) {
             val node = nodes.removeFirst()
-            node.text?.toString()?.takeIf { it.length <= 120 }?.let(labels::add)
-            // Node labels can expose caller names that are not present in Notification extras.
+            val description = node.contentDescription?.toString()?.trim().orEmpty()
+            val text = node.text?.toString()?.trim().orEmpty()
+            if (text.length in 1..120) labels.add(text)
+            val controls = (description + " " + text).lowercase()
+            if (controls.contains("end call") || controls.contains("hang up") ||
+                controls.contains("disconnect call") || controls.contains("end voice call")) {
+                hasEndCallControl = true
+            }
+            // Only use visible labels on a recognizable call screen. Other chat text
+            // is never a trustworthy caller identity even while an audio call is active.
             if (node.childCount > 0) {
                 for (i in 0 until node.childCount.coerceAtMost(20)) {
                     node.getChild(i)?.let(nodes::add)
                 }
             }
         }
+        if (!hasEndCallControl) return
         val metadata = CallMetadataResolver.fromVisibleLabels(this, labels) ?: return
         CallMonitor.onAccessibilityMetadata(this, pkg, metadata)
     }
