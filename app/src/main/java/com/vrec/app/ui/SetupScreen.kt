@@ -40,8 +40,6 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.Prefs
-import android.content.ClipData
-import android.content.ClipboardManager
 import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.corePermissions
 import com.vrec.app.isReady
@@ -71,7 +69,6 @@ fun SetupScreen() {
     val notifAccessOn = androidx.compose.runtime.remember(tick) { VoipNotifListener.isEnabled(context) }
     val incallGranted = androidx.compose.runtime.remember(tick) { CallDetectionAccess.isGranted(context) }
     val experimentalEnabled = androidx.compose.runtime.remember(tick) { Prefs.experimentalCallDetection(context) }
-    val grantCommand = "adb shell appops set " + context.packageName + " android:manage_ongoing_calls allow"
     val overlayAllowed = androidx.compose.runtime.remember(tick) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
     }
@@ -154,19 +151,11 @@ fun SetupScreen() {
             extra = {
                 Note("Experimental detector: " + if (experimentalEnabled) "On (Settings)" else "Off (enable in Settings)")
                 Note("AppOp: " + if (incallGranted) "Allowed" else "Missing — phone-state/VoIP fallback remains active")
-                if (Build.VERSION.SDK_INT < 31) {
-                    Note("Non-UI Telecom observer requires Android 12 or later.")
-                } else {
-                    Note("Run the command below from a computer with authorized ADB, or run its shell portion in an authorized Shizuku shell:")
-                    Text(grantCommand, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("VREC Telecom AppOp", grantCommand))
-                    }) { Text("Copy ADB grant command") }
-                    Note("Then return and tap Check access. Enabling this experiment alone cannot grant Android's elevated AppOp.")
-                }
+                Note("This permission is optional. Without it, VREC retains phone-state and notification-based call detection. Use the ADB instruction card below if you want to enable InCallService.")
             },
         )
+
+        TelecomAdbInstructionCard()
 
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),

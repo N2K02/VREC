@@ -161,6 +161,8 @@ fun SettingsScreen(
             }
         }
 
+        if (section == "Experimental call detection") TelecomAdbInstructionCard()
+
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
                 "Record VoIP calls",
