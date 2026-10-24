@@ -18,11 +18,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Settings
@@ -39,6 +48,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Badge
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,6 +65,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -69,6 +85,7 @@ import com.vrec.app.ui.rememberReadiness
 import com.vrec.app.ui.theme.VrecTheme
 import com.vrec.app.update.AppUpdater
 import com.vrec.app.update.UpdateScreen
+import dev.n2k02.updater.UpdateStatus
 
 private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 
@@ -126,27 +143,96 @@ private fun App() {
         Screen.UPDATE -> "About & updates"
     }
 
+    val updateStatus by LiveUpdater.controller.status.collectAsState()
+    val hasUpdate = updateStatus is UpdateStatus.Available ||
+        updateStatus is UpdateStatus.Ready ||
+        updateStatus is UpdateStatus.NeedsInstallPermission
+
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    if (screen != Screen.HOME) {
-                        IconButton(onClick = { navigateBack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (screen == Screen.HOME) {
+                            Icon(Icons.Rounded.Home, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp))
+                        } else {
+                            IconButton(onClick = { navigateBack() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back")
+                            }
                         }
+                        Text(title, style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold, maxLines = 1)
                     }
-                },
-            )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        AndroidView(
+                            factory = { ctx ->
+                                android.widget.ImageView(ctx).apply {
+                                    setImageDrawable(ctx.packageManager.getApplicationIcon(ctx.packageName))
+                                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                                    contentDescription = null
+                                }
+                            },
+                            modifier = Modifier.size(28.dp),
+                        )
+                        Text("VREC", style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
         },
         bottomBar = {
-            NavigationBar {
-                listOf(
-                    Triple(Screen.HOME, "Home", Icons.Filled.FolderOpen),
-                    Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
-                    Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
-                ).forEach { (destination, label, icon) ->
-                    NavigationBarItem(selected = screen == destination, onClick = { navigateTo(destination) }, icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
+                Column(Modifier.navigationBarsPadding()) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 0.dp,
+                    ) {
+                        NavigationBarItem(
+                            selected = screen == Screen.HOME,
+                            onClick = { navigateTo(Screen.HOME) },
+                            icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
+                            label = { Text("Home") },
+                            alwaysShowLabel = true,
+                        )
+                        NavigationBarItem(
+                            selected = screen == Screen.RECORDINGS,
+                            onClick = { navigateTo(Screen.RECORDINGS) },
+                            icon = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+                            label = { Text("Recordings") },
+                            alwaysShowLabel = true,
+                        )
+                        NavigationBarItem(
+                            selected = screen == Screen.SETTINGS,
+                            onClick = { navigateTo(Screen.SETTINGS) },
+                            icon = {
+                                BadgedBox(badge = { if (hasUpdate) Badge() }) {
+                                    Icon(Icons.Rounded.Settings,
+                                        contentDescription = if (hasUpdate) "Settings, update available" else null)
+                                }
+                            },
+                            label = { Text("Settings") },
+                            alwaysShowLabel = true,
+                        )
+                    }
                 }
             }
         },
@@ -178,40 +264,59 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-        if (!ready) SetupPromptCard(onOpenSetup)
-        if (ready) ManualRecordButton(recording)
+        if (recording) {
+            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+            if (recState !is RecordingService.State.Recording) ManualRecordButton(true)
+        } else if (ready) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(18.dp),
+                        ) {
+                            Icon(Icons.Rounded.Mic, contentDescription = null,
+                                modifier = Modifier.padding(18.dp).size(26.dp),
+                                tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("READY TO RECORD", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary)
+                            Text("Call recording", style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold)
+                            Text("VREC is ready when you are",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    ManualRecordButton(false)
+                }
+            }
+        } else {
+            SetupPromptCard(onOpenSetup)
+        }
 
-        Text("Quick access", style = MaterialTheme.typography.titleMedium)
-        NavigationCard(
-            title = "Recordings",
-            subtitle = "Browse, play and manage saved recordings",
-            icon = Icons.Filled.FolderOpen,
-            onClick = { onNavigate(Screen.RECORDINGS) },
-        )
-        if (!ready) NavigationCard(
-            title = "Setup",
-            subtitle = "Permissions and recording accessibility",
-            icon = Icons.Filled.Tune,
-            onClick = { onNavigate(Screen.SETUP) },
-        )
-        NavigationCard(
-            title = "Settings",
-            subtitle = "Configure recording behavior",
-            icon = Icons.Filled.Settings,
-            onClick = { onNavigate(Screen.SETTINGS) },
-        )
-        NavigationCard(
-            title = "Activity log",
-            subtitle = "Review app events and diagnostics",
-            icon = Icons.Filled.Article,
-            onClick = { onNavigate(Screen.LOG) },
-        )
+        Text("Your VREC", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+        NavigationCard("Recordings", "Browse and play saved calls",
+            Icons.Rounded.Folder) { onNavigate(Screen.RECORDINGS) }
+        if (!ready) NavigationCard("Finish setup", "Allow recording permissions",
+            Icons.Rounded.Tune, onOpenSetup)
+        NavigationCard("Settings", "Recording and audio options",
+            Icons.Rounded.Settings) { onNavigate(Screen.SETTINGS) }
+        NavigationCard("Activity log", "Recording events and diagnostics",
+            Icons.Rounded.Article) { onNavigate(Screen.LOG) }
     }
 }
-
 
 @Composable
 private fun NavigationCard(
@@ -220,9 +325,10 @@ private fun NavigationCard(
     icon: ImageVector,
     onClick: () -> Unit,
 ) {
-    Card(
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -236,11 +342,11 @@ private fun NavigationCard(
             )
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                imageVector = Icons.Rounded.ArrowForwardIos,
                 contentDescription = "Open $title",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -278,49 +384,52 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
         if (state.silentSoFar) { delay(3500); silentLongEnough = true } else silentLongEnough = false
     }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiary),
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("● Recording now", color = MaterialTheme.colorScheme.onTertiary, style = MaterialTheme.typography.titleMedium)
+            Text("NOW RECORDING", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             Text(
                 (state.peer?.let { "$it · " } ?: "") + state.sourceLabel,
-                color = MaterialTheme.colorScheme.onTertiary,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium,
             )
             LinearProgressIndicator(
                 progress = { fraction },
-                color = MaterialTheme.colorScheme.onTertiary,
-                trackColor = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.25f),
+                color = MaterialTheme.colorScheme.onSurface,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.fillMaxWidth(),
             )
             if (state.silentSoFar && silentLongEnough) {
                 Text(
                     "No sound yet — this phone may be blocking call capture. Try turning on " +
                         "\"Put call on loudspeaker\" in Settings, or pick another source.",
-                    color = MaterialTheme.colorScheme.onTertiary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            ManualRecordButton(true)
         }
     }
 }
 
 @Composable
 private fun SetupPromptCard(onOpenSetup: () -> Unit) {
-    Card(
-        
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Finish setup", style = MaterialTheme.typography.titleMedium)
+            Text("Finish setup", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 "VREC needs the microphone permission and its accessibility service switched on " +
                     "before it can record calls.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = onOpenSetup) { Text("Open setup") }
+            Button(onClick = onOpenSetup) { Text("Complete setup") }
         }
     }
 }
