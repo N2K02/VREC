@@ -2,7 +2,7 @@ package com.vrec.app.ui
 
 import androidx.compose.foundation.clickable
 import android.content.Intent
-import android.provider.Settings
+import android.provider.Settings as AndroidSettings
 import androidx.compose.material3.OutlinedButton
 import com.vrec.app.calls.VoipNotifListener
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -266,7 +266,7 @@ fun SettingsScreen(
                         OutlinedButton(onClick = {
                             runCatching {
                                 context.startActivity(
-                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                    Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             }
                         }) { Text("Allow") }
