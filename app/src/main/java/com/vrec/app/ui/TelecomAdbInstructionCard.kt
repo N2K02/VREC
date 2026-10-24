@@ -53,7 +53,7 @@ import com.vrec.app.calls.CallDetectionAccess
 
 /** One source of truth for the advanced call detection toggle and its AppOp status. */
 @Composable
-fun TelecomAdbInstructionCard() {
+fun TelecomAdbInstructionCard(onAccessChanged: () -> Unit = {}) {
     val context = LocalContext.current
     val resumeTick = rememberOnResumeTick()
     var checkTick by remember { mutableIntStateOf(0) }
@@ -74,6 +74,7 @@ fun TelecomAdbInstructionCard() {
         enabled = newValue
         Prefs.of(context).edit()
             .putBoolean(Prefs.EXPERIMENTAL_CALL_DETECTION, newValue).apply()
+        onAccessChanged()
     }
 
     Card(
@@ -113,7 +114,7 @@ fun TelecomAdbInstructionCard() {
                     granted = granted,
                 )
                 IconButton(
-                    onClick = { checkTick++ },
+                    onClick = { checkTick++; onAccessChanged() },
                     modifier = Modifier.size(36.dp),
                 ) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Recheck permission")
@@ -157,6 +158,7 @@ fun TelecomAdbInstructionCard() {
                                     if (result.isSuccess) {
                                         updateEnabled(true)
                                         checkTick++
+                                        onAccessChanged()
                                     } else grantError = result.exceptionOrNull()?.message
                                 }
                             },
@@ -213,7 +215,7 @@ fun TelecomAdbInstructionCard() {
                             Text("Copy command")
                         }
                         OutlinedButton(
-                            onClick = { checkTick++ },
+                            onClick = { checkTick++; onAccessChanged() },
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                         ) {
                             Icon(Icons.Filled.Refresh, contentDescription = null,
