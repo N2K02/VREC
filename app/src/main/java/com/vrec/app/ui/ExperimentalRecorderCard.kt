@@ -1,5 +1,7 @@
 package com.vrec.app.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -444,7 +446,10 @@ fun ExperimentalRecorderCard() {
             onDismissRequest = { usbSetupDialog = false },
             title = { Text("One-time ADB setup without Wireless debugging") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Text("Android does not grant shell access through an ordinary app permission popup.")
                     Text("1. Open Developer options, enable USB debugging, and connect to a trusted computer/ADB host.")
                     Text("2. Approve Android's USB debugging authorization prompt for that host.")
