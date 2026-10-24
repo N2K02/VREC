@@ -575,6 +575,14 @@ private fun RecordingDetailsDialog(
     var moreOpen by remember(rec.file.absolutePath) { mutableStateOf(false) }
     var measuredDurationMs by remember(rec.file.absolutePath) { mutableStateOf(0L) }
     val context = LocalContext.current
+    val callApp = remember(rec.sourcePackage) {
+        rec.sourcePackage?.takeIf { it.isNotBlank() }?.let { pkg ->
+            runCatching {
+                val info = context.packageManager.getApplicationInfo(pkg, 0)
+                context.packageManager.getApplicationLabel(info).toString()
+            }.getOrDefault(pkg)
+        }
+    }
     val number = rec.phoneNumber?.takeIf { it.isNotBlank() }
         ?: rec.peer?.takeIf { com.vrec.app.calls.CallMetadataResolver.directNumber(it) != null }
     val totalDurationMs = when {
@@ -720,7 +728,7 @@ private fun RecordingDetailsDialog(
                     DetailLine("SIM", rec.simLabel)
                     DetailLine("SIM slot", rec.simSlot?.let { "SIM $it" })
                     DetailLine("Carrier", rec.carrier)
-                    DetailLine("Call app", rec.sourcePackage)
+                    DetailLine("Call app", callApp)
                 }
                 RecordingDetailSection("Timing") {
                     DetailLine("Recorded", rec.startedAt.takeIf { it > 0 }?.let { dateFmt.format(Date(it)) })
@@ -736,7 +744,11 @@ private fun RecordingDetailsDialog(
                     DetailLine("Source", rec.sourceLabel)
                     DetailLine("Filename", rec.file.name)
                     DetailLine("Size", rec.sizeBytes.takeIf { it > 0 }?.let(::formatSize))
-                    DetailLine("Audio", if (rec.silent) "No sound detected" else "Not flagged silent")
+                    DetailLine("Audio", when {
+                        !rec.metadataAvailable -> null
+                        rec.silent -> "No sound detected"
+                        else -> "Not flagged silent"
+                    })
                     DetailLine("Bookmarks", rec.bookmarksMs.takeIf { it.isNotEmpty() }
                         ?.joinToString { formatDuration(it) })
                     if (rec.notes.isNotBlank() && !editing) DetailLine("Notes", rec.notes)
