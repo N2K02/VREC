@@ -74,6 +74,14 @@ class RecordingService : Service() {
         fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null,
                   callConnectedAt: Long? = null, appPackage: String? = null, accountId: String? = null,
                   numberSource: String? = null, callFlow: String? = null) {
+            // Prevent dual recordings when the enhanced shell daemon is ready.
+            // Standard remains the fallback if the privileged service is unavailable.
+            if (direction != CallDirection.VOIP && direction != CallDirection.UNKNOWN &&
+                com.vrec.app.experimental.adb.ExperimentalRecording.method(context) !=
+                    com.vrec.app.experimental.adb.ExperimentalRecording.Method.STANDARD &&
+                com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.ready.value) {
+                return
+            }
             val intent = Intent(context, RecordingService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_DIRECTION, direction.name)

@@ -90,7 +90,7 @@ fun SettingsScreen(
                 Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Experimental call detection", "Advanced detection and ADB setup", Icons.Rounded.Tune),
+                Triple("Experimental", "Recording methods, ADB, TCP and call detection", Icons.Rounded.Tune),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -167,9 +167,9 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "Experimental call detection") ExperimentalRecorderCard()
+        if (section == "Experimental") ExperimentalRecorderCard()
 
-        if (section == "Experimental call detection") SettingCard("Experimental call detection") {
+        if (section == "Experimental") SettingCard("Advanced call detection") {
             ToggleRow(
                 "Use InCallService detection (Android 12+)",
                 "Opt in to Telecom call-state tracking with notification, Contacts and Accessibility metadata fallbacks. Does not affect audio capture or change your dialer.",
@@ -192,7 +192,7 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "Experimental call detection") TelecomAdbInstructionCard()
+        if (section == "Experimental") TelecomAdbInstructionCard()
 
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
