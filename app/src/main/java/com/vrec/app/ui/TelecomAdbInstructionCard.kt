@@ -35,6 +35,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +58,10 @@ fun TelecomAdbInstructionCard() {
     val resumeTick = rememberOnResumeTick()
     var checkTick by remember { mutableIntStateOf(0) }
     var enabled by remember { mutableStateOf(Prefs.experimentalCallDetection(context)) }
+    val connection by ExperimentalRecording.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    var granting by remember { mutableStateOf(false) }
+    var grantError by remember { mutableStateOf<String?>(null) }
     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // Re-read after coming back to VRec or explicitly tapping Check access.
     // The older Settings card did neither, so it could show a stale "not authorized".
@@ -130,12 +139,44 @@ fun TelecomAdbInstructionCard() {
 
                 if (!granted) {
                     Text(
-                        "Grant access once to use this feature. Normal call detection still works.",
+                        "Advanced call detection needs a separate Android AppOp grant. " +
+                            "This does not give the recorder root or unlock two-sided audio.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (connection.connected && connection.shellUid == 2000) {
+                        Button(
+                            enabled = !granting && !connection.busy,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                scope.launch {
+                                    granting = true
+                                    grantError = null
+                                    val result = CallDetectionAccess.grantWithAdb(context)
+                                    granting = false
+                                    if (result.isSuccess) {
+                                        updateEnabled(true)
+                                        checkTick++
+                                    } else grantError = result.exceptionOrNull()?.message
+                                }
+                            },
+                        ) {
+                            Text(if (granting) "Granting special access…" else "Grant special access")
+                        }
+                    } else {
+                        Text(
+                            "Connect ADB above to grant special access directly in VRec. " +
+                                "If unavailable, use the USB command below.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    grantError?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
                     Text(
-                        "With USB debugging enabled, run this on a computer:",
+                        "Alternative command from a computer with USB debugging:",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Surface(
