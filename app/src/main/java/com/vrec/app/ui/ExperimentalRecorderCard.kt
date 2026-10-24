@@ -203,19 +203,19 @@ fun ExperimentalRecorderCard() {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (networkPermission != null && !networkAllowed) {
+                            Text(
+                                "Allow local network access for Wireless debugging discovery.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedButton(onClick = {
+                                networkPermissionLauncher.launch(networkPermission)
+                            }) { Text("Allow local ADB discovery") }
+                        }
                         TextButton(onClick = { showPairing = !showPairing }) {
                             Text(if (showPairing) "Hide pairing steps" else "Pair device (first time)")
                         }
                         if (showPairing) {
-                            if (networkPermission != null && !networkAllowed) {
-                                Text(
-                                    "Allow local network access to discover the ADB pairing port.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                OutlinedButton(onClick = {
-                                    networkPermissionLauncher.launch(networkPermission)
-                                }) { Text("Allow local ADB discovery") }
-                            }
                             Text(
                                 "In Developer options, open Wireless debugging → Pair device with pairing code. " +
                                     "Use split screen to enter the displayed code here.",
