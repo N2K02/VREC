@@ -61,6 +61,7 @@ class RecordingService : Service() {
         const val ACTION_PAUSE = "com.vrec.app.PAUSE"
         const val ACTION_UPDATE_PEER = "com.vrec.app.UPDATE_PEER"
         const val ACTION_UPDATE_METADATA = "com.vrec.app.UPDATE_METADATA"
+        const val ACTION_ADB_HANDOFF = "com.vrec.app.ADB_HANDOFF"
         const val EXTRA_APP_PACKAGE = "app_package"
         const val EXTRA_PHONE_ACCOUNT = "phone_account"
         const val EXTRA_NUMBER_SOURCE = "number_source"
@@ -82,7 +83,8 @@ class RecordingService : Service() {
 
         fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null,
                   callConnectedAt: Long? = null, appPackage: String? = null, accountId: String? = null,
-                  numberSource: String? = null, callFlow: String? = null) {
+                  numberSource: String? = null, callFlow: String? = null,
+                  forceStandardFallback: Boolean = false) {
             if (!Prefs.recordingEnabled(context)) {
                 Log.i("Recording master switch is off; ignoring start")
                 return
@@ -93,11 +95,11 @@ class RecordingService : Service() {
             val adbSelected = ExperimentalRecording.method(context) ==
                 ExperimentalRecording.Method.BUILT_IN_ADB
             val helperReady = ExperimentalCaptureDaemon.ready.value
-            if (adbSelected && helperReady &&
+            if (adbSelected && helperReady && !forceStandardFallback &&
                 (direction == CallDirection.INCOMING || direction == CallDirection.OUTGOING)) {
                 return
             }
-            val standardFallback = adbSelected && !helperReady
+            val standardFallback = adbSelected && (!helperReady || forceStandardFallback)
             if (standardFallback) AdbFallbackNotice.reserve()
             val intent = Intent(context, RecordingService::class.java)
                 .putExtra(EXTRA_ADB_FALLBACK, standardFallback)
@@ -117,6 +119,21 @@ class RecordingService : Service() {
                 if (standardFallback) AdbFallbackNotice.clear()
                 Log.w("Android blocked starting the recording service from the background", e)
             }
+        }
+
+        /**
+         * Called after the enhanced helper has been verified, not on mere ADB
+         * pairing. The active standard segment remains untouched unless the
+         * helper itself confirms it sees this cellular call.
+         */
+        fun requestAdbHandoff(context: Context) {
+            if (!AdbFallbackNotice.active.value ||
+                _state.value !is State.Recording ||
+                !CallMonitor.canHandoffToAdb()) return
+            runCatching {
+                context.startService(
+                    Intent(context, RecordingService::class.java).setAction(ACTION_ADB_HANDOFF))
+            }.onFailure { Log.w("Could not request ADB recording handoff", it) }
         }
 
         fun updateMetadata(context: Context, direction: CallDirection, peer: String?,
@@ -160,6 +177,8 @@ class RecordingService : Service() {
     private var callFlow: String? = null
     private var callEndedAt: Long? = null
     private var adbFallback = false
+    private var handoffRequested = false
+    private var handoffCheckPending = false
 
     private fun finishAdbFallback() {
         if (!adbFallback) return
@@ -203,6 +222,7 @@ class RecordingService : Service() {
                 finish()
             }
             ACTION_USER_STOP -> CallMonitor.userStop(this)
+            ACTION_ADB_HANDOFF -> requestHandoff()
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
             ACTION_UPDATE_PEER -> {
@@ -320,6 +340,98 @@ class RecordingService : Service() {
         }
     }
 
+    /**
+     * Preflight without interrupting the microphone. Never hand off a VoIP,
+     * unknown, paused, ending or already-disconnected call.
+     */
+    private fun requestHandoff() {
+        if (handoffCheckPending || handoffRequested || finalizing || stopPending ||
+            !adbFallback || _state.value !is State.Recording ||
+            !Prefs.recordingEnabled(this) ||
+            !ExperimentalCaptureDaemon.ready.value || !CallMonitor.canHandoffToAdb()) return
+        handoffCheckPending = true
+        val app = applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            val safeToSwitch = ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
+            handler.post {
+                handoffCheckPending = false
+                if (!safeToSwitch || handoffRequested || finalizing || stopPending ||
+                    !adbFallback || _state.value !is State.Recording ||
+                    !Prefs.recordingEnabled(this@RecordingService) ||
+                    ExperimentalRecording.method(this@RecordingService) !=
+                        ExperimentalRecording.Method.BUILT_IN_ADB ||
+                    !CallMonitor.canHandoffToAdb()) {
+                    if (!safeToSwitch) Log.i(
+                        "ADB helper has not verified the live cellular call; keeping standard audio")
+                    return@post
+                }
+                AdbFallbackNotice.beginHandoff()
+                handoffRequested = true
+                Log.i("ADB helper verified current call; saving standard segment before handoff")
+                finish()
+            }
+        }
+    }
+
+    /** Called only once the standard segment has actually finished saving. */
+    private fun recordingFinished() {
+        _state.value = State.Idle
+        _level.value = 0
+        finalizing = false
+        if (!handoffRequested) {
+            finishAdbFallback()
+            CallMonitor.onRecordingFinalized(this)
+            if (!CallMonitor.canRecordAgain() || !Prefs.recordingEnabled(this)) {
+                stopService(Intent(this, OverlayControlService::class.java))
+            }
+            stopSelfAndForeground()
+            return
+        }
+
+        handoffRequested = false
+        adbFallback = false
+        stopService(Intent(this, OverlayControlService::class.java))
+        stopSelfAndForeground()
+        val app = applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            // Recheck the watcher after saving: the call might have ended
+            // while MediaRecorder was finalizing. Never start on a stale call.
+            val stillLive = CallMonitor.canHandoffToAdb() &&
+                Prefs.recordingEnabled(app) &&
+                ExperimentalCaptureDaemon.ready.value &&
+                ExperimentalRecording.method(app) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
+            val started = if (stillLive) {
+                val armed = ExperimentalCaptureDaemon.setMode(
+                    app, true, forVerifiedHandoff = true)
+                if (armed) ExperimentalCaptureDaemon.startCurrentCellularCall(app)
+                else Result.failure(IllegalStateException("Could not arm the enhanced recorder"))
+            } else Result.failure(IllegalStateException("Active call was not verified after saving"))
+
+            if (started.isSuccess && CallMonitor.canHandoffToAdb() &&
+                Prefs.recordingEnabled(app)) {
+                AdbFallbackNotice.clear()
+                AdbFallbackNotice.endHandoff()
+                CallMonitor.onAdbHandoffComplete(app)
+                AdbFallbackNotice.notifyEnhancedStarted(app)
+                Log.i("Enhanced recording handoff succeeded: " + started.getOrNull())
+            } else {
+                // If the shell command returned an error after starting capture,
+                // force it off before restarting standard so tracks never overlap.
+                ExperimentalCaptureDaemon.setMode(app, false)
+                AdbFallbackNotice.endHandoff()
+                Log.w("Enhanced handoff not confirmed; recovering standard recording")
+                if (CallMonitor.canHandoffToAdb() && Prefs.recordingEnabled(app)) {
+                    AdbFallbackNotice.reserve()
+                    CallMonitor.recoverStandardAfterAdbHandoffFailure(app)
+                } else {
+                    AdbFallbackNotice.clear()
+                    CallMonitor.onRecordingFinalized(app)
+                }
+            }
+        }
+    }
+
     private fun pauseRecording() {
         if (!Prefs.recordingEnabled(this) || finalizing || stopPending) return
         val e = engine ?: return
@@ -365,12 +477,7 @@ class RecordingService : Service() {
         _state.value = State.Stopping
         update(stoppingNotification())
         if (e == null) {
-            _state.value = State.Idle
-            finishAdbFallback()
-            finalizing = false
-            CallMonitor.onRecordingFinalized(this)
-            stopService(Intent(this, OverlayControlService::class.java))
-            stopSelfAndForeground()
+            recordingFinished()
             return
         }
         thread(name = "vrec-stop") {
@@ -406,17 +513,7 @@ class RecordingService : Service() {
             } catch (error: Exception) {
                 Log.w("Recording finalization failed", error)
             } finally {
-                handler.post {
-                    _state.value = State.Idle
-                    _level.value = 0
-                    finishAdbFallback()
-                    finalizing = false
-                    CallMonitor.onRecordingFinalized(this)
-                    if (!CallMonitor.canRecordAgain() || !Prefs.recordingEnabled(this)) {
-                        stopService(Intent(this, OverlayControlService::class.java))
-                    }
-                    stopSelfAndForeground()
-                }
+                handler.post { recordingFinished() }
             }
         }
     }
