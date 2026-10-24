@@ -245,7 +245,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,
                     onSectionChange = { settingsSection = it },
-                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                     onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
                 )
