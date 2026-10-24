@@ -18,6 +18,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.widget.Toast
 import android.media.MediaPlayer
+import android.media.MediaMetadataRetriever
+import androidx.compose.material.icons.filled.Edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.style.TextAlign
 import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -567,95 +572,267 @@ private fun RecordingDetailsDialog(
     var simLabel by remember(rec.file.absolutePath) { mutableStateOf(rec.simLabel.orEmpty()) }
     var carrier by remember(rec.file.absolutePath) { mutableStateOf(rec.carrier.orEmpty()) }
     var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
+    var moreOpen by remember(rec.file.absolutePath) { mutableStateOf(false) }
+    var measuredDurationMs by remember(rec.file.absolutePath) { mutableStateOf(0L) }
     val context = LocalContext.current
-    val number = rec.phoneNumber ?: rec.peer?.takeIf { it.any(Char::isDigit) }
-    ModalBottomSheet(onDismissRequest = onDismiss, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(rec.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text(directionLabel(rec.direction), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val number = rec.phoneNumber?.takeIf { it.isNotBlank() }
+        ?: rec.peer?.takeIf { com.vrec.app.calls.CallMetadataResolver.directNumber(it) != null }
+    val totalDurationMs = when {
+        active && playbackDurationMs > 0L -> playbackDurationMs
+        rec.durationMs > 0L -> rec.durationMs
+        else -> measuredDurationMs
+    }
+    val callType = rec.callType?.takeUnless { it.equals("UNKNOWN", true) }
+        ?.let { when (it.uppercase(Locale.ROOT)) {
+            "INCOMING" -> "Incoming call"
+            "OUTGOING" -> "Outgoing call"
+            "VOIP" -> "VoIP call"
+            else -> it
+        } } ?: rec.direction.takeIf { it != CallDirection.UNKNOWN }?.let(::directionLabel)
+
+    // Older recordings may have no duration sidecar. Read the media duration
+    // off the UI thread; never infer it from size or a timestamp.
+    LaunchedEffect(rec.file.absolutePath, rec.file.lastModified(), rec.durationMs) {
+        measuredDurationMs = 0L
+        if (rec.durationMs <= 0L) measuredDurationMs = withContext(Dispatchers.IO) {
+            runCatching {
+                val metadata = MediaMetadataRetriever()
+                try {
+                    metadata.setDataSource(rec.file.absolutePath)
+                    metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        ?.toLongOrNull()?.takeIf { it > 0L } ?: 0L
+                } finally {
+                    metadata.release()
                 }
-                TextButton(onClick = { editing = !editing }) { Text(if (editing) "Cancel edit" else "Edit") }
+            }.getOrDefault(0L)
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(rec.displayName, style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(callType ?: "Recording details", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            HorizontalDivider()
-            Slider(value = (positionMs.toFloat() / playbackDurationMs.coerceAtLeast(1L)).coerceIn(0f, 1f), onValueChange = { onSeek((it * playbackDurationMs).toLong()) }, enabled = active && playbackDurationMs > 0L)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatDuration(positionMs), style = MaterialTheme.typography.labelMedium)
-                Text(formatDuration(playbackDurationMs), style = MaterialTheme.typography.labelMedium)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = onPlay) {
-                    Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null)
-                    Text(if (playing) " Pause" else if (active) " Resume" else " Play")
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Slider(
+                        value = if (totalDurationMs > 0L)
+                            (positionMs.toFloat() / totalDurationMs).coerceIn(0f, 1f)
+                            else 0f,
+                        onValueChange = { onSeek((it * totalDurationMs).toLong()) },
+                        enabled = active && totalDurationMs > 0L,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(if (totalDurationMs > 0L) formatDuration(positionMs) else "-",
+                            style = MaterialTheme.typography.labelMedium)
+                        Text(if (totalDurationMs > 0L) formatDuration(totalDurationMs) else "-",
+                            style = MaterialTheme.typography.labelMedium)
+                    }
+                    // Six aligned icons; overflow holds secondary actions on small phones.
+                    Row(
+                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RecordingDetailAction(
+                            if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            if (playing) "Pause" else "Play", onClick = onPlay,
+                            modifier = Modifier.weight(1f))
+                        RecordingDetailAction(Icons.Filled.Stop, "Stop", onClick = onStop,
+                            enabled = active, modifier = Modifier.weight(1f))
+                        RecordingDetailAction(Icons.Filled.Speed, "${speed}x", onClick = onSpeed,
+                            modifier = Modifier.weight(1f))
+                        RecordingDetailAction(Icons.Filled.BookmarkAdd, "Mark", onClick = onBookmark,
+                            enabled = active && totalDurationMs > 0L, modifier = Modifier.weight(1f))
+                        RecordingDetailAction(Icons.Filled.Share, "Share", onClick = onShareAudio,
+                            modifier = Modifier.weight(1f))
+                        Box(Modifier.weight(1f)) {
+                            RecordingDetailAction(Icons.Filled.MoreVert, "More",
+                                onClick = { moreOpen = true }, modifier = Modifier.fillMaxWidth())
+                            DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (editing) "Cancel editing" else "Edit details") },
+                                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                    onClick = { moreOpen = false; editing = !editing },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Export details") },
+                                    leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
+                                    onClick = { moreOpen = false; onExportDetails() },
+                                )
+                                if (number != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("Call back") },
+                                        leadingIcon = { Icon(Icons.Filled.Call, contentDescription = null) },
+                                        onClick = {
+                                            moreOpen = false
+                                            runCatching {
+                                                context.startActivity(Intent(Intent.ACTION_DIAL).apply {
+                                                    data = android.net.Uri.parse("tel:" + android.net.Uri.encode(number))
+                                                })
+                                            }.onFailure {
+                                                Toast.makeText(context, "Unable to open phone dialer", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Copy number") },
+                                        leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+                                        onClick = {
+                                            moreOpen = false
+                                            val clipboard = context.getSystemService(
+                                                android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Phone number", number))
+                                            Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
-                if (active) IconButton(onClick = onStop) {
-                    Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
-                }
-                TextButton(onClick = onSpeed) { Text("${speed}x") }
-                TextButton(onClick = onBookmark) { Icon(Icons.Filled.BookmarkAdd, contentDescription = null); Text("Bookmark") }
             }
-            HorizontalDivider()
-            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                DetailLine("Call type", directionLabel(rec.direction))
-                DetailLine("Phone number", number ?: "Unavailable")
-                DetailLine("Country", rec.countryCode ?: "Unknown — no international prefix")
-                DetailLine("SIM", rec.simLabel ?: "Unavailable from Android call event")
-                DetailLine("SIM slot", rec.simSlot?.let { "SIM $it" } ?: "Unknown")
-                DetailLine("Carrier", rec.carrier ?: "Unavailable")
-                DetailLine("Date", dateFmt.format(Date(rec.startedAt)))
-                DetailLine("Recording duration", if (rec.durationMs > 0) formatDuration(rec.durationMs) else "Unknown")
-                DetailLine("Call connected (estimated)", rec.callConnectedAt?.let { dateFmt.format(Date(it)) } ?: "Unknown")
-                DetailLine("Call ended (estimated)", rec.callEndedAt?.let { dateFmt.format(Date(it)) } ?: "Unknown")
-                DetailLine("Call duration (estimated)", if (rec.callConnectedAt != null && rec.callEndedAt != null && rec.callEndedAt >= rec.callConnectedAt) formatDuration(rec.callEndedAt - rec.callConnectedAt) else "Unknown")
-                DetailLine("Audio source", rec.sourceLabel ?: "Unknown")
-                DetailLine("File", rec.file.name)
-                DetailLine("Size", formatSize(rec.sizeBytes))
-                DetailLine("Status", if (rec.silent) "No sound detected" else "Audio detected / not flagged silent")
-                DetailLine("Bookmarks", if (rec.bookmarksMs.isEmpty()) "None" else rec.bookmarksMs.joinToString { formatDuration(it) })
-                if (!rec.metadataAvailable) Text("This is an older recording. Some details were not saved at recording time.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                RecordingDetailSection("Call details") {
+                    DetailLine("Call type", callType)
+                    DetailLine("Phone number", number)
+                    DetailLine("Contact", rec.contactName)
+                    DetailLine("Country", rec.countryCode)
+                    DetailLine("SIM", rec.simLabel)
+                    DetailLine("SIM slot", rec.simSlot?.let { "SIM $it" })
+                    DetailLine("Carrier", rec.carrier)
+                    DetailLine("Call app", rec.sourcePackage)
+                }
+                RecordingDetailSection("Timing") {
+                    DetailLine("Recorded", rec.startedAt.takeIf { it > 0 }?.let { dateFmt.format(Date(it)) })
+                    DetailLine("Recording length", totalDurationMs.takeIf { it > 0 }?.let(::formatDuration))
+                    DetailLine("Call connected¹", rec.callConnectedAt?.let { dateFmt.format(Date(it)) })
+                    DetailLine("Call ended¹", rec.callEndedAt?.let { dateFmt.format(Date(it)) })
+                    DetailLine("Call length¹",
+                        if (rec.callConnectedAt != null && rec.callEndedAt != null &&
+                            rec.callEndedAt >= rec.callConnectedAt)
+                            formatDuration(rec.callEndedAt - rec.callConnectedAt) else null)
+                }
+                RecordingDetailSection("Audio & file") {
+                    DetailLine("Source", rec.sourceLabel)
+                    DetailLine("Filename", rec.file.name)
+                    DetailLine("Size", rec.sizeBytes.takeIf { it > 0 }?.let(::formatSize))
+                    DetailLine("Audio", if (rec.silent) "No sound detected" else "Not flagged silent")
+                    DetailLine("Bookmarks", rec.bookmarksMs.takeIf { it.isNotEmpty() }
+                        ?.joinToString { formatDuration(it) })
+                    if (rec.notes.isNotBlank() && !editing) DetailLine("Notes", rec.notes)
+                }
+                if (rec.callConnectedAt != null || rec.callEndedAt != null) {
+                    Text("¹ Call times are estimates from Android events, not audio duration.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (!rec.metadataAvailable) {
+                    Text("Legacy recording: details not saved originally are shown as '-'.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (editing) {
-                OutlinedTextField(value = contactName, onValueChange = { contactName = it }, label = { Text("Contact name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = phoneNumber, onValueChange = { phoneNumber = it }, label = { Text("Phone number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = countryCode, onValueChange = { countryCode = it }, label = { Text("Country / calling code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = simLabel, onValueChange = { simLabel = it }, label = { Text("SIM label (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = carrier, onValueChange = { carrier = it }, label = { Text("Carrier (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = notes, onValueChange = { notes = it.take(2000) }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 5)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(checked = favorite, onCheckedChange = { favorite = it })
-                    Text("Favorite")
+                    RecordingDetailSection("Edit details") {
+                        OutlinedTextField(value = contactName, onValueChange = { contactName = it },
+                            label = { Text("Contact name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = phoneNumber, onValueChange = { phoneNumber = it },
+                            label = { Text("Phone number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = countryCode, onValueChange = { countryCode = it },
+                            label = { Text("Country / calling code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = simLabel, onValueChange = { simLabel = it },
+                            label = { Text("SIM label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = carrier, onValueChange = { carrier = it },
+                            label = { Text("Carrier") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = notes, onValueChange = { notes = it.take(2000) },
+                            label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(),
+                            minLines = 2, maxLines = 5)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(checked = favorite,
+                                onCheckedChange = { favorite = it })
+                            Text("Favorite")
+                        }
+                    }
                 }
-                } // editing
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onShareAudio) { Icon(Icons.Filled.Share, contentDescription = null); Text("Audio") }
-                    TextButton(onClick = onExportDetails) { Icon(Icons.Filled.Info, contentDescription = null); Text("Export details") }
-                    if (number != null) TextButton(onClick = {
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_DIAL).apply {
-                                data = android.net.Uri.parse("tel:" + android.net.Uri.encode(number))
-                            })
-                        }.onFailure { Toast.makeText(context, "Unable to open phone dialer", Toast.LENGTH_SHORT).show() }
-                    }) { Icon(Icons.Filled.Call, contentDescription = null); Text("Call back") }
-                }
-                if (number != null) TextButton(onClick = {
-                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Phone number", number))
-                    Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
-                }) { Icon(Icons.Filled.ContentCopy, contentDescription = null); Text("Copy number") }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Close") }
-                if (editing) Button(onClick = { onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier) }) { Text("Save changes") }
+                if (editing) Button(onClick = {
+                    onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier)
+                }) { Text("Save changes") }
             }
         }
     }
 }
 
 @Composable
-private fun DetailLine(label: String, value: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("$label:", fontWeight = FontWeight.SemiBold, modifier = Modifier.widthIn(min = 94.dp))
-        Text(value, modifier = Modifier.weight(1f))
+private fun RecordingDetailAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(42.dp)) {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(23.dp))
+        }
+        Text(label, maxLines = 1, style = MaterialTheme.typography.labelSmall,
+            color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun RecordingDetailSection(
+    title: String,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String?) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top) {
+        Text(label, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.43f))
+        Text(value?.trim()?.takeUnless {
+            it.isBlank() || it.equals("unknown", true) ||
+                it.equals("unavailable", true) || it.equals("null", true)
+        } ?: "-", style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(0.57f))
     }
 }
 
