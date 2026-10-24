@@ -8,6 +8,8 @@ import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingStore
+import com.vrec.app.recording.RecordingService
+import com.vrec.app.recording.AdbFallbackNotice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -131,6 +133,11 @@ object ExperimentalCaptureDaemon {
             else -> error("Standard mode does not need the shell daemon")
         }
 
+    private fun shouldArmForNextCall(context: Context): Boolean =
+        Prefs.recordingEnabled(context) &&
+            !AdbFallbackNotice.active.value &&
+            RecordingService.state.value is RecordingService.State.Idle
+
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         val method = ExperimentalRecording.method(context)
         runCatching {
@@ -155,7 +162,7 @@ object ExperimentalCaptureDaemon {
                     " && chmod 600 " + DEVICE_PATH + " && echo STAGED")
             check("STAGED" in copy) { "Could not stage capture jar: " + copy }
             val launch = "VREC_TOKEN=" + token(context) +
-                " VREC_MODE=" + (if (Prefs.recordingEnabled(context)) "1" else "0") +
+                " VREC_MODE=" + (if (shouldArmForNextCall(context)) "1" else "0") +
                 " VREC_TRACK=0 VREC_VOIP='' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
@@ -186,7 +193,7 @@ object ExperimentalCaptureDaemon {
         modeMutex.withLock {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
-            val allowed = enabled && Prefs.recordingEnabled(context) &&
+            val allowed = enabled && shouldArmForNextCall(context) &&
                 ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD
             runCatching {
                 open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
