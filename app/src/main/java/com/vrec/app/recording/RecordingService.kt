@@ -417,11 +417,18 @@ class RecordingService : Service() {
                 Log.i("Enhanced recording handoff succeeded: " + started.getOrNull())
             } else {
                 // If the shell command returned an error after starting capture,
-                // force it off before restarting standard so tracks never overlap.
-                ExperimentalCaptureDaemon.setMode(app, false)
+                // its response may have been lost. Do not restart a microphone
+                // recorder unless the shell confirms capture is OFF.
+                val shellStopped = ExperimentalCaptureDaemon.setMode(app, false)
                 AdbFallbackNotice.endHandoff()
-                Log.w("Enhanced handoff not confirmed; recovering standard recording")
-                if (CallMonitor.canHandoffToAdb() && Prefs.recordingEnabled(app)) {
+                if (!shellStopped) {
+                    Log.w("ADB handoff uncertain: could not confirm shell capture stopped")
+                    ExperimentalCaptureDaemon.message.value =
+                        "Handoff status unknown. Check enhanced capture before recording again."
+                    AdbFallbackNotice.clear()
+                    CallMonitor.onRecordingFinalized(app)
+                } else if (CallMonitor.canHandoffToAdb() && Prefs.recordingEnabled(app)) {
+                    Log.w("Enhanced start was not confirmed; recovering standard recording")
                     AdbFallbackNotice.reserve()
                     CallMonitor.recoverStandardAfterAdbHandoffFailure(app)
                 } else {
