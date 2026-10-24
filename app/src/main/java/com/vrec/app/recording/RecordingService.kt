@@ -259,6 +259,7 @@ class RecordingService : Service() {
         // The preference may change between enqueueing ACTION_START and delivery.
         if (!Prefs.recordingEnabled(this)) {
             _state.value = State.Idle
+            if (intent.getBooleanExtra(EXTRA_ADB_FALLBACK, false)) AdbFallbackNotice.clear()
             stopSelf()
             return
         }
