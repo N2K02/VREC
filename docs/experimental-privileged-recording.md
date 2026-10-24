@@ -37,9 +37,23 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
   InCallService and the Telecom AppOp help detect calls; they do **not**
   automatically unlock protected two-way audio.
 
+## Setup and permission separation
+
+- **Setup** contains only the everyday recording permissions (microphone,
+  phone state and Accessibility) and optional Contacts, notifications and floating
+  controls. A second WhatsApp enable switch and redundant Setup complete banner
+  are no longer shown.
+- The main Settings page has the only **Recording method** radio selector:
+  Regular recording (default) or ADB privileged helper.
+- **Settings → VoIP** owns the VoIP enable switch and Notification access
+  permission, keeping internet-call options out of everyday setup.
+- **Settings → Experimental** owns ADB pairing, Wireless/TCP connection, helper
+  status and optional advanced Telecom AppOp permission. Merely choosing the
+  ADB option does not establish elevated access or enable Home recording.
+
 ## Built-in ADB setup
 
-1. Open Settings → Experimental → Built-in ADB.
+1. On the main Settings page, choose **ADB privileged helper** under **Recording method**. Then tap **Configure ADB access**, or open Settings → Experimental.
 2. For first-time phone-local authorization, use Android Developer options →
    Wireless debugging → Pair device with pairing code, preferably in split screen.
    Enter its temporary pairing code/port in VRec and pair.
