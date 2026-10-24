@@ -406,6 +406,53 @@ object CallMonitor {
         it.active && it.source != Source.MANUAL
     }
 
+    /**
+     * A handoff is allowed only for an actively tracked cellular call. The
+     * shell daemon has its own independent watcher and must verify it too.
+     */
+    @Synchronized
+    fun canHandoffToAdb(): Boolean {
+        val current = recordingId?.let(sessions::get) ?: return false
+        return current.active && !current.isVoip &&
+            (current.direction == CallDirection.INCOMING ||
+                current.direction == CallDirection.OUTGOING)
+    }
+
+    /** The saved standard segment gave way to a verified shell segment. */
+    @Synchronized
+    fun onAdbHandoffComplete(context: Context) {
+        val id = recordingId
+        recordingId = null
+        if (id != null) autoAttempted.add(id)
+        dismissCallControls(context)
+        dismissOverlay(context)
+        Log.i("Switched active cellular call from standard to enhanced capture")
+    }
+
+    /**
+     * Enhanced mid-call start failed after the standard file was finalized.
+     * Re-enter standard fallback only if that very call is still active.
+     * This is a new file, never a resumed MediaRecorder instance.
+     */
+    @Synchronized
+    fun recoverStandardAfterAdbHandoffFailure(context: Context) {
+        val activeCall = recordingId?.let(sessions::get)
+        if (!Prefs.recordingEnabled(context) ||
+            activeCall == null || !activeCall.active || activeCall.isVoip ||
+            RecordingService.state.value !is RecordingService.State.Idle) {
+            onRecordingFinalized(context)
+            return
+        }
+        Log.w("Enhanced handoff failed; starting a new standard call segment")
+        RecordingService.start(
+            context.applicationContext, activeCall.direction,
+            activeCall.name ?: activeCall.number, activeCall.number,
+            activeCall.connectedAt, activeCall.packageName, activeCall.accountId,
+            activeCall.numberSource, activeCall.flowDirection.name,
+            forceStandardFallback = true,
+        )
+    }
+
     @Synchronized
     fun canRecordAgain(): Boolean = recordingId == null && sessions.values.any {
         it.active && it.source != Source.MANUAL && it.id in suppressed
