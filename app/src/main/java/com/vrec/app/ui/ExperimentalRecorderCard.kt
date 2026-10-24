@@ -28,7 +28,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -46,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -79,7 +77,6 @@ fun ExperimentalRecorderCard() {
     val recorderMessage by ExperimentalCaptureDaemon.message.collectAsState()
     val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
-    var selection by remember { mutableStateOf(ExperimentalRecording.method(context)) }
     var adbMode by rememberSaveable { mutableStateOf("wireless") }
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var pairingPort by rememberSaveable { mutableStateOf("") }
@@ -89,8 +86,8 @@ fun ExperimentalRecorderCard() {
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(selection) {
-        // Health-check on entry/selection even if ADB or Wi-Fi is disconnected.
+    LaunchedEffect(Unit) {
+        // Health-check on entry even if ADB or Wi-Fi is disconnected.
         // Reconnect to an existing shell service; never spawn a privileged
         // process silently or attempt an unauthorized ADB connection.
         AdbPrivilegedApiHelper.reconnect(context)
@@ -117,48 +114,12 @@ fun ExperimentalRecorderCard() {
             Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Recording method", style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold)
-            Text("Choose Standard or Built-in ADB.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!com.vrec.app.Prefs.recordingEnabled(context)) {
                 Text("Recording is off. Turn it on from Home to capture calls.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary)
             }
-            listOf(
-                Triple(ExperimentalRecording.Method.STANDARD,
-                    "Standard (recommended)", "Record with the microphone. No setup needed."),
-                Triple(ExperimentalRecording.Method.BUILT_IN_ADB,
-                    "Built-in ADB", "Use Android debugging without another app."),
-            ).forEach { (method, label, subtitle) ->
-                Row(
-                    Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    RadioButton(selected = selection == method, onClick = {
-                        selection = method
-                        ExperimentalRecording.select(context, method)
-                        scope.launch {
-                            if (method == ExperimentalRecording.Method.STANDARD) {
-                                if (recorderReady) ExperimentalCaptureDaemon.stopRecording(context)
-                            } else if (recorderReady) {
-                                ExperimentalCaptureDaemon.setMode(context, true)
-                            }
-                        }
-                    })
-                    Column(Modifier.weight(1f)) {
-                        Text(label, style = MaterialTheme.typography.bodyMedium)
-                        Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            if (selection == ExperimentalRecording.Method.BUILT_IN_ADB) {
-                HorizontalDivider()
-                Text("ADB connection", style = MaterialTheme.typography.titleMedium)
+            Text("ADB connection", style = MaterialTheme.typography.titleMedium)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -405,7 +366,6 @@ fun ExperimentalRecorderCard() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
             localError?.let {
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
