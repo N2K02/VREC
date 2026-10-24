@@ -226,6 +226,51 @@ object ExperimentalCaptureDaemon {
         return byteArrayOf((b.size shr 8).toByte(), b.size.toByte()) + b
     }
 
+    /**
+     * Require the daemon's own call watcher to recognize a live call before
+     * stopping the microphone recording. A freshly launched shell helper may
+     * answer pings without having received the phone's off-hook callback yet.
+     * Fail closed: a missing/stale watcher keeps the normal recording running.
+     */
+    suspend fun canHandoffCurrentCellularCall(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!Prefs.recordingEnabled(context) ||
+                ExperimentalRecording.method(context) != ExperimentalRecording.Method.BUILT_IN_ADB
+            ) return@withContext false
+            runCatching {
+                open(context, 'W').use { socket ->
+                    val line = socket.getInputStream().bufferedReader().readLine().orEmpty()
+                    check(line.startsWith("WATCH 1 "))
+                    val attrs = line.substringAfter("WATCH 1 ").split(' ')
+                        .mapNotNull { token ->
+                            val i = token.indexOf('=')
+                            if (i > 0) token.substring(0, i) to token.substring(i + 1) else null
+                        }.toMap()
+                    attrs["watching"] == "1" && attrs["looper"] == "ok" &&
+                        attrs["call"] == "1" && attrs["recording"] == "0" &&
+                        attrs["mode"] == "0"
+                }
+            }.getOrDefault(false)
+        }
+
+    /** Start a new enhanced segment during an already-observed phone call. */
+    suspend fun startCurrentCellularCall(context: Context): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                check(Prefs.recordingEnabled(context) &&
+                    ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                    "Recording was disabled before ADB handoff."
+                }
+                open(context, 'S').use { socket ->
+                    val filename = socket.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
+                    check(filename.matches(Regex("vrec_rec_[A-Za-z0-9_.-]+[.]dat"))) {
+                        "Enhanced recorder did not confirm a new audio segment."
+                    }
+                    filename
+                }
+            }
+        }
+
     /** Imports only fully muxed files and only deletes the shell copy on success. */
     suspend fun collect(context: Context): Result<Int> = withContext(Dispatchers.IO) {
         importMutex.withLock {
