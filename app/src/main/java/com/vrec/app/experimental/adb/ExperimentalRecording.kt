@@ -84,14 +84,18 @@ object ExperimentalRecording {
         return result
     }
 
-    suspend fun connect(context: Context, manualPort: Int? = null): Result<Int> {
+    suspend fun connect(context: Context, manualPort: Int? = null, wirelessOnly: Boolean = false): Result<Int> {
         status.value = status.value.copy(busy = true, message = "Connecting to ADB…")
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 if (manualPort == null)
-                    AdbTransport.autoConnect(context.applicationContext, timeoutMs = 6000).getOrThrow()
+                    AdbTransport.autoConnect(context.applicationContext, timeoutMs = 6000,
+                        allowLegacyTcpFallback = !wirelessOnly).getOrThrow()
                 else {
                     require(manualPort in 1..65535)
+                    require(!wirelessOnly || manualPort != 5555) {
+                        "Port 5555 uses TCP debugging. Select TCP/5555 instead."
+                    }
                     // A port-specific connection must not reuse a stale wireless
                     // session and report it as a verified TCP session.
                     AdbTransport.close()
@@ -136,6 +140,18 @@ object ExperimentalRecording {
         return if (helper.isSuccess) result
             else Result.failure(helper.exceptionOrNull()
                 ?: IllegalStateException("Enhanced helper failed to start"))
+    }
+
+    /** Ends only VRec's ADB session. The detached shell recorder is not stopped. */
+    suspend fun disconnect() {
+        status.value = status.value.copy(busy = true, message = "Disconnecting ADB…")
+        AdbTransport.close()
+        status.value = status.value.copy(
+            busy = false, connected = false, shellUid = null,
+            tcpPortOpen = tcpPresent(),
+            message = "ADB disconnected. The enhanced helper may keep running; " +
+                "use Home to turn recording on or off.",
+        )
     }
 
     suspend fun enableTcp(context: Context): Result<Unit> {
