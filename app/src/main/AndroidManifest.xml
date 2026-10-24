@@ -103,7 +103,7 @@
 
         <!-- Shares saved recordings with other apps. -->
         <provider
-            android:name=".recording.RecordingFileProvider"
+            android:name=".recording.RecordingShareFileProvider"
             android:authorities="${applicationId}.files"
             android:exported="false"
             android:grantUriPermissions="true">
