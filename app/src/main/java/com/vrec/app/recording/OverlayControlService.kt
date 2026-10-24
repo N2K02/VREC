@@ -24,6 +24,9 @@ import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import com.vrec.app.R
+import com.vrec.app.Log
+import com.vrec.app.Prefs
+import com.vrec.app.calls.CallMonitor
 
 /**
  * Movable recording controls shown above other apps while VREC records.
@@ -34,8 +37,9 @@ import com.vrec.app.R
 class OverlayControlService : Service() {
     companion object {
         const val ACTION_SHOW = "com.vrec.app.overlay.SHOW"
+        const val ACTION_DISMISS = "com.vrec.app.overlay.DISMISS"
         private const val STOPPING_VISIBLE_MS = 800L
-        private const val STOPPING_TIMEOUT_MS = 5_000L
+        private const val STOPPING_TIMEOUT_MS = 10_000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -44,43 +48,50 @@ class OverlayControlService : Service() {
     private var statusDot: RecordingStatusDot? = null
     private var pauseButton: ImageButton? = null
     private var stopButton: ImageButton? = null
+    private var closeButton: ImageButton? = null
     private var blinkAnimator: ObjectAnimator? = null
     private var stoppingSince: Long? = null
+    private var slowStopReported = false
 
     private val refresh = object : Runnable {
         override fun run() {
             val state = RecordingService.state.value
-            val stoppingAt = stoppingSince
-            if (stoppingAt != null) {
-                val elapsed = SystemClock.elapsedRealtime() - stoppingAt
-                if (state is RecordingService.State.Idle && elapsed >= STOPPING_VISIBLE_MS) {
-                    removeOverlay()
-                    stopSelf()
-                    return
-                }
-                if (state !is RecordingService.State.Idle && elapsed >= STOPPING_TIMEOUT_MS) {
-                    stoppingSince = null
-                    render(state)
-                } else {
+            val elapsed = stoppingSince?.let { SystemClock.elapsedRealtime() - it }
+            when (state) {
+                is RecordingService.State.Recording, is RecordingService.State.Paused ->
+                    if (stoppingSince != null) renderStopping() else render(state)
+                is RecordingService.State.Starting, is RecordingService.State.Stopping ->
                     renderStopping()
+                is RecordingService.State.Idle -> {
+                    stoppingSince = null
+                    slowStopReported = false
+                    if (Prefs.recordingEnabled(this@OverlayControlService) &&
+                        CallMonitor.canRecordAgain()) {
+                        renderStopped()
+                    } else {
+                        removeOverlay()
+                        stopSelf()
+                        return
+                    }
                 }
-                handler.postDelayed(this, 100L)
-                return
             }
-
-            if (state !is RecordingService.State.Recording && state !is RecordingService.State.Paused) {
-                removeOverlay()
-                stopSelf()
-                return
+            if (elapsed != null && elapsed >= STOPPING_TIMEOUT_MS && !slowStopReported &&
+                state !is RecordingService.State.Idle) {
+                slowStopReported = true
+                Log.w("Recording finalization pending; stop remains disabled")
             }
-            render(state)
-            handler.postDelayed(this, 500L)
+            handler.postDelayed(this, if (state is RecordingService.State.Stopping) 200L else 500L)
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_DISMISS) {
+            removeOverlay()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action != ACTION_SHOW) {
             stopSelf()
             return START_NOT_STICKY
@@ -124,13 +135,20 @@ class OverlayControlService : Service() {
             background = ColorDrawable(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
             setOnClickListener {
-                if (stoppingSince != null) return@setOnClickListener
-                val action = if (RecordingService.state.value is RecordingService.State.Paused) {
-                    RecordingService.ACTION_RESUME
-                } else {
-                    RecordingService.ACTION_PAUSE
+                if (stoppingSince != null || !Prefs.recordingEnabled(this@OverlayControlService))
+                    return@setOnClickListener
+                when (RecordingService.state.value) {
+                    is RecordingService.State.Paused ->
+                        startService(Intent(this@OverlayControlService, RecordingService::class.java)
+                            .setAction(RecordingService.ACTION_RESUME))
+                    is RecordingService.State.Recording ->
+                        startService(Intent(this@OverlayControlService, RecordingService::class.java)
+                            .setAction(RecordingService.ACTION_PAUSE))
+                    is RecordingService.State.Idle ->
+                        if (CallMonitor.canRecordAgain())
+                            CallMonitor.userRecordAgain(this@OverlayControlService)
+                    else -> Unit
                 }
-                startService(Intent(this@OverlayControlService, RecordingService::class.java).setAction(action))
             }
         }
         val stop = ImageButton(this).apply {
@@ -139,21 +157,34 @@ class OverlayControlService : Service() {
             background = ColorDrawable(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
             setOnClickListener {
-                if (stoppingSince != null) return@setOnClickListener
+                if (stoppingSince != null ||
+                    (RecordingService.state.value !is RecordingService.State.Recording &&
+                        RecordingService.state.value !is RecordingService.State.Paused))
+                    return@setOnClickListener
                 stoppingSince = SystemClock.elapsedRealtime()
                 renderStopping()
-                startService(
-                    Intent(this@OverlayControlService, RecordingService::class.java)
-                        .setAction(RecordingService.ACTION_STOP),
-                )
+                CallMonitor.userStop(this@OverlayControlService)
                 handler.removeCallbacks(refresh)
                 handler.post(refresh)
+            }
+        }
+        val close = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            contentDescription = "Close recording overlay"
+            background = ColorDrawable(Color.TRANSPARENT)
+            setColorFilter(Color.WHITE)
+            setOnClickListener {
+                // Closing hides controls without stopping or restarting the call.
+                CallMonitor.onOverlayDismissed()
+                removeOverlay()
+                stopSelf()
             }
         }
 
         panel.addView(status, LinearLayout.LayoutParams(dp(44), dp(44)))
         panel.addView(pause, LinearLayout.LayoutParams(dp(44), dp(44)))
         panel.addView(stop, LinearLayout.LayoutParams(dp(44), dp(44)))
+        panel.addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
 
         val layout = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -205,11 +236,13 @@ class OverlayControlService : Service() {
         statusDot = status
         pauseButton = pause
         stopButton = stop
+        closeButton = close
         runCatching { windowManager.addView(panel, layout) }.onFailure {
             root = null
             statusDot = null
             pauseButton = null
             stopButton = null
+            closeButton = null
             stopSelf()
         }
     }
@@ -258,15 +291,37 @@ class OverlayControlService : Service() {
         }
     }
 
+    /** Disable Stop and Play until the file has finalized. */
     private fun renderStopping() {
         stopBlinking()
         statusDot?.apply {
             setStatusColor(0xFF4CAF50.toInt())
-            contentDescription = "Stopping recording. Drag controls"
+            contentDescription = "Saving recording. Drag controls"
         }
         pauseButton?.apply {
+            setImageResource(android.R.drawable.ic_media_play)
+            contentDescription = "Record available after saving"
             isEnabled = false
             alpha = 0.45f
+        }
+        stopButton?.apply {
+            isEnabled = false
+            alpha = 0.45f
+        }
+    }
+
+    /** After Stop: call still active, Play explicitly creates another file. */
+    private fun renderStopped() {
+        stopBlinking()
+        statusDot?.apply {
+            setStatusColor(0xFF888888.toInt())
+            contentDescription = "Recording stopped. Drag controls"
+        }
+        pauseButton?.apply {
+            setImageResource(android.R.drawable.ic_media_play)
+            contentDescription = "Record again"
+            isEnabled = true
+            alpha = 1f
         }
         stopButton?.apply {
             isEnabled = false
@@ -311,7 +366,9 @@ class OverlayControlService : Service() {
         statusDot = null
         pauseButton = null
         stopButton = null
+        closeButton = null
         stoppingSince = null
+        slowStopReported = false
     }
 
     override fun onDestroy() {
