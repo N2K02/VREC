@@ -136,6 +136,7 @@ object ExperimentalCaptureDaemon {
     private fun shouldArmForNextCall(context: Context): Boolean =
         Prefs.recordingEnabled(context) &&
             !AdbFallbackNotice.active.value &&
+            !AdbFallbackNotice.handoffInProgress.value &&
             RecordingService.state.value is RecordingService.State.Idle
 
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
@@ -189,12 +190,17 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    suspend fun setMode(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun setMode(context: Context, enabled: Boolean,
+                        forVerifiedHandoff: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         modeMutex.withLock {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
-            val allowed = enabled && shouldArmForNextCall(context) &&
-                ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD
+            val allowed = enabled && Prefs.recordingEnabled(context) &&
+                ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                if (forVerifiedHandoff)
+                    AdbFallbackNotice.handoffInProgress.value &&
+                        RecordingService.state.value is RecordingService.State.Idle
+                else shouldArmForNextCall(context)
             runCatching {
                 open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
                     val confirmedMode = it.getInputStream().bufferedReader().readLine()?.trim()
