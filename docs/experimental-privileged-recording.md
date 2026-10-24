@@ -1,4 +1,4 @@
-# VRec experimental call recording — unified PR #31
+# VRec experimental call recording — unified PR #32
 
 This document describes the actual experimental implementation and its limitations.
 **PR #32 is the only open experimental PR, targeting `main`.** PRs #19, #23, #26, and #31 are closed as superseded. Stable is unchanged until review and testing.
@@ -25,10 +25,11 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
 
 - A successfully started shell Java process may continue running after the ADB
   session or Wi-Fi disconnects; it is **not** a permanent system service.
-- `AdbPrivilegedApiHelper.kt` is the initial lifecycle facade: authenticated
-  `reconnect()`, privileged `startWithAdb()`, and `checkHealth()` states.
-  Wiring this helper into all startup/foreground/background lifecycles and
-  automated recovery is *not yet complete*.
+- `AdbPrivilegedApiHelper.kt` provides authenticated `reconnect()`,
+  privileged `startWithAdb()`, and `checkHealth()` states. VRec uses it on
+  app-process startup and in the Experimental recording screen.
+  Full background monitoring and privileged automatic restart are **not**
+  implemented; a lost shell process requires renewed authorized ADB access.
 - Neither the APK nor its helper can start a new shell-UID process without
   already-authorized ADB access. If Android kills the daemon or the phone
   reboots, a fresh privileged start may be necessary.
