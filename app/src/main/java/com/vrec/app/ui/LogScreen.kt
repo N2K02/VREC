@@ -31,8 +31,9 @@ fun LogScreen() {
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Text("Recording activity", style = MaterialTheme.typography.titleMedium)
         Text(
-            "What VREC has been doing, newest at the bottom. Handy for seeing which source was used and whether a recording was silent.",
+            "Recent recording events and diagnostics",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
