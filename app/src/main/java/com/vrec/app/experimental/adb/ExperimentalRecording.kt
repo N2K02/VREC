@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import com.vrec.app.calls.CallDetectionAccess
+import com.vrec.app.Prefs
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -84,6 +86,27 @@ object ExperimentalRecording {
         return result
     }
 
+    /**
+     * Called automatically once the user has explicitly selected ADB and
+     * authorized an ADB connection. This is a separate Telecom AppOp, not
+     * shell/recording-helper authorization.
+     */
+    suspend fun grantAdvancedDetection(context: Context): Result<Unit> {
+        if (method(context) != Method.BUILT_IN_ADB) {
+            return Result.failure(IllegalStateException("Select the ADB recording method first."))
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return Result.success(Unit)
+        val result = if (CallDetectionAccess.isGranted(context)) Result.success(Unit)
+            else CallDetectionAccess.grantWithAdb(context)
+        val confirmed = result.isSuccess && CallDetectionAccess.isGranted(context)
+        Prefs.of(context).edit().putBoolean(
+            Prefs.EXPERIMENTAL_CALL_DETECTION, confirmed
+        ).apply()
+        return if (confirmed) Result.success(Unit)
+            else Result.failure(result.exceptionOrNull()
+                ?: IllegalStateException("Android did not confirm advanced detection permission."))
+    }
+
     suspend fun connect(context: Context, manualPort: Int? = null, wirelessOnly: Boolean = false): Result<Int> {
         status.value = status.value.copy(busy = true, message = "Connecting to ADB…")
         val result = withContext(Dispatchers.IO) {
@@ -126,15 +149,21 @@ object ExperimentalRecording {
         val helper = if (method(context) == Method.BUILT_IN_ADB)
             AdbPrivilegedApiHelper.startWithAdb(context)
         else Result.success(Unit)
+        // The ADB selection includes consent to configure advanced Telecom
+        // detection. Only issue the AppOp command on this verified shell link.
+        val telecom = if (method(context) == Method.BUILT_IN_ADB)
+            grantAdvancedDetection(context)
+        else Result.success(Unit)
         status.value = status.value.copy(
             busy = false,
-            message = if (helper.isSuccess) {
-                if (method(context) == Method.BUILT_IN_ADB)
-                    "ADB verified (shell UID 2000). Enhanced helper ready."
-                else "ADB verified (shell UID 2000)."
-            } else {
-                "ADB verified, but enhanced helper failed: " +
+            message = when {
+                helper.isFailure -> "ADB verified, but enhanced helper failed: " +
                     (helper.exceptionOrNull()?.message ?: "unknown error")
+                telecom.isFailure -> "ADB and helper ready; advanced call detection still needs access: " +
+                    (telecom.exceptionOrNull()?.message ?: "permission not confirmed")
+                method(context) == Method.BUILT_IN_ADB ->
+                    "ADB verified (shell UID 2000). Helper ready; advanced call detection enabled."
+                else -> "ADB verified (shell UID 2000)."
             },
         )
         return if (helper.isSuccess) result
@@ -201,12 +230,18 @@ object ExperimentalRecording {
             val helper = if (method(context) == Method.BUILT_IN_ADB)
                 AdbPrivilegedApiHelper.startWithAdb(context)
             else Result.success(Unit)
+            val telecom = if (method(context) == Method.BUILT_IN_ADB)
+                grantAdvancedDetection(context)
+            else Result.success(Unit)
             status.value = status.value.copy(
                 busy = false, connected = true, shellUid = 2000, tcpPortOpen = true,
-                message = if (helper.isSuccess)
-                    "TCP/5555 connected. Enhanced helper ready; Wireless debugging is not required."
-                else "TCP/5555 connected, but enhanced helper failed: " +
-                    (helper.exceptionOrNull()?.message ?: "unknown error"),
+                message = when {
+                    helper.isFailure -> "TCP/5555 connected, but enhanced helper failed: " +
+                        (helper.exceptionOrNull()?.message ?: "unknown error")
+                    telecom.isFailure -> "TCP/5555 and helper ready; advanced call detection needs access: " +
+                        (telecom.exceptionOrNull()?.message ?: "permission not confirmed")
+                    else -> "TCP/5555 verified. Helper ready; advanced call detection enabled."
+                },
             )
             return helper
         }
