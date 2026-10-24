@@ -105,4 +105,31 @@ val bundleVrecShellDaemon = tasks.register<Copy>("bundleVrecShellDaemon") {
     from(daemonJar)
     into(layout.projectDirectory.dir("src/main/assets"))
 }
-tasks.named("preBuild") { dependsOn(bundleVrecShellDaemon) }
+// Both classpaths must package the Material 3 ABI used by n2k02theme/updater.
+// Compilation alone is not enough: a mismatched runtime causes NoSuchMethodError
+// only when the recording overflow's ModalBottomSheet is first shown.
+val verifyComposeMaterial3RuntimeAbi = tasks.register("verifyComposeMaterial3RuntimeAbi") {
+    group = "verification"
+    description = "Fail the build if Material 3's compile and runtime versions diverge"
+    doLast {
+        val expected = "1.5.0-beta01"
+        listOf("debugCompileClasspath", "debugRuntimeClasspath").forEach { configurationName ->
+            val selectedVersions = configurations.getByName(configurationName)
+                .incoming.resolutionResult.allComponents
+                .mapNotNull { it.moduleVersion }
+                .filter { it.group == "androidx.compose.material3" && it.name == "material3" }
+                .map { it.version }
+                .distinct()
+            check(selectedVersions == listOf(expected)) {
+                "$configurationName resolved Material 3 $selectedVersions instead of $expected; " +
+                    "this can crash ModalBottomSheet with NoSuchMethodError."
+            }
+        }
+        println("Compose Material 3 compile/runtime ABI verified at $expected")
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(bundleVrecShellDaemon)
+    dependsOn(verifyComposeMaterial3RuntimeAbi)
+}
