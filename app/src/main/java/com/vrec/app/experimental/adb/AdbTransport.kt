@@ -435,6 +435,42 @@ object AdbTransport {
         }
     }
 
+    /**
+     * Request an already-authenticated adbd to restart as TCP/5555. This is
+     * opt-in and may expose adbd on LAN interfaces; the user must confirm first.
+     * ADB normally drops the connection while changing transport modes.
+     */
+    suspend fun switchToTcp(port: Int = 5555): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(port == LEGACY_TCP_PORT) { "Only the expected port is supported" }
+            val mgr = manager ?: error("Connect with authenticated Wireless debugging first")
+            check(mgr.isConnected) { "Connect with authenticated Wireless debugging first" }
+            mgr.openStream("tcpip:$port").let { stream ->
+                // adbd often restarts immediately, closing the stream.
+                runCatching { stream.close() }
+            }
+            runCatching { shell?.close() }
+            shell = null
+            runCatching { mgr.disconnect() }
+            lastKnownConnected = false
+            Unit
+        }
+    }
+
+    /** Ask adbd to leave TCP mode and return to USB, when connected. */
+    suspend fun switchToUsb(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val mgr = manager ?: error("ADB is not connected")
+            check(mgr.isConnected) { "ADB is not connected" }
+            mgr.openStream("usb:").let { stream -> runCatching { stream.close() } }
+            runCatching { shell?.close() }
+            shell = null
+            runCatching { mgr.disconnect() }
+            lastKnownConnected = false
+            Unit
+        }
+    }
+
     suspend fun disconnect() = withContext(Dispatchers.IO) {
         runCatching { shell?.close() }
         shell = null
