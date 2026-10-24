@@ -167,6 +167,8 @@ fun SettingsScreen(
             }
         }
 
+        if (section == "Experimental call detection") ExperimentalRecorderCard()
+
         if (section == "Experimental call detection") SettingCard("Experimental call detection") {
             ToggleRow(
                 "Use InCallService detection (Android 12+)",
