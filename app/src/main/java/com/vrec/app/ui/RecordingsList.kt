@@ -162,7 +162,7 @@ fun RecordingsList() {
 
     fun share(rec: Recording) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", rec.file)
-        val intent = Intent(Intent.ACTION_SEND).setType("audio/mp4")
+        val intent = Intent(Intent.ACTION_SEND).setType(if (rec.file.extension.equals("ogg", true)) "audio/ogg" else "audio/mp4")
             .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         runCatching { context.startActivity(Intent.createChooser(intent, "Share recording").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }

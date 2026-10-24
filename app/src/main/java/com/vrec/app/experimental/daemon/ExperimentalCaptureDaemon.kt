@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.DataInputStream
@@ -40,6 +42,7 @@ object ExperimentalCaptureDaemon {
     private val random = SecureRandom()
     val message = MutableStateFlow("Recorder not started.")
     val ready = MutableStateFlow(false)
+    private val importMutex = Mutex()
 
     private fun token(context: Context): String {
         val prefs = context.getSharedPreferences("vrec_experimental_recorder", Context.MODE_PRIVATE)
@@ -209,6 +212,7 @@ object ExperimentalCaptureDaemon {
 
     /** Imports only fully muxed files and only deletes the shell copy on success. */
     suspend fun collect(context: Context): Result<Int> = withContext(Dispatchers.IO) {
+        importMutex.withLock {
         runCatching {
             var collected = 0
             for (name in pending(context)) {
@@ -276,6 +280,7 @@ object ExperimentalCaptureDaemon {
             collected
         }.onFailure {
             message.value = "Import failed: " + it.message
+        }
         }
     }
 

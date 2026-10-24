@@ -155,7 +155,7 @@ object RecordingStore {
     }
 
     fun list(context: Context): List<Recording> =
-        dir(context).listFiles { f -> f.isFile && f.name.endsWith(".m4a", ignoreCase = true) }
+        dir(context).listFiles { f -> f.isFile && (f.name.endsWith(".m4a", ignoreCase = true) || f.name.endsWith(".ogg", ignoreCase = true)) }
             ?.map { read(it) }
             ?.sortedByDescending { it.startedAt }
             ?: emptyList()
