@@ -295,6 +295,7 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
         is RecordingService.State.Paused -> "Recording paused"
         is RecordingService.State.Starting -> "Starting recording"
         is RecordingService.State.Recording -> "Recording now"
+        is RecordingService.State.Stopping -> "Saving recording"
         else -> "Recording"
     }
     Surface(
@@ -358,6 +359,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                             color = MaterialTheme.colorScheme.primary)
                         Text(
                             if (!recordingEnabled) "Recording is off"
+                            else if (recState is RecordingService.State.Stopping) "Saving recording"
                             else if (recording) "Recording in progress"
                             else if (ready) "Ready to record"
                             else "Complete setup",
@@ -380,7 +382,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                     Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
                         Text("Finish setup")
                     }
-                } else if (recordingEnabled) ManualRecordButton(recording)
+                } else if (recordingEnabled) ManualRecordButton(recState)
             }
         }
         Text("Explore", style = MaterialTheme.typography.titleMedium,
@@ -486,19 +488,30 @@ private fun NavigationCard(
 }
 
 @Composable
-private fun ManualRecordButton(recording: Boolean) {
+private fun ManualRecordButton(state: RecordingService.State) {
     val context = LocalContext.current
-    if (recording) {
-        Button(
-            onClick = { CallMonitor.manualStop(context) },
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("■  Stop recording") }
-    } else {
-        FilledTonalButton(onClick = { CallMonitor.manualStart(context) }, modifier = Modifier.fillMaxWidth()) {
-            Text("●  Record now")
+    when (state) {
+        is RecordingService.State.Stopping -> {
+            FilledTonalButton(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Saving recording…") }
+        }
+        is RecordingService.State.Idle -> {
+            FilledTonalButton(
+                onClick = { CallMonitor.manualStart(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (CallMonitor.canRecordAgain()) "▶  Record again" else "●  Record now") }
+        }
+        else -> {
+            Button(
+                onClick = { CallMonitor.manualStop(context) },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("■  Stop recording") }
         }
     }
 }
