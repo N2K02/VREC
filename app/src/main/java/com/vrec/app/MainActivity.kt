@@ -182,10 +182,13 @@ private fun App() {
                             Triple(Screen.SETTINGS, "Settings", Icons.Rounded.Settings),
                         ).forEach { (destination, label, icon) ->
                             NavigationBarItem(
-                                selected = screen == destination ||
-                                    (destination == Screen.SETTINGS &&
-                                        (screen == Screen.LOG || screen == Screen.UPDATE ||
-                                            (screen == Screen.SETUP && returnToSettings))),
+                                selected = when {
+                                    screen == Screen.SETUP && returnToSettings ->
+                                        destination == Screen.SETTINGS
+                                    screen == Screen.LOG || screen == Screen.UPDATE ->
+                                        destination == Screen.SETTINGS
+                                    else -> screen == destination
+                                },
                                 onClick = { navigateTo(destination) },
                                 icon = {
                                     if (destination == Screen.SETTINGS) {
@@ -247,6 +250,9 @@ private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?
                     IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                    Icon(icon, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp))
                 } else {
                     Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp))
