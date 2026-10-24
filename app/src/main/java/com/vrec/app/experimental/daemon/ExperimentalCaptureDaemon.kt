@@ -50,6 +50,13 @@ object ExperimentalCaptureDaemon {
         }
     }
 
+    /** Only this app install's capture daemon knows the generated token. */
+    fun isAuthorizedWake(context: Context, candidate: String?): Boolean =
+        candidate != null && MessageDigest.isEqual(
+            token(context).toByteArray(Charsets.UTF_8),
+            candidate.toByteArray(Charsets.UTF_8),
+        )
+
     private fun mac(key: ByteArray, label: String, nonceA: ByteArray, nonceB: ByteArray): ByteArray =
         Mac.getInstance("HmacSHA256").run {
             init(SecretKeySpec(key, "HmacSHA256"))
