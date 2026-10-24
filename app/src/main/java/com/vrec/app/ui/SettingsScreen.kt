@@ -1,6 +1,10 @@
 package com.vrec.app.ui
 
 import androidx.compose.foundation.clickable
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.material3.OutlinedButton
+import com.vrec.app.calls.VoipNotifListener
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +72,8 @@ fun SettingsScreen(
     val context = LocalContext.current
     val prefs = remember { Prefs.of(context) }
     val scope = rememberCoroutineScope()
+    val resumeTick = rememberOnResumeTick()
+    val voipNotificationGranted = remember(resumeTick) { VoipNotifListener.isEnabled(context) }
     var recordingMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
 
     fun selectRecordingMethod(method: ExperimentalRecording.Method) {
@@ -241,9 +247,32 @@ fun SettingsScreen(
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
                 "Record VoIP calls",
-                "WhatsApp, Telegram and similar, detected through Notification access (grant it in Setup). These usually need loudspeaker to catch both sides.",
+                "WhatsApp, Telegram and similar. Call detection uses Notification access; capturing the other voice depends on Android audio restrictions.",
                 recordVoip,
             ) { recordVoip = it; putBool(Prefs.RECORD_VOIP, it) }
+            if (recordVoip) {
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Notification access", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (voipNotificationGranted) "Granted · App call detection available"
+                            else "Required to detect supported app calls",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!voipNotificationGranted) {
+                        OutlinedButton(onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
+                        }) { Text("Allow") }
+                    }
+                }
+            }
         }
 
         if (section == "Recording") Text(
