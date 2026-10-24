@@ -291,11 +291,24 @@ fun LegacyUpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
 }
 
 
-/** Dedicated update page, matching PCL's in-app updater workflow. */
+/** Dedicated About & updates page. Primary APK action stays visible before release notes. */
 @Composable
 fun UpdateScreen() {
     val experimentalEnabled by com.vrec.app.LiveUpdater.experimentalEnabled.collectAsState()
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // The selected controller is recreated when the update channel changes.
+    // Reading the channel above ensures Compose subscribes to the new controller.
+    val controller = com.vrec.app.LiveUpdater.controller
+    val status by controller.status.collectAsState()
+    val context = LocalContext.current
+    val activity = context.activity()
+    var notesExpanded by remember { mutableStateOf(false) }
+    var detailsExpanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Text("Keep VRec up to date", style = MaterialTheme.typography.titleMedium)
         androidx.compose.material3.ListItem(
             headlineContent = { Text("VREC") },
@@ -303,13 +316,148 @@ fun UpdateScreen() {
         )
         androidx.compose.material3.ListItem(
             headlineContent = { Text("Experimental updates") },
-            supportingContent = { Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.") },
-            trailingContent = { Switch(checked = experimentalEnabled, onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
+            supportingContent = {
+                Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.")
+            },
+            trailingContent = {
+                Switch(
+                    checked = experimentalEnabled,
+                    onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled,
+                )
+            },
         )
         androidx.compose.material3.HorizontalDivider()
-        dev.n2k02.updater.N2K02UpdateScreen(
-            controller = com.vrec.app.LiveUpdater.controller,
-            installGuard = com.vrec.app.LiveUpdater.installGuard,
-        )
+        Text("App updates", style = MaterialTheme.typography.titleLarge)
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when (val current = status) {
+                    dev.n2k02.updater.UpdateStatus.Idle -> {
+                        Text("Check for a new ${if (experimentalEnabled) "experimental" else "stable"} APK.")
+                        Button(
+                            onClick = { controller.check(manual = true) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Check for updates") }
+                    }
+                    dev.n2k02.updater.UpdateStatus.Checking -> {
+                        Text("Checking for updates…")
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    dev.n2k02.updater.UpdateStatus.Current -> {
+                        Text("You're up to date.")
+                        FilledTonalButton(
+                            onClick = { controller.check(manual = true) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Check again") }
+                    }
+                    is dev.n2k02.updater.UpdateStatus.Available -> {
+                        val release = current.release
+                        Text("Update available", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Build ${release.tag.substringAfterLast("run-", release.tag)} · " +
+                                "${if (release.experimental) "Experimental" else "Stable"} · " +
+                                "versionCode ${release.versionCode}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Put the action BEFORE the notes; a long changelog must
+                        // never hide the button below a non-scrollable viewport.
+                        Button(
+                            onClick = { controller.download(release) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Download update") }
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(release.apkUrl),
+                                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
+                        ) { Text("Open APK link in browser") }
+                        if (release.notes.isNotEmpty()) {
+                            androidx.compose.material3.HorizontalDivider()
+                            TextButton(onClick = { notesExpanded = !notesExpanded }) {
+                                Text(
+                                    if (notesExpanded) "Hide what's new"
+                                    else "What's new (${release.notes.size} changes)"
+                                )
+                            }
+                            if (notesExpanded) {
+                                release.notes.forEach { note ->
+                                    Text("• $note", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                    is dev.n2k02.updater.UpdateStatus.Downloading -> {
+                        Text("Downloading verified APK…", style = MaterialTheme.typography.titleMedium)
+                        val progress = current.progress
+                        if (progress == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        else {
+                            LinearProgressIndicator(
+                                progress = { progress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("${(progress * 100).toInt()}% downloaded")
+                        }
+                        TextButton(onClick = controller::cancel) { Text("Cancel download") }
+                    }
+                    is dev.n2k02.updater.UpdateStatus.Ready -> {
+                        Text("APK downloaded and verified", style = MaterialTheme.typography.titleMedium)
+                        Button(
+                            enabled = activity != null,
+                            onClick = {
+                                activity?.let { controller.install(it, com.vrec.app.LiveUpdater.installGuard) }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Install update") }
+                        Text(
+                            "Android's installer will open. Your existing recordings are kept.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    is dev.n2k02.updater.UpdateStatus.NeedsInstallPermission -> {
+                        Text("Allow VRec to install its update", style = MaterialTheme.typography.titleMedium)
+                        Button(
+                            enabled = activity != null,
+                            onClick = { activity?.let(controller::openInstallPermission) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Open install permission") }
+                        TextButton(
+                            enabled = activity != null,
+                            onClick = {
+                                activity?.let { controller.install(it, com.vrec.app.LiveUpdater.installGuard) }
+                            },
+                        ) { Text("Try installation again") }
+                    }
+                    is dev.n2k02.updater.UpdateStatus.Failed -> {
+                        Text("Update couldn't complete", style = MaterialTheme.typography.titleMedium)
+                        Text(current.message, color = MaterialTheme.colorScheme.error)
+                        Button(
+                            onClick = { controller.check(manual = true) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Try again") }
+                        current.diagnostics?.let { details ->
+                            TextButton(onClick = { detailsExpanded = !detailsExpanded }) {
+                                Text(if (detailsExpanded) "Hide details" else "Show details")
+                            }
+                            if (detailsExpanded) {
+                                Text(details, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
