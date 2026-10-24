@@ -44,11 +44,12 @@ import com.vrec.app.recording.RecordingEngine
 
 @Composable
 fun SettingsScreen(
+    section: String?,
+    onSectionChange: (String?) -> Unit,
     onOpenSetup: () -> Unit = {},
     onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
 ) {
-    var section by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val prefs = remember { Prefs.of(context) }
 
@@ -77,7 +78,7 @@ fun SettingsScreen(
                 Triple("Floating controls", "Recording overlay", Icons.Filled.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Filled.Call),
             ).forEach { (name, detail, icon) ->
-                Card(modifier = Modifier.fillMaxWidth().clickable { section = name }) {
+                Card(modifier = Modifier.fillMaxWidth().clickable { onSectionChange(name) }) {
                     ListItem(headlineContent = { Text(name) }, supportingContent = { Text(detail) }, leadingContent = { Icon(icon, null) })
                 }
             }
@@ -86,7 +87,7 @@ fun SettingsScreen(
             Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLog)) { ListItem(headlineContent = { Text("Activity log") }, supportingContent = { Text("Events and diagnostics") }, leadingContent = { Icon(Icons.Filled.Article, null) }) }
             Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUpdates)) { ListItem(headlineContent = { Text("About & updates") }, supportingContent = { Text("Version, experimental builds and check for updates") }, leadingContent = { Icon(Icons.Filled.SystemUpdate, null) }) }
         } else {
-            Text("‹  Settings", modifier = Modifier.fillMaxWidth().clickable { section = null }.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+            Text("‹  Settings", modifier = Modifier.fillMaxWidth().clickable { onSectionChange(null) }.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
             Text(section ?: "", style = MaterialTheme.typography.headlineSmall)
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
