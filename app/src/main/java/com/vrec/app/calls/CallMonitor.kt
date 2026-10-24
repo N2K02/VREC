@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.telecom.Call
 import android.telecom.TelecomManager
-import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -320,13 +319,16 @@ object CallMonitor {
                 RecordingService.stop(context.applicationContext, System.currentTimeMillis())
             }
         }
+        val appContext = context.applicationContext
         modeScope.launch {
-            // The daemon may outlive VRec; always sync its capture switch with Home.
-            // setMode also checks the live preference, protecting against late enable jobs.
-            if (ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD ||
-                ExperimentalCaptureDaemon.ready.value) {
-                ExperimentalCaptureDaemon.setMode(context.applicationContext,
-                    enabled && Prefs.recordingEnabled(context))
+            // The shell service can outlive the app, even before it has been probed.
+            // Always send the master state; setMode rechecks the live preference.
+            val applied = ExperimentalCaptureDaemon.setMode(appContext,
+                enabled && Prefs.recordingEnabled(appContext))
+            if (!applied && ExperimentalCaptureDaemon.ready.value) {
+                ExperimentalCaptureDaemon.message.value =
+                    "Could not confirm the enhanced recorder's capture state. " +
+                    "Check Settings → Experimental and stop it before sensitive calls."
             }
         }
         Log.i("Recording function " + if (enabled) "enabled" else "disabled")
