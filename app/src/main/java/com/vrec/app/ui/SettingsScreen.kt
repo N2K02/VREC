@@ -1,6 +1,7 @@
 package com.vrec.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,6 +31,14 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.ArrowForwardIos
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -70,25 +81,49 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (section == null) {
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
-            listOf(
-                Triple("Recording", "Automatic recording and silent files", Icons.Filled.Mic),
-                Triple("Microphone source", "Choose the audio input", Icons.Filled.Tune),
-                Triple("Capturing the other side", "Speaker and communication mode", Icons.Filled.Call),
-                Triple("Floating controls", "Recording overlay", Icons.Filled.Notifications),
-                Triple("VoIP", "Internet call recording", Icons.Filled.Call),
-            ).forEach { (name, detail, icon) ->
-                Card(modifier = Modifier.fillMaxWidth().clickable { onSectionChange(name) }) {
-                    ListItem(headlineContent = { Text(name) }, supportingContent = { Text(detail) }, leadingContent = { Icon(icon, null) })
+            Text("Recording & audio",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+            Surface(shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer) {
+                Column {
+                    SettingsNavigationRow("Recording", "Automatic recording and silent files",
+                        Icons.Rounded.Mic) { onSectionChange("Recording") }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SettingsNavigationRow("Microphone source", "Choose the audio input",
+                        Icons.Rounded.Tune) { onSectionChange("Microphone source") }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SettingsNavigationRow("Capturing the other side", "Speaker and communication mode",
+                        Icons.Rounded.Call) { onSectionChange("Capturing the other side") }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SettingsNavigationRow("Floating controls", "Recording overlay",
+                        Icons.Rounded.Notifications) { onSectionChange("Floating controls") }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SettingsNavigationRow("VoIP", "Internet call recording",
+                        Icons.Rounded.Call) { onSectionChange("VoIP") }
                 }
             }
-            HorizontalDivider()
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSetup)) { ListItem(headlineContent = { Text("Setup & permissions") }, supportingContent = { Text("Configure recording access") }, leadingContent = { Icon(Icons.Filled.Settings, null) }) }
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLog)) { ListItem(headlineContent = { Text("Activity log") }, supportingContent = { Text("Events and diagnostics") }, leadingContent = { Icon(Icons.Filled.Article, null) }) }
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUpdates)) { ListItem(headlineContent = { Text("About & updates") }, supportingContent = { Text("Version, experimental builds and check for updates") }, leadingContent = { Icon(Icons.Filled.SystemUpdate, null) }) }
+            Text("More", style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+            Surface(shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer) {
+                Column {
+                    SettingsNavigationRow("Setup & permissions", "Configure recording access",
+                        Icons.Rounded.Settings, onOpenSetup)
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SettingsNavigationRow("Activity log", "Events and diagnostics",
+                        Icons.Rounded.Article, onOpenLog)
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SettingsNavigationRow("About & updates", "Version and app updates",
+                        Icons.Rounded.SystemUpdate, onOpenUpdates)
+                }
+            }
         } else {
-            Text("‹  Settings", modifier = Modifier.fillMaxWidth().clickable { onSectionChange(null) }.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
-            Text(section ?: "", style = MaterialTheme.typography.headlineSmall)
+            Text(section, style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(vertical = 4.dp))
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
@@ -153,8 +188,33 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun SettingsNavigationRow(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title, fontWeight = FontWeight.Medium) },
+        supportingContent = { Text(subtitle) },
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Icon(Icons.Rounded.ArrowForwardIos, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    )
+}
+
+@Composable
 private fun SettingCard(title: String, content: @Composable () -> Unit) {
     Card(
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         modifier = Modifier.fillMaxWidth(),
     ) {

@@ -5,12 +5,15 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -32,7 +35,7 @@ fun LogScreen() {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            "What VREC has been doing, newest at the bottom. Handy for seeing which source was used and whether a recording was silent.",
+            "Recent recording events and diagnostics.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -40,11 +43,23 @@ fun LogScreen() {
             Button(onClick = { copy(context, Log.snapshot()) }) { Text("Copy") }
             OutlinedButton(onClick = { Log.clear() }) { Text("Clear") }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            if (lines.isEmpty()) {
-                Text("Nothing yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+        Surface(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (lines.isEmpty()) {
+                    Text("No activity yet", style = MaterialTheme.typography.titleMedium)
+                    Text("New recording events appear here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
             }
         }
     }
