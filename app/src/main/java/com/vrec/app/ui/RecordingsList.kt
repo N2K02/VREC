@@ -173,6 +173,17 @@ fun RecordingsList() {
         playingPath = null
         playbackPaused = false
         playbackPosition = 0L
+        playbackDuration = 0L
+    }
+
+    // Playback controls live only in the active recording card. If the recording
+    // disappears from the filtered library, stop playback rather than leave audio
+    // running with no visible controls.
+    LaunchedEffect(playingPath, search, filter, refresh, tick) {
+        val path = playingPath
+        if (path != null && visibleRecordings.none { it.file.absolutePath == path }) {
+            stopPlayback()
+        }
     }
 
     /** Play / pause / resume, following ShizuCallRecorder's single active-player behaviour. */
@@ -278,6 +289,7 @@ fun RecordingsList() {
             }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = {
+                if (!selectionMode) stopPlayback()
                 selectionMode = !selectionMode
                 selectedPaths = emptySet()
             }) { Text(if (selectionMode) "Done" else "Select") }
@@ -325,6 +337,7 @@ fun RecordingsList() {
                 RecordingRow(rec = rec, active = active, playing = active && !playbackPaused,
                     progress = if (active && playbackDuration > 0L) (playbackPosition.toFloat() / playbackDuration).coerceIn(0f, 1f) else 0f,
                     positionMs = if (active) playbackPosition else 0L,
+                    durationMs = if (active && playbackDuration > 0L) playbackDuration else rec.durationMs,
                     selected = rec.file.absolutePath in selectedPaths, selectionMode = selectionMode,
                     onSelect = {
                         selectedPaths = if (rec.file.absolutePath in selectedPaths) selectedPaths - rec.file.absolutePath
@@ -334,38 +347,8 @@ fun RecordingsList() {
                         player.seekTo((value * playbackDuration).toInt().coerceAtLeast(0))
                         playbackPosition = (value * playbackDuration).toLong()
                     } },
+                    onStop = { if (active) stopPlayback() },
                     onShare = { share(rec) }, onActions = { actionsRecording = rec })
-            }
-        }
-    }
-
-    playingPath?.let { path ->
-        recordings.firstOrNull { it.file.absolutePath == path }?.let { rec ->
-            Card(shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f).clickable { currentRecording = rec }) {
-                            Text(rec.displayName, style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${formatDuration(playbackPosition)} / ${formatDuration(playbackDuration)}",
-                                style = MaterialTheme.typography.labelMedium)
-                        }
-                        FilledTonalIconButton(onClick = { togglePlay(rec) }) {
-                            Icon(if (playbackPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                contentDescription = if (playbackPaused) "Resume recording" else "Pause recording")
-                        }
-                        IconButton(onClick = { stopPlayback() }) {
-                            Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
-                        }
-                    }
-                    Slider(value = (playbackPosition.toFloat() / playbackDuration.coerceAtLeast(1L)).coerceIn(0f, 1f),
-                        onValueChange = { value ->
-                            runCatching { player.seekTo((value * playbackDuration).toInt().coerceAtLeast(0)) }
-                            playbackPosition = (value * playbackDuration).toLong()
-                        }, enabled = playbackDuration > 0L)
-                }
             }
         }
     }
@@ -483,9 +466,9 @@ fun RecordingsList() {
 @Composable
 private fun RecordingRow(
     rec: Recording, active: Boolean, playing: Boolean, progress: Float, positionMs: Long,
-    selected: Boolean, selectionMode: Boolean,
+    durationMs: Long, selected: Boolean, selectionMode: Boolean,
     onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit,
-    onSeek: (Float) -> Unit, onShare: () -> Unit, onActions: () -> Unit,
+    onSeek: (Float) -> Unit, onStop: () -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
     Card(shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor =
@@ -529,11 +512,32 @@ private fun RecordingRow(
                 }
             }
             if (active && !selectionMode) {
-                Slider(value = progress, onValueChange = onSeek, modifier = Modifier.fillMaxWidth())
+                // One in-card player: the row's left button handles Play/Pause/Resume,
+                // while the expanded controls handle seeking and stopping.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Slider(
+                        value = progress,
+                        onValueChange = onSeek,
+                        modifier = Modifier.weight(1f),
+                        enabled = durationMs > 0L,
+                    )
+                    IconButton(onClick = onStop) {
+                        Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
+                    }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatDuration(positionMs), style = MaterialTheme.typography.labelSmall)
-                    Text(formatDuration(rec.durationMs.coerceAtLeast(positionMs)),
-                        style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        formatDuration(positionMs),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Text(
+                        formatDuration(durationMs.coerceAtLeast(positionMs)),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
             if (rec.silent) Text("Silent audio — check capture compatibility",
