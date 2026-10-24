@@ -21,8 +21,9 @@ class VrecApp : Application() {
                 if (ExperimentalCaptureDaemon.probe(applicationContext)) {
                     ExperimentalCaptureDaemon.setMode(
                         applicationContext,
-                        ExperimentalRecording.method(applicationContext) !=
-                            ExperimentalRecording.Method.STANDARD,
+                        Prefs.recordingEnabled(applicationContext) &&
+                            ExperimentalRecording.method(applicationContext) !=
+                                ExperimentalRecording.Method.STANDARD,
                     )
                     ExperimentalCaptureDaemon.collect(applicationContext)
                 }

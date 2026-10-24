@@ -52,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -324,14 +325,20 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 
 @Composable
 private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
+    val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val recording = recState !is RecordingService.State.Idle
+    var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        RecordingMasterCard(enabled = recordingEnabled, onEnabledChange = { enabled ->
+            CallMonitor.setRecordingEnabled(context, enabled)
+            recordingEnabled = enabled
+        })
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
@@ -350,26 +357,30 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                         Text("VREC", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary)
                         Text(
-                            if (recording) "Recording in progress"
+                            if (!recordingEnabled) "Recording is off"
+                            else if (recording) "Recording in progress"
                             else if (ready) "Ready to record"
                             else "Complete setup",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            if (ready) "Keep your calls saved privately on this device"
+                            if (!recordingEnabled) "Enable recording above to capture calls"
+                            else if (ready) "Keep your calls saved privately on this device"
                             else "Enable microphone and call access to begin",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+                if (recordingEnabled) {
+                    (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+                }
                 if (!ready) {
                     Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
                         Text("Finish setup")
                     }
-                } else ManualRecordButton(recording)
+                } else if (recordingEnabled) ManualRecordButton(recording)
             }
         }
         Text("Explore", style = MaterialTheme.typography.titleMedium,
@@ -402,6 +413,40 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     }
 }
 
+
+/** Prominent, stable-compatible master toggle shown even before permissions are granted. */
+@Composable
+private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = if (enabled) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { onEnabledChange(!enabled) }
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Rounded.Mic, contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Recording", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (enabled) "On — automatic and manual recording are available."
+                    else "Off — VRec will not start new recordings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+        }
+    }
+}
 
 @Composable
 private fun NavigationCard(

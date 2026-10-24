@@ -74,6 +74,10 @@ class RecordingService : Service() {
         fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null,
                   callConnectedAt: Long? = null, appPackage: String? = null, accountId: String? = null,
                   numberSource: String? = null, callFlow: String? = null) {
+            if (!Prefs.recordingEnabled(context)) {
+                Log.i("Recording master switch is off; ignoring start")
+                return
+            }
             // Prevent dual recordings when the enhanced shell daemon is ready.
             // Standard remains the fallback if the privileged service is unavailable.
             if (direction != CallDirection.VOIP && direction != CallDirection.UNKNOWN &&
@@ -215,6 +219,12 @@ class RecordingService : Service() {
 
     private fun begin(intent: Intent) {
         if (engine != null) return // already recording
+        // The preference may change between enqueueing ACTION_START and delivery.
+        if (!Prefs.recordingEnabled(this)) {
+            _state.value = State.Idle
+            stopSelf()
+            return
+        }
         direction = runCatching { CallDirection.valueOf(intent.getStringExtra(EXTRA_DIRECTION) ?: "") }
             .getOrDefault(CallDirection.UNKNOWN)
         peer = intent.getStringExtra(EXTRA_PEER)

@@ -1,6 +1,7 @@
 package com.vrec.app.experimental.daemon
 
 import android.content.Context
+import com.vrec.app.Prefs
 import android.media.MediaMuxer
 import android.util.Log
 import com.vrec.app.experimental.adb.AdbTransport
@@ -134,8 +135,10 @@ object ExperimentalCaptureDaemon {
                 "Select Built-in ADB or Shizuku first."
             }
             if (probe(context)) {
-                setMode(context, true)
-                message.value = "Recorder running. It can capture without a current ADB connection."
+                setMode(context, Prefs.recordingEnabled(context))
+                message.value = if (Prefs.recordingEnabled(context))
+                    "Recorder running. It can capture without a current ADB connection."
+                else "Recorder running; Home recording switch is off."
                 return@runCatching
             }
             val staged = stage(context)
@@ -147,7 +150,8 @@ object ExperimentalCaptureDaemon {
                     " && chmod 600 " + DEVICE_PATH + " && echo STAGED")
             check("STAGED" in copy) { "Could not stage capture jar: " + copy }
             val launch = "VREC_TOKEN=" + token(context) +
-                " VREC_MODE=1 VREC_TRACK=0 VREC_VOIP='' VREC_ANSWER='' " +
+                " VREC_MODE=" + (if (Prefs.recordingEnabled(context)) "1" else "0") +
+                " VREC_TRACK=0 VREC_VOIP='' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
                 " < /dev/null > " + LOG_PATH + " 2>&1 &"
@@ -160,8 +164,10 @@ object ExperimentalCaptureDaemon {
                 }
             }
             check(started) { "Shell recorder did not start. Check capture log." }
-            setMode(context, true)
-            message.value = "Shell recorder started. Calls can continue while Wi-Fi is off."
+            setMode(context, Prefs.recordingEnabled(context))
+            message.value = if (Prefs.recordingEnabled(context))
+                "Shell recorder started. Calls can continue while Wi-Fi is off."
+            else "Shell recorder started in standby; enable Recording on Home to capture."
         }.onFailure {
             ready.value = false
             message.value = "Recorder startup failed: " + (it.message ?: "unknown error")
@@ -170,8 +176,12 @@ object ExperimentalCaptureDaemon {
     }
 
     suspend fun setMode(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
+        // The shell daemon can outlive this APK process. Never arm it unless Home
+        // explicitly enabled recording, including after reboot or ADB reconnect.
+        val allowed = enabled && Prefs.recordingEnabled(context) &&
+            ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD
         runCatching {
-            open(context, 'E', byteArrayOf(if (enabled) 1 else 0)).use {
+            open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
                 it.getInputStream().read() >= 0
             }
         }.getOrDefault(false)

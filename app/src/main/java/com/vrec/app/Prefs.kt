@@ -9,7 +9,10 @@ import android.content.SharedPreferences
 object Prefs {
     private const val NAME = "vrec"
 
-    /** Record calls automatically as they happen. */
+    /** Same persisted, opt-in recording master preference as stable VRec. */
+    const val RECORDING_ENABLED = "recording_enabled"
+
+    /** Record calls automatically when the master switch is on. */
     const val AUTO_RECORD = "auto_record"
 
     /**
@@ -42,6 +45,11 @@ object Prefs {
 
     fun of(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+
+    fun recordingEnabled(c: Context) = of(c).getBoolean(RECORDING_ENABLED, false)
+    fun setRecordingEnabled(c: Context, enabled: Boolean) {
+        of(c).edit().putBoolean(RECORDING_ENABLED, enabled).apply()
+    }
 
     fun autoRecord(c: Context) = of(c).getBoolean(AUTO_RECORD, true)
     fun autoSpeaker(c: Context) = of(c).getBoolean(AUTO_SPEAKER, false)

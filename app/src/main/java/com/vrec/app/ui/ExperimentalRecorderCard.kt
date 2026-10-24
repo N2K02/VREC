@@ -109,6 +109,11 @@ fun ExperimentalRecorderCard() {
             Text("Choose how VRec records. Standard still works without debugging.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!com.vrec.app.Prefs.recordingEnabled(context)) {
+                Text("Recording is off. Turn it on from Home to capture calls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary)
+            }
             listOf(
                 Triple(ExperimentalRecording.Method.STANDARD,
                     "Standard (recommended)", "VRec microphone recorder. No extra setup."),

@@ -5,6 +5,12 @@ import android.os.Handler
 import android.os.Looper
 import android.telecom.Call
 import android.telecom.TelecomManager
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.vrec.app.Log
 import com.vrec.app.Prefs
 import com.vrec.app.recording.CallDirection
@@ -37,6 +43,7 @@ object CallMonitor {
 
     private val sessions = linkedMapOf<String, Session>()
     private val handler = Handler(Looper.getMainLooper())
+    private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val suppressed = mutableSetOf<String>()
     private var recordingId: String? = null
     private var sawRinging = false
@@ -64,7 +71,7 @@ object CallMonitor {
         accountId: String?,
         connectedAt: Long?,
     ) {
-        if (!Prefs.experimentalCallDetection(context)) return
+        if (!Prefs.experimentalCallDetection(context) || !Prefs.recordingEnabled(context)) return
         val session = sessions.getOrPut(id) { Session(id, Source.TELECOM) }
         session.packageName = packageName
         session.direction = if (voip) CallDirection.VOIP else flow
@@ -108,6 +115,13 @@ object CallMonitor {
 
     @Synchronized
     fun onSimState(context: Context, state: String?, number: String?) {
+        if (!Prefs.recordingEnabled(context)) {
+            if (state == "IDLE") {
+                sawRinging = false
+                pendingIncomingNumber = null
+            }
+            return
+        }
         when (state) {
             "RINGING" -> {
                 sawRinging = true
@@ -148,6 +162,7 @@ object CallMonitor {
         status: String,
         metadata: CallerMetadata?,
     ) {
+        if (!Prefs.recordingEnabled(context)) return
         val candidates = sessions.values.filter { it.source == Source.TELECOM &&
             (it.packageName == packageName || (isPhoneDialer && !it.isVoip)) }
         val target = if (candidates.size == 1) candidates.single()
@@ -240,6 +255,7 @@ object CallMonitor {
     }
 
     private fun reconcile(context: Context) {
+        if (!Prefs.recordingEnabled(context)) return
         val current = recordingId?.let(sessions::get)
         if (current != null) {
             updateRecording(context, current)
@@ -271,7 +287,7 @@ object CallMonitor {
     /** The manual button never creates a second recording over an automatic call. */
     @Synchronized
     fun manualStart(context: Context) {
-        if (recordingId != null) return
+        if (!Prefs.recordingEnabled(context) || recordingId != null) return
         val session = Session("manual", Source.MANUAL, active = true)
         sessions[session.id] = session
         recordingId = session.id
@@ -285,6 +301,35 @@ object CallMonitor {
         if (id == "manual") sessions.remove(id)
         recordingId = null
         RecordingService.stop(context.applicationContext, System.currentTimeMillis())
+    }
+
+    /**
+     * Master switch used by both standard recording and the independent shell daemon.
+     * Clear active call sessions when switched off so reenabling cannot resume an old call.
+     */
+    @Synchronized
+    fun setRecordingEnabled(context: Context, enabled: Boolean) {
+        Prefs.setRecordingEnabled(context, enabled)
+        if (!enabled) {
+            recordingId = null
+            sessions.clear()
+            suppressed.clear()
+            sawRinging = false
+            pendingIncomingNumber = null
+            if (RecordingService.state.value !is RecordingService.State.Idle) {
+                RecordingService.stop(context.applicationContext, System.currentTimeMillis())
+            }
+        }
+        modeScope.launch {
+            // The daemon may outlive VRec; always sync its capture switch with Home.
+            // setMode also checks the live preference, protecting against late enable jobs.
+            if (ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD ||
+                ExperimentalCaptureDaemon.ready.value) {
+                ExperimentalCaptureDaemon.setMode(context.applicationContext,
+                    enabled && Prefs.recordingEnabled(context))
+            }
+        }
+        Log.i("Recording function " + if (enabled) "enabled" else "disabled")
     }
 
     val isRecording: Boolean @Synchronized get() = recordingId != null
