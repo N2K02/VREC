@@ -209,7 +209,9 @@ private fun App() {
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.HOME -> HomeScreen(onOpenSetup = { navigateTo(Screen.SETUP) }, onNavigate = { navigateTo(it) })
-                Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
+                Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+                ) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,

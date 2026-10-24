@@ -1,6 +1,8 @@
 package com.vrec.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -84,6 +86,10 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
+            Card(shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(6.dp)) {
             listOf(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
@@ -97,10 +103,20 @@ fun SettingsScreen(
                     supportingContent = { Text(detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    modifier = Modifier.clickable { onSectionChange(name) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                        .clickable { onSectionChange(name) },
                 )
             }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+            }
+            Text("More", style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 6.dp))
+            Card(shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(6.dp)) {
             listOf(
                 Triple("Setup & permissions", "Check recording access", Icons.Rounded.Settings),
                 Triple("Activity log", "Recording events and diagnostics", Icons.Rounded.Article),
@@ -111,7 +127,8 @@ fun SettingsScreen(
                     supportingContent = { Text(detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    modifier = Modifier.clickable {
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable {
                         when (index) {
                             0 -> onOpenSetup()
                             1 -> onOpenLog()
@@ -119,6 +136,8 @@ fun SettingsScreen(
                         }
                     },
                 )
+            }
+            }
             }
         } else {
         if (section == "Recording") SettingCard("Recording") {
@@ -214,7 +233,8 @@ fun SettingsScreen(
 @Composable
 private fun SettingCard(title: String, content: @Composable () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

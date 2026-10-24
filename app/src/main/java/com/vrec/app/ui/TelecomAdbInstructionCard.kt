@@ -1,5 +1,6 @@
 package com.vrec.app.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -53,7 +54,8 @@ fun TelecomAdbInstructionCard() {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(

@@ -295,18 +295,31 @@ fun LegacyUpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
 @Composable
 fun UpdateScreen() {
     val experimentalEnabled by com.vrec.app.LiveUpdater.experimentalEnabled.collectAsState()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Keep VRec up to date", style = MaterialTheme.typography.titleMedium)
-        androidx.compose.material3.ListItem(
-            headlineContent = { Text("VREC") },
-            supportingContent = { Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME) },
-        )
-        androidx.compose.material3.ListItem(
-            headlineContent = { Text("Experimental updates") },
-            supportingContent = { Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.") },
-            trailingContent = { Switch(checked = experimentalEnabled, onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
-        )
-        androidx.compose.material3.HorizontalDivider()
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Page title and launcher logo are supplied by VrecBrandHeader, as in MRadio.
+        // All download, install and release-note UI stays owned by N2K02Updater.
+        Card(shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("VRec", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Card(shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            androidx.compose.material3.ListItem(
+                headlineContent = { Text("Experimental updates") },
+                supportingContent = { Text("Try signed preview builds. Experimental features may be unstable.") },
+                trailingContent = { Switch(checked = experimentalEnabled,
+                    onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
+                colors = androidx.compose.material3.ListItemDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            )
+        }
         dev.n2k02.updater.N2K02UpdateScreen(
             controller = com.vrec.app.LiveUpdater.controller,
             installGuard = com.vrec.app.LiveUpdater.installGuard,
