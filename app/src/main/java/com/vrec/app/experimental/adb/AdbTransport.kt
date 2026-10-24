@@ -167,7 +167,8 @@ object AdbTransport {
      * legacy port (correct whenever someone has pinned it, including with Wi-Fi
      * off), and only then give up.
      */
-    suspend fun autoConnect(context: Context, timeoutMs: Long = 5_000): Result<Unit> =
+    suspend fun autoConnect(context: Context, timeoutMs: Long = 5_000,
+        allowLegacyTcpFallback: Boolean = true): Result<Unit> =
         withContext(Dispatchers.IO) {
             lastConnect = ConnectOutcome.NONE
             runCatching {
@@ -198,6 +199,10 @@ object AdbTransport {
                     lastConnect = ConnectOutcome.NOT_FOUND
                 }
 
+                check(allowLegacyTcpFallback) {
+                    "Wireless debugging connection not found. Turn on Wireless debugging " +
+                        "and confirm this phone is paired, or choose TCP/5555."
+                }
                 Log.i(TAG, "autoConnect: trying fixed port $LEGACY_TCP_PORT")
                 val ok = mgr.connect(LOOPBACK, LEGACY_TCP_PORT)
                 check(ok || mgr.isConnected) {
