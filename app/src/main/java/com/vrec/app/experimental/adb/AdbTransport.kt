@@ -470,7 +470,12 @@ object AdbTransport {
         runCatching {
             val mgr = manager ?: error("ADB is not connected")
             check(mgr.isConnected) { "ADB is not connected" }
-            mgr.openStream("usb:").let { stream -> runCatching { stream.close() } }
+            mgr.openStream("usb:").let { stream ->
+                // Mirror tcpip: allow adbd to accept the mode change before
+                // tearing down the stream. The previous transport may drop.
+                delay(400L)
+                runCatching { stream.close() }
+            }
             runCatching { shell?.close() }
             shell = null
             runCatching { mgr.disconnect() }
