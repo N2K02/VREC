@@ -70,12 +70,40 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
    button is unnecessary. Complete a consented test call and listen to both
    participants before relying on this mode.
 
-Switching an existing connection into TCP/5555 restarts `adbd` and naturally
-drops the previous ADB session. VRec retries the new localhost connection,
-but Android may disable legacy TCP mode on reboot, debugging changes, or OEM
-policy. ADB over TCP might listen on LAN interfaces and expose device access
-to other authorized ADB clients. **Never enable it automatically.** Turn it
-off when not required.
+Switching an existing authorized connection into TCP/5555 restarts `adbd` and
+naturally drops the previous ADB session. VRec sends `tcpip:5555` only after
+explicit confirmation, retries the localhost connection, and requires shell
+UID 2000 before declaring TCP authorized. It remembers TCP as the requested
+transport even if Android restarts but verification fails. TCP socket presence
+alone is **never** proof of ADB authorization or a running recorder helper.
+
+#### Phones without Wireless debugging (one-time USB bootstrap)
+
+On devices that do not offer Wireless debugging, Android does not offer an
+ordinary app permission popup that grants a third-party app shell-level ADB.
+Use a trusted computer/USB ADB host and:
+
+1. Enable USB debugging from Developer options and connect the phone to the host.
+2. Approve the system's RSA debugging authorization prompt for that USB host.
+3. Run `adb tcpip 5555` on the host. This is a one-time setup attempt, not
+   something the VRec app can execute before it has its own authorized shell link.
+4. In VRec, select TCP/5555 and tap **Connect TCP/5555**. Android may separately
+   ask for confirmation of **VRec's own ADB key**, which differs from the host key;
+   unlock the device and approve explicitly if shown. Retry after a timeout.
+5. Confirm the screen says **Connected via TCP/5555 · shell UID 2000** before
+   relying on this access for helper startup.
+
+The existing VRec Accessibility service may assist with recognizing UI window
+changes when enabled by the user, but it is **not** an ADB authorization method,
+cannot summon an RSA prompt without a real ADB request, and must not auto-approve
+security prompts. VRec instead instructs users to watch for Android's prompt
+while the ADB connection is pending.
+
+ADB over TCP may listen on LAN interfaces and exposes debugging access to other
+authorized clients. Android may disable legacy TCP mode on reboot, debugging
+changes, or OEM policy. **Never enable it without explicit approval**. Turn it
+off after setup when it is no longer needed; disconnecting VRec's ADB session
+alone does not disable the TCP listener.
 
 ## Runtime fallback when the ADB helper is unavailable
 
