@@ -17,17 +17,51 @@ import java.net.Socket
 /** Privilege/setup controller, intentionally independent from the standard audio recorder. */
 object ExperimentalRecording {
     enum class Method { STANDARD, BUILT_IN_ADB }
+    /** The transport used for authorization is not the same as a listening port. */
+    enum class Transport { WIRELESS, TCP }
     data class Status(
         val message: String = "Standard recording available.",
         val pairingPort: Int? = null,
         val shellUid: Int? = null,
         val connected: Boolean = false,
+        /** Only set after a connection has proven Android shell UID 2000. */
+        val connectedTransport: Transport? = null,
+        /** What the user chose/last attempted, including an unsuccessful TCP switch. */
+        val requestedTransport: Transport? = null,
+        /** Socket presence only; never grants access to the shell helper. */
         val tcpPortOpen: Boolean = false,
         val busy: Boolean = false,
     )
     val status = MutableStateFlow(Status())
     private const val PREFERENCES = "vrec_experimental_recorder"
     private const val METHOD_KEY = "recorder_method"
+    private const val TRANSPORT_KEY = "last_adb_transport"
+
+    fun preferredTransport(context: Context): Transport {
+        val value = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(TRANSPORT_KEY, null)
+        return Transport.entries.firstOrNull { it.name == value }
+            ?: if (Build.VERSION.SDK_INT >= 30) Transport.WIRELESS else Transport.TCP
+    }
+
+    fun selectTransport(context: Context, transport: Transport) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit().putString(TRANSPORT_KEY, transport.name).apply()
+        status.value = status.value.copy(requestedTransport = transport)
+    }
+
+    /** Reconcile after returning from Developer options, without trusting a TCP socket as ADB. */
+    suspend fun refreshConnectionStatus() {
+        val transportConnected = withContext(Dispatchers.IO) { AdbTransport.isConnected }
+        val tcpListening = withContext(Dispatchers.IO) { tcpPresent() }
+        val current = status.value
+        if (current.busy) return
+        status.value = if (current.connected && !transportConnected) {
+            current.copy(connected = false, connectedTransport = null, shellUid = null,
+                tcpPortOpen = tcpListening,
+                message = "ADB session ended. The recording helper can keep running independently.")
+        } else current.copy(tcpPortOpen = tcpListening)
+    }
 
     fun method(context: Context): Method {
         val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -108,7 +142,11 @@ object ExperimentalRecording {
     }
 
     suspend fun connect(context: Context, manualPort: Int? = null, wirelessOnly: Boolean = false): Result<Int> {
-        status.value = status.value.copy(busy = true, message = "Connecting to ADB…")
+        val requested = if (wirelessOnly) Transport.WIRELESS else Transport.TCP
+        selectTransport(context, requested)
+        status.value = status.value.copy(busy = true, connected = false,
+            connectedTransport = null, shellUid = null,
+            message = "Connecting via ${if (wirelessOnly) "Wireless debugging" else "TCP/5555"}…")
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 if (manualPort == null)
@@ -133,8 +171,8 @@ object ExperimentalRecording {
         }
         if (result.isFailure) {
             status.value = status.value.copy(
-                busy = false, connected = false, shellUid = null,
-                tcpPortOpen = tcpPresent(),
+                busy = false, connected = false, shellUid = null, connectedTransport = null,
+                tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },
                 message = "ADB connection failed: " + result.exceptionOrNull()?.message,
             )
             return result
@@ -143,8 +181,9 @@ object ExperimentalRecording {
         // shell UID 2000. Start or reattach the privileged Java helper now,
         // without another button or an unattended ADB bootstrap.
         status.value = status.value.copy(
-            busy = true, connected = true, shellUid = 2000,
-            tcpPortOpen = tcpPresent(), message = "ADB connected. Starting enhanced helper…",
+            busy = true, connected = true, shellUid = 2000, connectedTransport = requested,
+            tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },
+            message = "ADB authorized via ${if (wirelessOnly) "Wireless debugging" else "TCP/5555"}. Starting enhanced helper…",
         )
         val helper = if (method(context) == Method.BUILT_IN_ADB)
             AdbPrivilegedApiHelper.startWithAdb(context)
@@ -176,15 +215,24 @@ object ExperimentalRecording {
         status.value = status.value.copy(busy = true, message = "Disconnecting ADB…")
         AdbTransport.close()
         status.value = status.value.copy(
-            busy = false, connected = false, shellUid = null,
-            tcpPortOpen = tcpPresent(),
+            busy = false, connected = false, shellUid = null, connectedTransport = null,
+            tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },
             message = "ADB disconnected. The enhanced helper may keep running; " +
                 "use Home to turn recording on or off.",
         )
     }
 
     suspend fun enableTcp(context: Context): Result<Unit> {
-        status.value = status.value.copy(busy = true, message = "Switching ADB to TCP/5555…")
+        // Consent happens in the UI. Do not restart adbd from an unauthenticated
+        // socket or a stale connection.
+        val authorized = status.value.connected && status.value.shellUid == 2000 &&
+            withContext(Dispatchers.IO) { AdbTransport.isConnected }
+        if (!authorized) return Result.failure(IllegalStateException(
+            "Authorize Wireless ADB first, or use one-time USB setup if Wireless debugging is unavailable."
+        ))
+        selectTransport(context, Transport.TCP)
+        status.value = status.value.copy(busy = true,
+            message = "Switching ADB to TCP/5555; Android may restart adbd…")
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 // adbd is expected to drop the old TLS session on tcpip:5555.
@@ -220,11 +268,12 @@ object ExperimentalRecording {
                 }
             }
         }
-        val open = tcpPresent()
+        val open = withContext(Dispatchers.IO) { tcpPresent() }
         val ok = result.isSuccess && open
         if (ok) {
             status.value = status.value.copy(
-                busy = true, connected = true, shellUid = 2000, tcpPortOpen = true,
+                busy = true, connected = true, shellUid = 2000,
+                connectedTransport = Transport.TCP, tcpPortOpen = true,
                 message = "TCP/5555 verified. Starting enhanced helper…",
             )
             val helper = if (method(context) == Method.BUILT_IN_ADB)
@@ -234,7 +283,8 @@ object ExperimentalRecording {
                 grantAdvancedDetection(context)
             else Result.success(Unit)
             status.value = status.value.copy(
-                busy = false, connected = true, shellUid = 2000, tcpPortOpen = true,
+                busy = false, connected = true, shellUid = 2000,
+                connectedTransport = Transport.TCP, tcpPortOpen = true,
                 message = when {
                     helper.isFailure -> "TCP/5555 connected, but enhanced helper failed: " +
                         (helper.exceptionOrNull()?.message ?: "unknown error")
@@ -246,23 +296,51 @@ object ExperimentalRecording {
             return helper
         }
         status.value = status.value.copy(
-            busy = false, connected = false, tcpPortOpen = open, shellUid = null,
-            message = "ADB restarted but TCP could not be verified. " +
-                "Tap Connect TCP/5555 to retry, or enable Wireless debugging again. " +
-                (result.exceptionOrNull()?.message ?: ""),
+            busy = false, connected = false, connectedTransport = null,
+            tcpPortOpen = open, shellUid = null,
+            message = if (open)
+                "TCP/5555 is listening, but ADB shell authorization was not verified. " +
+                    "Tap Connect TCP/5555 to retry. " +
+                    (result.exceptionOrNull()?.message ?: "")
+            else
+                "Android did not expose TCP/5555 after the restart. " +
+                    "Reconnect Wireless debugging or use one-time USB setup. " +
+                    (result.exceptionOrNull()?.message ?: ""),
         )
         return Result.failure(result.exceptionOrNull() ?: IllegalStateException("TCP unavailable"))
     }
 
     suspend fun disableTcp(): Result<Unit> {
-        status.value = status.value.copy(busy = true, message = "Restoring USB debugging mode…")
+        val authorized = status.value.connected && status.value.shellUid == 2000 &&
+            withContext(Dispatchers.IO) { AdbTransport.isConnected }
+        if (!authorized) return Result.failure(IllegalStateException(
+            "Connect to an authorized ADB session before disabling TCP/5555."
+        ))
+        status.value = status.value.copy(busy = true, message = "Returning ADB to USB mode…")
         val result = AdbTransport.switchToUsb()
+        // Restarting adbd deliberately disconnects the current ADB session.
+        withContext(Dispatchers.IO) { AdbTransport.close() }
+        var listening = withContext(Dispatchers.IO) { tcpPresent() }
+        if (result.isSuccess) {
+            for (attempt in 1..5) {
+                if (!listening) break
+                delay(500L)
+                listening = withContext(Dispatchers.IO) { tcpPresent() }
+            }
+        }
         status.value = status.value.copy(
-            busy = false, connected = false, shellUid = null, tcpPortOpen = tcpPresent(),
-            message = if (result.isSuccess) "USB mode requested; disable debugging in Android Settings if finished."
-                else "TCP disable failed: " + result.exceptionOrNull()?.message
+            busy = false, connected = false, connectedTransport = null, shellUid = null,
+            tcpPortOpen = listening,
+            message = when {
+                result.isFailure -> "TCP disable failed: " + result.exceptionOrNull()?.message
+                listening -> "USB mode requested, but TCP/5555 is still listening. Check Developer options."
+                else -> "TCP/5555 stopped. You may disable USB debugging in Android Settings."
+            },
         )
-        return result
+        return if (result.isFailure) result
+            else if (listening) Result.failure(IllegalStateException(
+                "TCP/5555 is still listening; verify debugging settings."
+            )) else Result.success(Unit)
     }
 
 }
