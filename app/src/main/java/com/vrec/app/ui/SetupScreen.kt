@@ -30,7 +30,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
@@ -46,8 +45,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.vrec.app.Prefs
-import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.isReady
 
@@ -78,13 +75,14 @@ fun SetupScreen() {
         Build.VERSION.SDK_INT < 33 ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
-    val voipAccessOn = remember(tick) { VoipNotifListener.isEnabled(context) }
     val floatingOn = remember(tick) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
     }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
     var accessibilityHelpOpen by rememberSaveable { mutableStateOf(false) }
-    var recordVoip by remember { mutableStateOf(Prefs.recordVoip(context)) }
+    val optionalCount = listOf(contactsOn, floatingOn).count { it } +
+        if (Build.VERSION.SDK_INT >= 33 && appAlertsOn) 1 else 0
+    val optionalTotal = if (Build.VERSION.SDK_INT >= 33) 3 else 2
     val completed = listOf(basicsReady, accessibilityOn).count { it }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -148,20 +146,6 @@ fun SetupScreen() {
             },
         )
 
-        if (completed == 2) {
-            Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-            )) {
-                Row(Modifier.fillMaxWidth().padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Filled.CheckCircle, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary)
-                    Text("Setup complete", style = MaterialTheme.typography.titleSmall)
-                }
-            }
-        }
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
@@ -176,9 +160,9 @@ fun SetupScreen() {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Extra features", style = MaterialTheme.typography.titleMedium,
+                        Text("Optional permissions", style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold)
-                        Text("Optional • You can set these up later",
+                        Text("$optionalCount of $optionalTotal granted · Only what you need",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -189,44 +173,27 @@ fun SetupScreen() {
                 }
                 if (moreOpen) {
                     HorizontalDivider()
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("WhatsApp and other app calls", style = MaterialTheme.typography.titleSmall)
-                            Text("Record supported internet calls",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = recordVoip, onCheckedChange = {
-                            recordVoip = it
-                            Prefs.of(context).edit().putBoolean(Prefs.RECORD_VOIP, it).apply()
-                        })
-                    }
+                    Text("Caller identification", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ExtraPermissionRow(
-                        title = "Notification access",
-                        detail = "Find incoming and ongoing app calls",
-                        enabled = voipAccessOn,
-                        buttonLabel = "Allow",
-                    ) { context.openPermissionSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) }
-                    HorizontalDivider()
-                    ExtraPermissionRow(
-                        title = "Contact names",
-                        detail = "Show saved names instead of numbers",
+                        title = "Contacts",
+                        detail = "Show saved caller names and numbers",
                         enabled = contactsOn,
-                        buttonLabel = "Allow",
                     ) { request(Manifest.permission.READ_CONTACTS) }
+                    HorizontalDivider()
+                    Text("Recording controls", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (Build.VERSION.SDK_INT >= 33) {
                         ExtraPermissionRow(
                             title = "App notifications",
-                            detail = "Show recording alerts",
+                            detail = "Show recording progress and controls",
                             enabled = appAlertsOn,
-                            buttonLabel = "Allow",
                         ) { request(Manifest.permission.POST_NOTIFICATIONS) }
                     }
                     ExtraPermissionRow(
                         title = "Floating controls",
-                        detail = "Pause or stop recordings over other apps",
+                        detail = "Show recording controls over other apps",
                         enabled = floatingOn,
-                        buttonLabel = "Allow",
                     ) {
                         context.openPermissionSettings(
                             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -294,19 +261,30 @@ private fun ExtraPermissionRow(
     title: String,
     detail: String,
     enabled: Boolean,
-    buttonLabel: String,
     onAction: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(title, style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium)
             Text(detail, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (enabled) Text("On", color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelLarge)
-        else OutlinedButton(onClick = onAction) { Text(buttonLabel) }
+        if (enabled) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary)
+                Text("Granted", color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelMedium)
+            }
+        } else {
+            OutlinedButton(onClick = onAction) { Text("Allow") }
+        }
     }
 }
 
