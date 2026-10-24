@@ -1,7 +1,7 @@
 name: Validate Android pull request
 on:
   pull_request:
-    branches: [main]
+    branches: [main, experimental/incall-unified-detection]
     types: [opened, synchronize, reopened]
 permissions:
   contents: read
