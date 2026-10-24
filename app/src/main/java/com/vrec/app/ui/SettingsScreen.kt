@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.Prefs
+import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.recording.RecordingEngine
 
 @Composable
@@ -60,6 +61,7 @@ fun SettingsScreen(
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(prefs.getBoolean(Prefs.SHOW_OVERLAY, false)) }
+    var experimentalDetection by remember { mutableStateOf(Prefs.experimentalCallDetection(context)) }
     var sourceMode by remember { mutableStateOf(Prefs.sourceMode(context)) }
 
     fun putBool(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
@@ -77,6 +79,7 @@ fun SettingsScreen(
                 Triple("Capturing the other side", "Speaker and communication mode", Icons.Filled.Call),
                 Triple("Floating controls", "Recording overlay", Icons.Filled.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Filled.Call),
+                Triple("Experimental call detection", "InCallService and caller metadata fallbacks", Icons.Filled.Tune),
             ).forEach { (name, detail, icon) ->
                 Card(modifier = Modifier.fillMaxWidth().clickable { onSectionChange(name) }) {
                     ListItem(headlineContent = { Text(name) }, supportingContent = { Text(detail) }, leadingContent = { Icon(icon, null) })
@@ -132,6 +135,29 @@ fun SettingsScreen(
         if (section == "Floating controls") SettingCard("Floating controls") {
             ToggleRow("Show compact overlay", "Optional icon-only Pause/Resume and Stop controls during recording. Requires Display over other apps permission in Setup.", showOverlay) {
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
+            }
+        }
+
+        if (section == "Experimental call detection") SettingCard("Experimental call detection") {
+            ToggleRow(
+                "Use InCallService detection (Android 12+)",
+                "Opt in to Telecom call-state tracking with notification, Contacts and Accessibility metadata fallbacks. Does not affect audio capture or change your dialer.",
+                experimentalDetection,
+            ) {
+                experimentalDetection = it
+                putBool(Prefs.EXPERIMENTAL_CALL_DETECTION, it)
+            }
+            Text(
+                if (CallDetectionAccess.isGranted(context)) "Telecom AppOp: authorized"
+                else "Telecom AppOp: not authorized. Legacy phone and notification detection remains available.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Requires a one-time elevated AppOp grant with ADB or a Shizuku shell. Enable Notification access for VoIP and caller names; Accessibility can enrich visible call screens.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSetup)) {
+                ListItem(headlineContent = { Text("Open permission setup") })
             }
         }
 

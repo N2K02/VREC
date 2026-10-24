@@ -38,6 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VoipNotifListener
+import com.vrec.app.calls.CallDetectionAccess
+import com.vrec.app.Prefs
+import android.content.ClipData
+import android.content.ClipboardManager
 import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.corePermissions
 import com.vrec.app.isReady
@@ -65,6 +69,9 @@ fun SetupScreen() {
     val notificationsGranted = androidx.compose.runtime.remember(tick) { Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED }
     val accessibilityOn = androidx.compose.runtime.remember(tick) { VrecAccessibilityService.isEnabled(context) }
     val notifAccessOn = androidx.compose.runtime.remember(tick) { VoipNotifListener.isEnabled(context) }
+    val incallGranted = androidx.compose.runtime.remember(tick) { CallDetectionAccess.isGranted(context) }
+    val experimentalEnabled = androidx.compose.runtime.remember(tick) { Prefs.experimentalCallDetection(context) }
+    val grantCommand = "adb shell appops set " + context.packageName + " android:manage_ongoing_calls allow"
     val overlayAllowed = androidx.compose.runtime.remember(tick) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
     }
@@ -134,6 +141,31 @@ fun SetupScreen() {
             body = "Optional: let VREC detect call notifications from supported VoIP apps. This identifies call activity, but does not grant access to protected call audio.",
             actionLabel = if (notifAccessOn) "Granted" else "Open Notification access",
             onAction = { context.openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) },
+        )
+
+        Step(
+            number = "5",
+            title = "Experimental Telecom detection (optional)",
+            done = Build.VERSION.SDK_INT >= 31 && incallGranted,
+            body = "Use InCallService to detect SIM and Telecom-managed third-party calls without replacing the default dialer. Android 12+ and a one-time elevated AppOp grant are required.",
+            actionLabel = if (incallGranted) "Authorized" else "Check AppOp",
+            onAction = { permissionTick++ },
+            onVerify = { permissionTick++ },
+            extra = {
+                Note("Experimental detector: " + if (experimentalEnabled) "On (Settings)" else "Off (enable in Settings)")
+                Note("AppOp: " + if (incallGranted) "Allowed" else "Missing — phone-state/VoIP fallback remains active")
+                if (Build.VERSION.SDK_INT < 31) {
+                    Note("Non-UI Telecom observer requires Android 12 or later.")
+                } else {
+                    Note("Run the command below from a computer with authorized ADB, or run its shell portion in an authorized Shizuku shell:")
+                    Text(grantCommand, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("VREC Telecom AppOp", grantCommand))
+                    }) { Text("Copy ADB grant command") }
+                    Note("Then return and tap Check access. Enabling this experiment alone cannot grant Android's elevated AppOp.")
+                }
+            },
         )
 
         Card(

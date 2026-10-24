@@ -33,6 +33,11 @@ object Prefs {
 
     const val SHOW_OVERLAY = "show_overlay"
 
+    /** Opt-in detection experiment. Stable installations stay on the legacy detector. */
+    const val EXPERIMENTAL_CALL_DETECTION = "experimental_call_detection"
+    fun experimentalCallDetection(c: Context) =
+        of(c).getBoolean(EXPERIMENTAL_CALL_DETECTION, false)
+
     fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, false)
 
     fun of(context: Context): SharedPreferences =

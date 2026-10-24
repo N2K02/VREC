@@ -12,6 +12,23 @@ only permissions you grant on the phone itself.
 Install the APK, open VREC, and follow the two setup steps. Each push to `main` builds a new APK
 through GitHub Actions and publishes it here; the app can also update itself from these releases.
 
+## Experimental call detection (Android 12+)
+
+VREC's optional non-UI InCallService observes Telecom-managed SIM calls and third-party
+self-managed calls without becoming the default dialer. This is **detection only**;
+the existing recording engine remains unchanged. Some VoIP apps/OEMs do not expose calls
+through Telecom, so Notification access remains the fallback. Accessibility is a
+last-resort source for missing visible caller metadata, not the call-state authority.
+The observer needs the elevated `android:manage_ongoing_calls` AppOp (for example,
+`adb shell appops set com.vrec.app android:manage_ongoing_calls allow`).
+Enable **Settings → Experimental call detection** and grant the AppOp in Setup.
+The experiment is off by default, independent of the updater channel.
+
+The listener captures available app, account, caller and direction metadata; notification
+Person, title and tel URI are tried before Accessibility. A displayed contact name is
+mapped to a number only if there is exactly one unique number for an exact contact match.
+No source guarantees third-party call visibility, UI metadata or protected call audio.
+
 ## How it records
 
 Since Android 10, an ordinary app is handed **silence** while a call is active. The only no-privilege

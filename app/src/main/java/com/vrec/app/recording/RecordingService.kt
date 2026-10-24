@@ -52,6 +52,11 @@ class RecordingService : Service() {
         const val ACTION_STOP = "com.vrec.app.STOP"
         const val ACTION_PAUSE = "com.vrec.app.PAUSE"
         const val ACTION_UPDATE_PEER = "com.vrec.app.UPDATE_PEER"
+        const val ACTION_UPDATE_METADATA = "com.vrec.app.UPDATE_METADATA"
+        const val EXTRA_APP_PACKAGE = "app_package"
+        const val EXTRA_PHONE_ACCOUNT = "phone_account"
+        const val EXTRA_NUMBER_SOURCE = "number_source"
+        const val EXTRA_CALL_FLOW = "call_flow"
         const val ACTION_RESUME = "com.vrec.app.RESUME"
         const val EXTRA_DIRECTION = "direction"
         const val EXTRA_PEER = "peer"
@@ -66,19 +71,40 @@ class RecordingService : Service() {
         private val _level = MutableStateFlow(0)
         val level: StateFlow<Int> = _level
 
-        fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null, callConnectedAt: Long? = null) {
+        fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null,
+                  callConnectedAt: Long? = null, appPackage: String? = null, accountId: String? = null,
+                  numberSource: String? = null, callFlow: String? = null) {
             val intent = Intent(context, RecordingService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_DIRECTION, direction.name)
                 .putExtra(EXTRA_PEER, peer)
                 .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
                 .putExtra(EXTRA_CALL_CONNECTED_AT, callConnectedAt ?: 0L)
+                .putExtra(EXTRA_APP_PACKAGE, appPackage)
+                .putExtra(EXTRA_PHONE_ACCOUNT, accountId)
+                .putExtra(EXTRA_NUMBER_SOURCE, numberSource)
+                .putExtra(EXTRA_CALL_FLOW, callFlow)
             try {
                 if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent)
                 else context.startService(intent)
             } catch (e: Exception) {
                 Log.w("Android blocked starting the recording service from the background", e)
             }
+        }
+
+        fun updateMetadata(context: Context, direction: CallDirection, peer: String?,
+                           number: String?, appPackage: String?, accountId: String?,
+                           numberSource: String?, callFlow: String?) {
+            val intent = Intent(context, RecordingService::class.java)
+                .setAction(ACTION_UPDATE_METADATA)
+                .putExtra(EXTRA_DIRECTION, direction.name)
+                .putExtra(EXTRA_PEER, peer)
+                .putExtra(EXTRA_PHONE_NUMBER, number)
+                .putExtra(EXTRA_APP_PACKAGE, appPackage)
+                .putExtra(EXTRA_PHONE_ACCOUNT, accountId)
+                .putExtra(EXTRA_NUMBER_SOURCE, numberSource)
+                .putExtra(EXTRA_CALL_FLOW, callFlow)
+            runCatching { context.startService(intent) }
         }
 
         fun updateVoipPeer(context: Context, newPeer: String) {
@@ -99,6 +125,10 @@ class RecordingService : Service() {
     @Volatile private var peer: String? = null
     @Volatile private var phoneNumber: String? = null
     private var callConnectedAt: Long? = null
+    private var appPackage: String? = null
+    private var accountId: String? = null
+    private var numberSource: String? = null
+    private var callFlow: String? = null
     private var callEndedAt: Long? = null
     private val handler = Handler(Looper.getMainLooper())
     private val sampler = object : Runnable {
@@ -141,6 +171,34 @@ class RecordingService : Service() {
                     }
                 }
             }
+            ACTION_UPDATE_METADATA -> {
+                if (engine != null) {
+                    val incomingNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER)
+                    if (!incomingNumber.isNullOrBlank() && phoneNumber.isNullOrBlank()) phoneNumber = incomingNumber
+                    val incomingPeer = intent.getStringExtra(EXTRA_PEER)
+                    if (!incomingPeer.isNullOrBlank() && peer != incomingPeer) peer = incomingPeer
+                    val flow = intent.getStringExtra(EXTRA_CALL_FLOW)
+                    if (!flow.isNullOrBlank()) callFlow = flow
+                    val newerDirection = runCatching {
+                        CallDirection.valueOf(intent.getStringExtra(EXTRA_DIRECTION) ?: "")
+                    }.getOrNull()
+                    if (newerDirection != null && newerDirection != CallDirection.UNKNOWN) direction = newerDirection
+                    appPackage = intent.getStringExtra(EXTRA_APP_PACKAGE) ?: appPackage
+                    accountId = intent.getStringExtra(EXTRA_PHONE_ACCOUNT) ?: accountId
+                    numberSource = intent.getStringExtra(EXTRA_NUMBER_SOURCE) ?: numberSource
+                    when (val current = _state.value) {
+                        is State.Recording -> {
+                            _state.value = current.copy(peer = peer)
+                            update(recordingNotification(current.sourceLabel))
+                        }
+                        is State.Paused -> {
+                            _state.value = current.copy(peer = peer)
+                            update(pausedNotification(current.sourceLabel))
+                        }
+                        else -> Unit
+                    }
+                }
+            }
             ACTION_START -> begin(intent)
             else -> finish()
         }
@@ -154,6 +212,10 @@ class RecordingService : Service() {
         peer = intent.getStringExtra(EXTRA_PEER)
         phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER)
         callConnectedAt = intent.getLongExtra(EXTRA_CALL_CONNECTED_AT, 0L).takeIf { it > 0L }
+        appPackage = intent.getStringExtra(EXTRA_APP_PACKAGE)
+        accountId = intent.getStringExtra(EXTRA_PHONE_ACCOUNT)
+        numberSource = intent.getStringExtra(EXTRA_NUMBER_SOURCE)
+        callFlow = intent.getStringExtra(EXTRA_CALL_FLOW)
         callEndedAt = null
         if (!goForeground(startingNotification())) {
             // Android refused the microphone foreground service (often a background-start block).
@@ -216,7 +278,9 @@ class RecordingService : Service() {
             if (result != null) {
                 val keep = !(result.silent && Prefs.discardSilent(this))
                 if (keep) {
-                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.substringBefore(" (")?.takeIf { direction == CallDirection.VOIP && it.isNotBlank() && it != peer || phoneNumber != null && it != phoneNumber }, callConnectedAt = callConnectedAt, callEndedAt = callEndedAt)
+                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.substringBefore(" (")?.takeIf { direction == CallDirection.VOIP && it.isNotBlank() && it != peer || phoneNumber != null && it != phoneNumber }, callConnectedAt = callConnectedAt, callEndedAt = callEndedAt,
+                        appPackage = appPackage, accountId = accountId, numberSource = numberSource,
+                        callFlowDirection = callFlow)
                     Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
                 } else {
                     RecordingStore.delete(RecordingToDelete(result.file))

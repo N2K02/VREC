@@ -7,6 +7,8 @@
 
     <!-- Detecting SIM calls -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Non-UI Telecom call observer; activation additionally needs the MANAGE_ONGOING_CALLS AppOp. -->
+    <uses-permission android:name="android.permission.MANAGE_ONGOING_CALLS" />
     <!-- Optional: resolve the other party's name from contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
@@ -72,6 +74,18 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/vrec_accessibility" />
+        </service>
+
+        <!-- Android 12+ opt-in, non-UI observer; does not replace the user's dialer. -->
+        <service
+            android:name=".calls.VrecInCallService"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="false" />
+            <meta-data android:name="android.telecom.INCLUDE_SELF_MANAGED_CALLS" android:value="true" />
         </service>
 
         <!-- Optional VoIP detection (WhatsApp etc.) via user-granted Notification access. -->

@@ -78,6 +78,10 @@ object RecordingStore {
         contactName: String? = peer?.takeIf { phoneNumber != null && it != phoneNumber },
         callConnectedAt: Long? = null,
         callEndedAt: Long? = null,
+        appPackage: String? = null,
+        accountId: String? = null,
+        numberSource: String? = null,
+        callFlowDirection: String? = null,
     ) {
         val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
@@ -98,7 +102,11 @@ object RecordingStore {
             .put("simLabel", JSONObject.NULL)
             .put("simSlot", JSONObject.NULL)
             .put("carrier", JSONObject.NULL)
-            .put("callType", direction.name)
+            .put("callType", if (direction == CallDirection.VOIP) "VOIP" else direction.name)
+            .put("sourcePackage", appPackage ?: JSONObject.NULL)
+            .put("phoneAccountId", accountId ?: JSONObject.NULL)
+            .put("numberSource", numberSource ?: JSONObject.NULL)
+            .put("callFlowDirection", callFlowDirection ?: JSONObject.NULL)
             .put("source", sourceLabel ?: JSONObject.NULL)
             .put("silent", silent)
             .put("durationMs", durationMs)
