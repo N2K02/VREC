@@ -233,9 +233,8 @@ public final class Main {
 
             // The off-Wi-Fi shield, kept up by the process whose life depends
             // on it. See keepShieldUp for why the app doing it was not enough.
-            Thread shield = new Thread(Main::keepShieldUp, "jemrec-shield");
-            shield.setDaemon(true);
-            shield.start();
+            // VRec deliberately does not re-enable USB debugging in the background.
+            // Only explicit pairing / TCP controls may change debugging state.
 
             startCallWatcher(token);
             startVoipWatcher(token);
