@@ -118,10 +118,11 @@ fun SettingsScreen(
         ).apply()
         permissionCheckTick++
         scope.launch {
-            // If the user previously connected ADB, use that already-authorized
-            // shell to grant the special AppOp without requiring a manual command.
+            // A verified existing ADB session can finish setup immediately,
+            // without another pairing step or a manually entered shell command.
             if (method == ExperimentalRecording.Method.BUILT_IN_ADB &&
                 connection.connected && connection.shellUid == 2000) {
+                AdbPrivilegedApiHelper.startWithAdb(context)
                 ExperimentalRecording.grantAdvancedDetection(context)
                 permissionCheckTick++
             }
