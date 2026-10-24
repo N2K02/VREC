@@ -357,7 +357,8 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val standardFallback by AdbFallbackNotice.active.collectAsState()
-    val recording = recState !is RecordingService.State.Idle
+    val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val recording = recState !is RecordingService.State.Idle || enhancedActive
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
     Column(
@@ -388,6 +389,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                         Text(
                             if (!recordingEnabled) "Recording is off"
                             else if (recState is RecordingService.State.Stopping) "Saving recording"
+                            else if (enhancedActive) "Enhanced ADB recording"
                             else if (recording && standardFallback) "Standard recording fallback"
                             else if (recording) "Recording in progress"
                             else if (ready) "Ready to record"
@@ -397,6 +399,8 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                         )
                         Text(
                             if (!recordingEnabled) "Enable recording above to capture calls"
+                            else if (enhancedActive)
+                                "Standard segment saved · enhanced recorder is active"
                             else if (recording && standardFallback)
                                 "ADB helper unavailable · recording with the microphone"
                             else if (ready) "Keep your calls saved privately on this device"
@@ -413,7 +417,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                     Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
                         Text("Finish setup")
                     }
-                } else if (recordingEnabled) ManualRecordButton(recState)
+                } else if (recordingEnabled && !enhancedActive) ManualRecordButton(recState)
             }
         }
         Text("Explore", style = MaterialTheme.typography.titleMedium,
