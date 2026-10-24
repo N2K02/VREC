@@ -23,6 +23,7 @@ import com.vrec.app.Log
 import com.vrec.app.Prefs
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingService
+import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.recording.OverlayControlService
 import androidx.core.app.NotificationCompat
 import com.vrec.app.R
@@ -275,6 +276,7 @@ object CallMonitor {
             reconcile(context)
         }
         if (!hasLiveCall()) {
+            AdbFallbackNotice.enhancedActive.value = false
             overlayDismissed = false
             dismissCallControls(context)
             dismissOverlay(context)
@@ -535,6 +537,9 @@ object CallMonitor {
     fun setRecordingEnabled(context: Context, enabled: Boolean) {
         Prefs.setRecordingEnabled(context, enabled)
         if (!enabled) {
+            AdbFallbackNotice.enhancedActive.value = false
+            AdbFallbackNotice.clear()
+            AdbFallbackNotice.endHandoff()
             recordingId = null
             sessions.clear()
             suppressed.clear()
