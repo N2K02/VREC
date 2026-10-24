@@ -184,9 +184,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
         bottomBar = {
             val recordingState by RecordingService.state.collectAsState()
             val updateStatus by LiveUpdater.controller.status.collectAsState()
-            val updateAvailable = updateStatus is UpdateStatus.Available ||
-                updateStatus is UpdateStatus.Ready ||
-                updateStatus is UpdateStatus.NeedsInstallPermission
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 4.dp,
@@ -221,8 +218,8 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 onClick = { navigateTo(destination) },
                                 icon = {
                                     if (destination == Screen.SETTINGS) {
-                                        BadgedBox(badge = { if (updateAvailable) Badge() }) {
-                                            Icon(icon, contentDescription = null)
+                                        dev.n2k02.updater.N2K02UpdateBadgedIcon(updateStatus) {
+                                            Icon(icon, contentDescription = "Settings")
                                         }
                                     } else Icon(icon, contentDescription = null)
                                 },
