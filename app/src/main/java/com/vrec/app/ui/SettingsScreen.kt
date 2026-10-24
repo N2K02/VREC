@@ -19,6 +19,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Mic
@@ -66,29 +74,50 @@ fun SettingsScreen(
     fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (section == null) {
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Text("Make recording your own",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
             listOf(
-                Triple("Recording", "Automatic recording and silent files", Icons.Filled.Mic),
-                Triple("Microphone source", "Choose the audio input", Icons.Filled.Tune),
-                Triple("Capturing the other side", "Speaker and communication mode", Icons.Filled.Call),
-                Triple("Floating controls", "Recording overlay", Icons.Filled.Notifications),
-                Triple("VoIP", "Internet call recording", Icons.Filled.Call),
+                Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
+                Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
+                Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
+                Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
+                Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
             ).forEach { (name, detail, icon) ->
-                Card(modifier = Modifier.fillMaxWidth().clickable { onSectionChange(name) }) {
-                    ListItem(headlineContent = { Text(name) }, supportingContent = { Text(detail) }, leadingContent = { Icon(icon, null) })
-                }
+                ListItem(
+                    headlineContent = { Text(name) },
+                    supportingContent = { Text(detail) },
+                    leadingContent = { Icon(icon, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable { onSectionChange(name) },
+                )
             }
-            HorizontalDivider()
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSetup)) { ListItem(headlineContent = { Text("Setup & permissions") }, supportingContent = { Text("Configure recording access") }, leadingContent = { Icon(Icons.Filled.Settings, null) }) }
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLog)) { ListItem(headlineContent = { Text("Activity log") }, supportingContent = { Text("Events and diagnostics") }, leadingContent = { Icon(Icons.Filled.Article, null) }) }
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUpdates)) { ListItem(headlineContent = { Text("About & updates") }, supportingContent = { Text("Version, experimental builds and check for updates") }, leadingContent = { Icon(Icons.Filled.SystemUpdate, null) }) }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            listOf(
+                Triple("Setup & permissions", "Check recording access", Icons.Rounded.Settings),
+                Triple("Activity log", "Recording events and diagnostics", Icons.Rounded.Article),
+                Triple("About & updates", "Version and update checks", Icons.Rounded.SystemUpdate),
+            ).forEachIndexed { index, (name, detail, icon) ->
+                ListItem(
+                    headlineContent = { Text(name) },
+                    supportingContent = { Text(detail) },
+                    leadingContent = { Icon(icon, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        when (index) {
+                            0 -> onOpenSetup()
+                            1 -> onOpenLog()
+                            else -> onOpenUpdates()
+                        }
+                    },
+                )
+            }
         } else {
-            Text("‹  Settings", modifier = Modifier.fillMaxWidth().clickable { onSectionChange(null) }.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
-            Text(section ?: "", style = MaterialTheme.typography.headlineSmall)
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
