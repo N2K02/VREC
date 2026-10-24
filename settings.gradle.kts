@@ -11,6 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
         run {
             val token = providers.environmentVariable("N2K02_PACKAGES_TOKEN").orNull
             require(!token.isNullOrBlank()) { "N2K02_PACKAGES_TOKEN is required" }

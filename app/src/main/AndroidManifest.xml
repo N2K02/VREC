@@ -22,6 +22,9 @@
 
     <!-- In-app updater (same pipeline as the other apps) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Discover local ADB endpoints and support Android 16/17 local-network checks. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -35,6 +38,15 @@
         android:label="VREC"
         android:supportsRtl="true"
         android:theme="@style/Theme.VREC">
+
+        <!-- Official Shizuku binder receiver; inaccessible to normal external apps. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <activity
             android:name=".MainActivity"
