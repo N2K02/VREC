@@ -1,6 +1,19 @@
 package com.vrec.app.ui
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.text.style.TextOverflow
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.widget.Toast
@@ -87,6 +100,8 @@ fun RecordingsList() {
     var refresh by remember { mutableStateOf(0) }
     val recordings = remember(tick, refresh) { RecordingStore.list(context) }
     var playingPath by remember { mutableStateOf<String?>(null) }
+    var playbackPaused by remember { mutableStateOf(false) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
     var playbackPosition by remember { mutableStateOf(0L) }
     var playbackDuration by remember { mutableStateOf(0L) }
     val player = remember { MediaPlayer() }
@@ -97,7 +112,8 @@ fun RecordingsList() {
     var search by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(RecordingFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(RecordingSort.NEWEST) }
-    var sortMenu by remember { mutableStateOf(false) }
+    var sortSheet by remember { mutableStateOf(false) }
+    var actionsRecording by remember { mutableStateOf<Recording?>(null) }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedPaths by remember { mutableStateOf(setOf<String>()) }
     var speed by rememberSaveable { mutableStateOf(1f) }
@@ -137,25 +153,52 @@ fun RecordingsList() {
     }
 
     DisposableEffect(Unit) {
-        player.setOnCompletionListener { playingPath = null; playbackPosition = 0L }
+        player.setOnCompletionListener {
+            playingPath = null
+            playbackPaused = false
+            playbackPosition = 0L
+        }
+        player.setOnErrorListener { _, _, _ ->
+            playingPath = null
+            playbackPaused = false
+            playbackError = "Unable to play the recording. Check the file or format."
+            true
+        }
         onDispose { runCatching { player.release() } }
     }
 
+    fun stopPlayback() {
+        runCatching { player.reset() }
+        playingPath = null
+        playbackPaused = false
+        playbackPosition = 0L
+    }
+
+    /** Play / pause / resume, following ShizuCallRecorder's single active-player behaviour. */
     fun togglePlay(rec: Recording) {
+        playbackError = null
         if (playingPath == rec.file.absolutePath) {
-            runCatching { player.stop(); player.reset() }
-            playingPath = null
-            playbackPosition = 0L
+            runCatching {
+                if (playbackPaused) player.start() else player.pause()
+                playbackPaused = !playbackPaused
+            }.onFailure {
+                stopPlayback()
+                playbackError = "Could not resume playback."
+            }
         } else {
             runCatching {
                 player.reset()
                 player.setDataSource(rec.file.absolutePath)
                 player.prepare()
                 if (Build.VERSION.SDK_INT >= 23) player.playbackParams = player.playbackParams.setSpeed(speed)
+                playbackDuration = player.duration.toLong().coerceAtLeast(0L)
                 player.start()
                 playingPath = rec.file.absolutePath
-                playbackDuration = player.duration.toLong().coerceAtLeast(0L)
+                playbackPaused = false
                 playbackPosition = 0L
+            }.onFailure {
+                stopPlayback()
+                playbackError = "Could not play this recording. The file may be unavailable or unsupported."
             }
         }
     }
@@ -174,18 +217,44 @@ fun RecordingsList() {
         runCatching { context.startActivity(Intent.createChooser(intent, "Export recording details").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
-    Text("Your call history",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(top = 4.dp))
-    Text("${recordings.size} recording${if (recordings.size == 1) "" else "s"} · ${formatSize(totalBytes)}",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Saved recordings", style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold)
+                Text("${recordings.size} recording${if (recordings.size == 1) "" else "s"} · ${formatSize(totalBytes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FilledTonalIconButton(onClick = { refresh++ }) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+            }
+        }
+        playbackError?.let { message ->
+            Card(shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Row(Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(message, Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodyMedium)
+                    IconButton(onClick = { playbackError = null }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Dismiss playback error")
+                    }
+                }
+            }
+        }
 
     if (recordings.isNotEmpty()) {
         OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
-            singleLine = true, label = { Text("Search caller, number, note…") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) })
+            singleLine = true, shape = RoundedCornerShape(24.dp),
+            label = { Text("Search caller, number, note…") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (search.isNotEmpty()) IconButton(onClick = { search = "" }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                }
+            })
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -202,21 +271,9 @@ fun RecordingsList() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedButton(onClick = { sortMenu = true }) {
+            OutlinedButton(onClick = { sortSheet = true }, shape = RoundedCornerShape(20.dp)) {
                 Icon(Icons.Filled.Sort, contentDescription = null)
                 Text("  ${sortLabel(sort)}")
-            }
-            DropdownMenu(
-                expanded = sortMenu,
-                onDismissRequest = { sortMenu = false },
-                modifier = Modifier.clip(RoundedCornerShape(22.dp)),
-            ) {
-                RecordingSort.entries.forEach { item ->
-                    DropdownMenuItem(
-                        text = { Text(sortLabel(item)) },
-                        onClick = { sort = item; sortMenu = false },
-                    )
-                }
             }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = {
@@ -242,34 +299,135 @@ fun RecordingsList() {
         }
     }
 
-    if (recordings.isEmpty()) {
-        Text("No recordings yet. When setup is complete, calls you make or receive will show up here.",
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    } else if (visibleRecordings.isEmpty()) {
-        Text("No recordings match these search and filter settings.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    } else {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            visibleRecordings.forEach { rec ->
-                RecordingRow(rec = rec, playing = playingPath == rec.file.absolutePath,
-                    progress = if (playingPath == rec.file.absolutePath && playbackDuration > 0L) (playbackPosition.toFloat() / playbackDuration).coerceIn(0f, 1f) else 0f,
-                    positionMs = if (playingPath == rec.file.absolutePath) playbackPosition else 0L,
+    when {
+        recordings.isEmpty() -> {
+            Card(shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.FolderOpen, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                    Text("No recordings yet", style = MaterialTheme.typography.titleMedium)
+                    Text("New recordings will appear here.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        visibleRecordings.isEmpty() -> Text("No recordings match this search or filter.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else -> LazyColumn(modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(visibleRecordings, key = { it.file.absolutePath }) { rec ->
+                val active = playingPath == rec.file.absolutePath
+                RecordingRow(rec = rec, active = active, playing = active && !playbackPaused,
+                    progress = if (active && playbackDuration > 0L) (playbackPosition.toFloat() / playbackDuration).coerceIn(0f, 1f) else 0f,
+                    positionMs = if (active) playbackPosition else 0L,
                     selected = rec.file.absolutePath in selectedPaths, selectionMode = selectionMode,
                     onSelect = {
                         selectedPaths = if (rec.file.absolutePath in selectedPaths) selectedPaths - rec.file.absolutePath
                             else selectedPaths + rec.file.absolutePath
                     }, onOpen = { currentRecording = rec }, onPlay = { togglePlay(rec) },
-                    onShare = { share(rec) }, onDelete = { confirmDelete = rec },
-                    onFavorite = { RecordingStore.updateDetails(rec, rec.notes, !rec.favorite); refresh++ })
+                    onSeek = { value -> if (active) runCatching {
+                        player.seekTo((value * playbackDuration).toInt().coerceAtLeast(0))
+                        playbackPosition = (value * playbackDuration).toLong()
+                    } },
+                    onShare = { share(rec) }, onActions = { actionsRecording = rec })
+            }
+        }
+    }
+
+    playingPath?.let { path ->
+        recordings.firstOrNull { it.file.absolutePath == path }?.let { rec ->
+            Card(shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).clickable { currentRecording = rec }) {
+                            Text(rec.displayName, style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${formatDuration(playbackPosition)} / ${formatDuration(playbackDuration)}",
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                        FilledTonalIconButton(onClick = { togglePlay(rec) }) {
+                            Icon(if (playbackPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (playbackPaused) "Resume recording" else "Pause recording")
+                        }
+                        IconButton(onClick = { stopPlayback() }) {
+                            Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
+                        }
+                    }
+                    Slider(value = (playbackPosition.toFloat() / playbackDuration.coerceAtLeast(1L)).coerceIn(0f, 1f),
+                        onValueChange = { value ->
+                            runCatching { player.seekTo((value * playbackDuration).toInt().coerceAtLeast(0)) }
+                            playbackPosition = (value * playbackDuration).toLong()
+                        }, enabled = playbackDuration > 0L)
+                }
+            }
+        }
+    }
+
+    if (sortSheet) {
+        ModalBottomSheet(onDismissRequest = { sortSheet = false },
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Text("Sort recordings", style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold)
+                RecordingSort.entries.forEach { item ->
+                    ListItem(headlineContent = { Text(sortLabel(item)) },
+                        trailingContent = { RadioButton(selected = sort == item, onClick = null) },
+                        modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                            sort = item; sortSheet = false
+                        })
+                }
+            }
+        }
+    }
+    actionsRecording?.let { rec ->
+        ModalBottomSheet(onDismissRequest = { actionsRecording = null },
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Text("Recording actions", style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold)
+                Text(rec.displayName, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ListItem(headlineContent = { Text("Recording details") },
+                    leadingContent = { Icon(Icons.Filled.Info, contentDescription = null) },
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                        actionsRecording = null; currentRecording = rec
+                    })
+                ListItem(headlineContent = { Text(if (rec.favorite) "Remove favorite" else "Add to favorites") },
+                    leadingContent = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = null) },
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                        RecordingStore.updateDetails(rec, rec.notes, !rec.favorite)
+                        actionsRecording = null; refresh++
+                    })
+                ListItem(headlineContent = { Text("Share audio") },
+                    leadingContent = { Icon(Icons.Filled.Share, contentDescription = null) },
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                        actionsRecording = null; share(rec)
+                    })
+                ListItem(headlineContent = { Text("Delete recording") },
+                    leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error) },
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                        actionsRecording = null; confirmDelete = rec
+                    })
             }
         }
     }
 
     currentRecording?.let { rec ->
         RecordingDetailsDialog(rec = recordings.firstOrNull { it.file == rec.file } ?: rec,
-            playing = playingPath == rec.file.absolutePath, speed = speed,
+            playing = playingPath == rec.file.absolutePath && !playbackPaused,
+            active = playingPath == rec.file.absolutePath, speed = speed,
             positionMs = if (playingPath == rec.file.absolutePath) playbackPosition else 0L,
             playbackDurationMs = if (playingPath == rec.file.absolutePath) playbackDuration else rec.durationMs,
             onSeek = { ms -> if (playingPath == rec.file.absolutePath) runCatching { player.seekTo(ms.toInt()); playbackPosition = ms } },
+            onStop = { stopPlayback() },
             onDismiss = { currentRecording = null },
             onSave = { notes, favorite, name, number, country, sim, carrier ->
                 RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)
@@ -309,7 +467,7 @@ fun RecordingsList() {
                         else -> listOfNotNull(one)
                     }
                     if (targets.any { it.file.absolutePath == playingPath }) {
-                        runCatching { player.stop(); player.reset() }; playingPath = null
+                        stopPlayback()
                     }
                     targets.forEach { RecordingStore.delete(it) }
                     confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null
@@ -318,58 +476,72 @@ fun RecordingsList() {
             },
             dismissButton = { TextButton(onClick = { confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null }) { Text("Cancel") } })
     }
+    } // end screen layout
 }
 
 @Composable
 private fun RecordingRow(
-    rec: Recording, playing: Boolean, progress: Float, positionMs: Long, selected: Boolean, selectionMode: Boolean,
-    onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
-    onDelete: () -> Unit, onFavorite: () -> Unit,
+    rec: Recording, active: Boolean, playing: Boolean, progress: Float, positionMs: Long,
+    selected: Boolean, selectionMode: Boolean,
+    onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit,
+    onSeek: (Float) -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
-    var actionsExpanded by remember { mutableStateOf(false) }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        modifier = Modifier.fillMaxWidth().clickable { if (selectionMode) onSelect() else onOpen() }) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (selectionMode) {
-                androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onSelect() })
-            } else {
-                IconButton(onClick = onPlay) { Icon(if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = if (playing) "Stop" else "Play") }
-            }
-            Column(Modifier.weight(1f)) {
-                Text(rec.displayName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Text(buildString {
-                    append(directionLabel(rec.direction)); append(" · "); append(dateFmt.format(Date(rec.startedAt)))
-                    if (rec.durationMs > 0) append(" · Recording ${formatDuration(rec.durationMs)}")
-                    if (rec.callConnectedAt != null && rec.callEndedAt != null && rec.callEndedAt >= rec.callConnectedAt) append(" · Call ~${formatDuration(rec.callEndedAt - rec.callConnectedAt)}")
-                    append(" · "); append(formatSize(rec.sizeBytes))
-                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (playing) {
-                    Slider(value = progress, onValueChange = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(26.dp))
-                    Text("${formatDuration(positionMs)} / ${formatDuration(rec.durationMs)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    Card(shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor =
+            if (active) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (selectionMode) {
+                    androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onSelect() })
+                } else {
+                    FilledTonalIconButton(onClick = onPlay) {
+                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (playing) "Pause recording"
+                                else if (active) "Resume recording" else "Play recording")
+                    }
                 }
-                if (rec.phoneNumber != null && rec.contactName != null) Text(rec.phoneNumber, style = MaterialTheme.typography.bodySmall)
-                if (rec.simLabel != null) Text(rec.simLabel, style = MaterialTheme.typography.bodySmall)
-                if (rec.silent) Text("Silent recording — check audio source/device compatibility", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                if (rec.notes.isNotBlank()) Text(rec.notes, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (!selectionMode) {
-                androidx.compose.foundation.layout.Box {
-                    IconButton(onClick = { actionsExpanded = true }) {
+                Column(Modifier.weight(1f).clickable { if (selectionMode) onSelect() else onOpen() },
+                    verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(dateFmt.format(Date(rec.startedAt)), style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(rec.displayName, style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    rec.phoneNumber?.takeIf { it.isNotBlank() && it != rec.displayName }?.let {
+                        Text(it, style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text("${directionLabel(rec.direction)} · ${formatDuration(rec.durationMs)} · ${formatSize(rec.sizeBytes)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (!selectionMode) {
+                    IconButton(onClick = onShare) {
+                        Icon(Icons.Filled.Share, contentDescription = "Share recording")
+                    }
+                    IconButton(onClick = onActions) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Recording actions")
                     }
-                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
-                        DropdownMenuItem(text = { Text(if (rec.favorite) "Remove favorite" else "Add to favorites") },
-                            leadingIcon = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = null) },
-                            onClick = { actionsExpanded = false; onFavorite() })
-                        DropdownMenuItem(text = { Text("Share audio") },
-                            leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
-                            onClick = { actionsExpanded = false; onShare() })
-                        DropdownMenuItem(text = { Text("Delete") },
-                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                            onClick = { actionsExpanded = false; onDelete() })
-                    }
                 }
             }
+            if (active && !selectionMode) {
+                Slider(value = progress, onValueChange = onSeek, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatDuration(positionMs), style = MaterialTheme.typography.labelSmall)
+                    Text(formatDuration(rec.durationMs.coerceAtLeast(positionMs)),
+                        style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            if (rec.silent) Text("Silent audio — check capture compatibility",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (rec.favorite) Text("★ Favorite", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary)
+            if (rec.notes.isNotBlank()) Text(rec.notes, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -377,8 +549,8 @@ private fun RecordingRow(
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun RecordingDetailsDialog(
-    rec: Recording, playing: Boolean, speed: Float, positionMs: Long, playbackDurationMs: Long,
-    onSeek: (Long) -> Unit, onDismiss: () -> Unit,
+    rec: Recording, playing: Boolean, active: Boolean, speed: Float, positionMs: Long, playbackDurationMs: Long,
+    onSeek: (Long) -> Unit, onStop: () -> Unit, onDismiss: () -> Unit,
     onSave: (String, Boolean, String?, String?, String?, String?, String?) -> Unit, onPlay: () -> Unit, onSpeed: () -> Unit,
     onBookmark: () -> Unit, onShareAudio: () -> Unit, onExportDetails: () -> Unit,
 ) {
@@ -402,13 +574,19 @@ private fun RecordingDetailsDialog(
                 TextButton(onClick = { editing = !editing }) { Text(if (editing) "Cancel edit" else "Edit") }
             }
             HorizontalDivider()
-            Slider(value = (positionMs.toFloat() / playbackDurationMs.coerceAtLeast(1L)).coerceIn(0f, 1f), onValueChange = { onSeek((it * playbackDurationMs).toLong()) }, enabled = playing && playbackDurationMs > 0L)
+            Slider(value = (positionMs.toFloat() / playbackDurationMs.coerceAtLeast(1L)).coerceIn(0f, 1f), onValueChange = { onSeek((it * playbackDurationMs).toLong()) }, enabled = active && playbackDurationMs > 0L)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatDuration(positionMs), style = MaterialTheme.typography.labelMedium)
                 Text(formatDuration(playbackDurationMs), style = MaterialTheme.typography.labelMedium)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = onPlay) { Icon(if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null); Text(if (playing) " Stop" else " Play") }
+                Button(onClick = onPlay) {
+                    Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null)
+                    Text(if (playing) " Pause" else if (active) " Resume" else " Play")
+                }
+                if (active) IconButton(onClick = onStop) {
+                    Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
+                }
                 TextButton(onClick = onSpeed) { Text("${speed}x") }
                 TextButton(onClick = onBookmark) { Icon(Icons.Filled.BookmarkAdd, contentDescription = null); Text("Bookmark") }
             }
