@@ -74,7 +74,6 @@ import com.vrec.app.recording.RecordingEngine
 fun SettingsScreen(
     section: String?,
     onSectionChange: (String?) -> Unit,
-    onOpenSetup: () -> Unit = {},
     onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
 ) {
@@ -207,7 +206,6 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(6.dp)) {
             listOf(
-                Triple("Setup & permissions", "Check recording access", Icons.Rounded.Settings),
                 Triple("Activity log", "Recording events and diagnostics", Icons.Rounded.Article),
                 Triple("About & updates", "Version and update checks", Icons.Rounded.SystemUpdate),
             ).forEachIndexed { index, (name, detail, icon) ->
@@ -219,8 +217,7 @@ fun SettingsScreen(
                     colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable {
                         when (index) {
-                            0 -> onOpenSetup()
-                            1 -> onOpenLog()
+                            0 -> onOpenLog()
                             else -> onOpenUpdates()
                         }
                     },
