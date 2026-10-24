@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -98,6 +99,14 @@ fun ExperimentalRecorderCard() {
     LaunchedEffect(resumeTick) {
         // Re-read listener and transport after a Developer options / USB setup visit.
         ExperimentalRecording.refreshConnectionStatus()
+    }
+    LaunchedEffect(Unit) {
+        // TCP listener and adbd may change without the app being resumed.
+        // Poll only while the setup screen is visible, never bootstrap silently.
+        while (true) {
+            delay(8_000L)
+            ExperimentalRecording.refreshConnectionStatus()
+        }
     }
     LaunchedEffect(state.requestedTransport) {
         state.requestedTransport?.let {
