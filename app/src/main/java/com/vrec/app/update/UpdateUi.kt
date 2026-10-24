@@ -296,16 +296,31 @@ fun LegacyUpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
 fun UpdateScreen() {
     val experimentalEnabled by com.vrec.app.LiveUpdater.experimentalEnabled.collectAsState()
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("About & updates", style = MaterialTheme.typography.headlineMedium)
-        androidx.compose.material3.ListItem(
-            headlineContent = { Text("VREC") },
-            supportingContent = { Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME) },
-        )
-        androidx.compose.material3.ListItem(
-            headlineContent = { Text("Experimental updates") },
-            supportingContent = { Text("Offer signed APKs from successful pull request builds. Test builds may have bugs.") },
-            trailingContent = { Switch(checked = experimentalEnabled, onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
-        )
+        Text("Application", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column {
+                androidx.compose.material3.ListItem(
+                    headlineContent = { Text("VREC") },
+                    supportingContent = { Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                )
+                androidx.compose.material3.HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp))
+                androidx.compose.material3.ListItem(
+                    headlineContent = { Text("Experimental updates") },
+                    supportingContent = { Text("Test builds from open pull requests") },
+                    trailingContent = { Switch(checked = experimentalEnabled,
+                        onCheckedChange = com.vrec.app.LiveUpdater::setExperimentalEnabled) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                )
+            }
+        }
         androidx.compose.material3.HorizontalDivider()
         dev.n2k02.updater.N2K02UpdateScreen(
             controller = com.vrec.app.LiveUpdater.controller,
