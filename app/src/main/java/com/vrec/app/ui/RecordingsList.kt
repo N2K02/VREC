@@ -93,6 +93,7 @@ import java.util.Locale
 private enum class RecordingFilter { ALL, INCOMING, OUTGOING, VOIP, FAVORITES, SILENT }
 private enum class RecordingSort { NEWEST, OLDEST, LONGEST, LARGEST, NAME }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun RecordingsList() {
     val context = LocalContext.current
