@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import dev.n2k02.updater.UpdateStatus
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -80,6 +81,7 @@ import com.vrec.app.calls.VoipNotifListener
 import kotlinx.coroutines.delay
 import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
+import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
@@ -92,13 +94,30 @@ import com.vrec.app.update.UpdateScreen
 private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val ACTION_OPEN_ADB_SETUP = "com.vrec.app.action.OPEN_ADB_SETUP"
+    }
+
+    private var openAdbSetup by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.initialize(applicationContext)
         LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
-        setContent { VrecTheme { App() } }
+        openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
+        setContent {
+            VrecTheme {
+                App(openAdbSetup = openAdbSetup, onAdbSetupHandled = { openAdbSetup = false })
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == ACTION_OPEN_ADB_SETUP) openAdbSetup = true
     }
 
     override fun onResume() {
@@ -109,12 +128,21 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App() {
+private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     // Keep Settings subsection state at the navigation level, so both system
     // Back and the app-bar arrow can return to the Settings overview.
     var settingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     var returnToSettings by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(openAdbSetup) {
+        if (openAdbSetup) {
+            screen = Screen.SETTINGS
+            settingsSection = "Experimental"
+            returnToSettings = false
+            onAdbSetupHandled()
+        }
+    }
 
     fun navigateTo(destination: Screen, fromSettings: Boolean = false) {
         screen = destination
@@ -329,6 +357,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
+    val standardFallback by AdbFallbackNotice.active.collectAsState()
     val recording = recState !is RecordingService.State.Idle
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
@@ -360,6 +389,7 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                         Text(
                             if (!recordingEnabled) "Recording is off"
                             else if (recState is RecordingService.State.Stopping) "Saving recording"
+                            else if (recording && standardFallback) "Standard recording fallback"
                             else if (recording) "Recording in progress"
                             else if (ready) "Ready to record"
                             else "Complete setup",
@@ -368,6 +398,8 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                         )
                         Text(
                             if (!recordingEnabled) "Enable recording above to capture calls"
+                            else if (recording && standardFallback)
+                                "ADB helper unavailable · recording with the microphone"
                             else if (ready) "Keep your calls saved privately on this device"
                             else "Enable microphone and call access to begin",
                             style = MaterialTheme.typography.bodySmall,
