@@ -67,6 +67,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vrec.app.LiveUpdater
+import dev.n2k02.updater.hasPendingUpdate
 import com.vrec.app.Prefs
 import com.vrec.app.recording.RecordingEngine
 
@@ -77,6 +79,7 @@ fun SettingsScreen(
     onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
 ) {
+    val updateStatus by LiveUpdater.controller.status.collectAsState()
     val context = LocalContext.current
     val prefs = remember { Prefs.of(context) }
     val scope = rememberCoroutineScope()
@@ -188,9 +191,9 @@ fun SettingsScreen(
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
-                    supportingContent = { Text(detail) },
+                    supportingContent = { Text(if (index == 1 && updateStatus.hasPendingUpdate()) "A new update is available" else detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    trailingContent = { if (index == 1) dev.n2k02.updater.N2K02UpdateBadge(updateStatus) else Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                     colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                         .clickable { onSectionChange(name) },
