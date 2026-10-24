@@ -179,7 +179,8 @@ fun ExperimentalRecorderCard() {
                                     },
                                     shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
                                     label = { Text(label) },
-                                    enabled = !state.busy,
+                                    enabled = !state.busy &&
+                                        (value != "wireless" || Build.VERSION.SDK_INT >= 30),
                                 )
                             }
                     }
@@ -437,10 +438,12 @@ fun ExperimentalRecorderCard() {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Android does not grant shell access through an ordinary app permission popup.")
                     Text("1. Open Developer options, enable USB debugging, and connect to a trusted computer/ADB host.")
-                    Text("2. Approve Android's USB debugging authorization prompt.")
+                    Text("2. Approve Android's USB debugging authorization prompt for that host.")
                     Text("3. On the trusted host run: adb tcpip 5555")
                     Text("4. Return to VREC, select TCP/5555 and tap Connect TCP/5555. " +
-                        "If it fails, check USB authorization and retry.")
+                        "Approve VREC's own ADB key if Android asks: the host's key and " +
+                        "VREC's key are different.")
+                    Text("5. If authorization times out, tap Connect TCP/5555 again.")
                     Text("If Wireless debugging is available, VREC can run the command for you after an authorized Wireless connection.")
                     Text("TCP debugging may be reachable from other devices on the network. Disable it when finished.")
                 }
