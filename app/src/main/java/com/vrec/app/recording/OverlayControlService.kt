@@ -5,7 +5,9 @@ import android.animation.ValueAnimator
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -21,7 +23,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.TextView
 import com.vrec.app.R
 
 /**
@@ -40,7 +41,7 @@ class OverlayControlService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var windowManager: WindowManager
     private var root: LinearLayout? = null
-    private var statusDot: TextView? = null
+    private var statusDot: RecordingStatusDot? = null
     private var pauseButton: ImageButton? = null
     private var stopButton: ImageButton? = null
     private var blinkAnimator: ObjectAnimator? = null
@@ -111,11 +112,10 @@ class OverlayControlService : Service() {
             }
             elevation = dp(8).toFloat()
         }
-        val status = TextView(this).apply {
-            text = "●"
-            textSize = 22f
-            setTextColor(Color.RED)
-            gravity = Gravity.CENTER
+        // Draw a real circle, not the font glyph '●'. Text glyph side bearings
+        // and font baseline make it look off-centre despite Gravity.CENTER.
+        val status = RecordingStatusDot(this).apply {
+            setStatusColor(Color.RED)
             contentDescription = "Recording. Drag controls"
         }
         val pause = ImageButton(this).apply {
@@ -222,8 +222,7 @@ class OverlayControlService : Service() {
         when (state) {
             is RecordingService.State.Recording -> {
                 statusDot?.apply {
-                    text = "●"
-                    setTextColor(Color.RED)
+                    setStatusColor(Color.RED)
                     contentDescription = "Recording. Drag controls"
                 }
                 startBlinking()
@@ -241,8 +240,7 @@ class OverlayControlService : Service() {
             is RecordingService.State.Paused -> {
                 stopBlinking()
                 statusDot?.apply {
-                    text = "●"
-                    setTextColor(0xFFFF9800.toInt())
+                    setStatusColor(0xFFFF9800.toInt())
                     contentDescription = "Recording paused. Drag controls"
                 }
                 pauseButton?.apply {
@@ -263,8 +261,7 @@ class OverlayControlService : Service() {
     private fun renderStopping() {
         stopBlinking()
         statusDot?.apply {
-            text = "●"
-            setTextColor(0xFF4CAF50.toInt())
+            setStatusColor(0xFF4CAF50.toInt())
             contentDescription = "Stopping recording. Drag controls"
         }
         pauseButton?.apply {
@@ -320,5 +317,38 @@ class OverlayControlService : Service() {
     override fun onDestroy() {
         removeOverlay()
         super.onDestroy()
+    }
+}
+
+
+/**
+ * A geometric recording indicator centered exactly in its 44dp drag target.
+ * Unlike a Unicode bullet in a TextView, its visual center does not depend on
+ * the font, text metrics, system font scaling or OEM typeface.
+ */
+private class RecordingStatusDot(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.RED
+        style = Paint.Style.FILL
+    }
+    private val radius = 7f * resources.displayMetrics.density
+
+    init {
+        isClickable = true
+    }
+
+    fun setStatusColor(color: Int) {
+        paint.color = color
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        canvas.drawCircle(width / 2f, height / 2f, radius, paint)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 }
