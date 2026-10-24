@@ -12,6 +12,21 @@ only permissions you grant on the phone itself.
 Install the APK, open VREC, and follow the two setup steps. Each push to `main` builds a new APK
 through GitHub Actions and publishes it here; the app can also update itself from these releases.
 
+## If the in-app updater cannot open Android's installer
+
+VREC versions built before the dedicated recording-sharing FileProvider fix can fail
+with `Couldn't find meta-data for provider with authority
+com.vrec.app.n2k02updater.files`. A valid update APK may already have downloaded,
+but that older app cannot present it to Android's package installer.
+
+**Recovery:** download the latest stable VREC APK from
+[the official VREC releases](https://github.com/N2K02/VREC/releases/latest)
+and open the APK in Android's Files or Downloads app to install it over VREC.
+Use the same `com.vrec.app` package and signing identity; no uninstall or
+recording-data deletion should be necessary. After that one manual install,
+the shared in-app stable and experimental installer can use its own dedicated
+`n2k02updater.files` provider independently of recording sharing.
+
 ## Experimental call detection (Android 12+)
 
 VREC's optional non-UI InCallService observes Telecom-managed SIM calls and third-party
