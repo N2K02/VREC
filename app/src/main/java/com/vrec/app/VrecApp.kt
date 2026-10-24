@@ -2,8 +2,8 @@ package com.vrec.app
 
 import android.app.Application
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,13 +16,10 @@ class VrecApp : Application() {
         // Recheck the local shell daemon after process restart without ADB.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching {
-                if (ExperimentalCaptureDaemon.probe(applicationContext)) {
-                    ExperimentalCaptureDaemon.setMode(
-                        applicationContext,
-                        Prefs.recordingEnabled(applicationContext) &&
-                            ExperimentalRecording.method(applicationContext) !=
-                                ExperimentalRecording.Method.STANDARD,
-                    )
+                // Reconnect to an already-running shell Java service over the
+                // authenticated loopback channel; no active ADB session needed.
+                // If it is gone, do not silently reopen debugging or re-arm calls.
+                if (AdbPrivilegedApiHelper.reconnect(applicationContext)) {
                     ExperimentalCaptureDaemon.collect(applicationContext)
                 }
             }

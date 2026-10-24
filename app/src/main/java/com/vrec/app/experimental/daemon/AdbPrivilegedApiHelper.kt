@@ -44,9 +44,9 @@ object AdbPrivilegedApiHelper {
         result
     }
 
-    suspend fun checkHealth(context: Context): State {
-        state.value = if (ExperimentalCaptureDaemon.probe(context.applicationContext))
-            State.RUNNING else State.NEEDS_ADB
-        return state.value
+    suspend fun checkHealth(context: Context): State = lock.withLock {
+        val available = ExperimentalCaptureDaemon.probe(context.applicationContext)
+        state.value = if (available) State.RUNNING else State.NEEDS_ADB
+        state.value
     }
 }

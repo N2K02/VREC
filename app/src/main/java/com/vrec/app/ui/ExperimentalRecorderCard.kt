@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import kotlinx.coroutines.launch
 
 /**
@@ -73,6 +75,7 @@ fun ExperimentalRecorderCard() {
     val state by ExperimentalRecording.status.collectAsState()
     val recorderMessage by ExperimentalCaptureDaemon.message.collectAsState()
     val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     var selection by remember { mutableStateOf(ExperimentalRecording.method(context)) }
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var pairingPort by rememberSaveable { mutableStateOf("") }
@@ -81,6 +84,13 @@ fun ExperimentalRecorderCard() {
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(selection) {
+        // Health-check on entry/selection even if ADB or Wi-Fi is disconnected.
+        // Reconnect to an existing shell service; never spawn a privileged
+        // process silently or attempt an unauthorized ADB connection.
+        AdbPrivilegedApiHelper.reconnect(context)
+    }
 
     fun openDeveloperOptions() {
         val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
@@ -152,8 +162,15 @@ fun ExperimentalRecorderCard() {
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp))
-                    Text(if (recorderReady) "Recorder running" else "Recorder not ready",
-                        style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        when {
+                            recorderReady -> "Shell service running"
+                            helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB ->
+                                "ADB needed to start service"
+                            else -> "Shell service not ready"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                    )
                 }
                 Text(recorderMessage, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -166,7 +183,7 @@ fun ExperimentalRecorderCard() {
                 )
                 Button(enabled = !state.busy, onClick = {
                     scope.launch {
-                        ExperimentalCaptureDaemon.ensureStarted(context).onFailure {
+                        AdbPrivilegedApiHelper.startWithAdb(context).onFailure {
                             localError = it.message
                         }
                     }
