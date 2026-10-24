@@ -231,6 +231,8 @@ object ExperimentalRecording {
         if (!authorized) return Result.failure(IllegalStateException(
             "Authorize Wireless ADB first, or use one-time USB setup if Wireless debugging is unavailable."
         ))
+        val previousTransport = status.value.connectedTransport
+        var commandSent = false
         selectTransport(context, Transport.TCP)
         status.value = status.value.copy(busy = true,
             message = "Switching ADB to TCP/5555; Android may restart adbd…")
@@ -239,6 +241,7 @@ object ExperimentalRecording {
                 // adbd is expected to drop the old TLS session on tcpip:5555.
                 // Do not interpret that deliberate disconnection as a failure.
                 AdbTransport.switchToTcp(5555).getOrThrow()
+                commandSent = true
                 AdbTransport.close()
 
                 var lastFailure: Throwable? = null
@@ -300,17 +303,38 @@ object ExperimentalRecording {
             )
             return helper
         }
+        // A rejected restart request may leave the previously authorized Wireless
+        // session intact. Do not show "Disconnected" unless that link was truly lost.
+        val previousStillAuthorized = if (!commandSent && previousTransport != null) {
+            withContext(Dispatchers.IO) {
+                AdbTransport.isConnected && runCatching {
+                    AdbTransport.exec("id -u").getOrThrow().lineSequence()
+                        .any { it.trim() == "2000" }
+                }.getOrDefault(false)
+            }
+        } else false
         status.value = status.value.copy(
-            busy = false, connected = false, connectedTransport = null,
-            tcpPortOpen = open, shellUid = null,
-            message = if (open)
-                "TCP/5555 is listening, but ADB shell authorization was not verified. " +
-                    "Tap Connect TCP/5555 to retry. " +
-                    (result.exceptionOrNull()?.message ?: "")
-            else
-                "Android did not expose TCP/5555 after the restart. " +
-                    "Reconnect Wireless debugging or use one-time USB setup. " +
-                    (result.exceptionOrNull()?.message ?: ""),
+            busy = false,
+            connected = previousStillAuthorized,
+            connectedTransport = if (previousStillAuthorized) previousTransport else null,
+            tcpPortOpen = open,
+            shellUid = if (previousStillAuthorized) 2000 else null,
+            message = when {
+                previousStillAuthorized ->
+                    "TCP switch failed, but the existing Wireless ADB connection remains authorized. " +
+                        "You can retry Enable TCP. " + (result.exceptionOrNull()?.message ?: "")
+                !commandSent ->
+                    "ADB did not accept the TCP switch command. Reconnect an authorized " +
+                        "ADB session and retry. " + (result.exceptionOrNull()?.message ?: "")
+                open ->
+                    "TCP/5555 is listening, but ADB shell authorization was not verified. " +
+                        "Tap Connect TCP/5555 to retry. " +
+                        (result.exceptionOrNull()?.message ?: "")
+                else ->
+                    "Android did not expose TCP/5555 after the restart. " +
+                        "Reconnect Wireless debugging or use one-time USB setup. " +
+                        (result.exceptionOrNull()?.message ?: "")
+            },
         )
         return Result.failure(result.exceptionOrNull() ?: IllegalStateException("TCP unavailable"))
     }
