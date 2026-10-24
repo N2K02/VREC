@@ -1355,6 +1355,12 @@ public final class Main {
     /** Start capturing the current call to a file. Returns its name, or null if
      *  it could not start or one is already running. Does NOT wake the app. */
     private static synchronized String beginRecording(boolean incoming, String app) {
+        // The Home master switch overrides any automatic, on-demand or answering-
+        // machine recording path, including a call already in progress.
+        if (recordingMode == MODE_OFF) {
+            Ln.i("recording: Home master switch is off; capture refused");
+            return null;
+        }
         if (activeRecording != null) {
             Ln.w("recording: a call is already being recorded");
             return activeRecording.name;
@@ -1837,13 +1843,20 @@ public final class Main {
         }
         if (command == COMMAND_SET_ENABLED) {
             int value = client.getInputStream().read();
-            if (value >= MODE_OFF && value <= MODE_ON_DEMAND) {
-                recordingMode = value;
-                Ln.i("session: recording mode = " + recordingMode);
-            } else {
-                // Not a mode. Keep the one in force rather than guess - and
-                // never guess AUTOMATIC, which is what this used to do.
-                Ln.w("session: ignoring unusable recording mode " + value + ", still " + recordingMode);
+            synchronized (Main.class) {
+                if (value >= MODE_OFF && value <= MODE_ON_DEMAND) {
+                    recordingMode = value;
+                    Ln.i("session: recording mode = " + recordingMode);
+                    if (recordingMode == MODE_OFF && activeRecording != null) {
+                        // Home Off must stop an existing recording, not merely
+                        // suppress the next call. Finalize and wake the importer.
+                        Ln.i("recording: master switch off; finishing current capture");
+                        stopRecording(null);
+                    }
+                } else {
+                    // Invalid commands must not silently switch recording on.
+                    Ln.w("session: ignoring unusable recording mode " + value + ", still " + recordingMode);
+                }
             }
             client.getOutputStream().write((recordingMode + "\n").getBytes("UTF-8"));
             client.getOutputStream().flush();
