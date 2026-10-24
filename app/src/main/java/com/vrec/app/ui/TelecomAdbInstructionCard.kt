@@ -1,24 +1,30 @@
 package com.vrec.app.ui
 
-import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -29,10 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -40,86 +46,170 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.Prefs
 import com.vrec.app.calls.CallDetectionAccess
 
-/** An optional, collapsed setup card; the standard detector never requires ADB. */
+/** One source of truth for the advanced call detection toggle and its AppOp status. */
 @Composable
 fun TelecomAdbInstructionCard() {
     val context = LocalContext.current
     val resumeTick = rememberOnResumeTick()
     var checkTick by remember { mutableIntStateOf(0) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var experimentalEnabled by remember { mutableStateOf(Prefs.experimentalCallDetection(context)) }
-    val granted = remember(resumeTick, checkTick) { CallDetectionAccess.isGranted(context) }
+    var enabled by remember { mutableStateOf(Prefs.experimentalCallDetection(context)) }
     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val command = "adb shell appops set com.vrec.app android:manage_ongoing_calls allow"
+    // Re-read after coming back to VRec or explicitly tapping Check access.
+    // The older Settings card did neither, so it could show a stale "not authorized".
+    val granted = remember(context, resumeTick, checkTick) {
+        supported && CallDetectionAccess.isGranted(context)
+    }
+    val command = "adb shell appops set ${context.packageName} android:manage_ongoing_calls allow"
+
+    fun updateEnabled(newValue: Boolean) {
+        enabled = newValue
+        Prefs.of(context).edit()
+            .putBoolean(Prefs.EXPERIMENTAL_CALL_DETECTION, newValue).apply()
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Advanced call detection", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (!supported) "Android 12 or newer required"
-                        else if (granted) "ADB access granted"
-                        else "Optional • normal call detection still works",
+                        "Advanced call detection",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Improve caller identification (Android 12+).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Collapse ADB setup" else "Expand ADB setup")
-            }
-            if (expanded) {
-                if (!supported) {
-                    Text("This option needs Android 12 or newer.",
-                        style = MaterialTheme.typography.bodySmall)
-                } else {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Use advanced detection", modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium)
-                        Switch(checked = experimentalEnabled, onCheckedChange = {
-                            experimentalEnabled = it
-                            Prefs.of(context).edit()
-                                .putBoolean(Prefs.EXPERIMENTAL_CALL_DETECTION, it).apply()
-                        })
-                    }
-                    Text("Connect your phone to a computer with USB debugging, then run:",
-                        style = MaterialTheme.typography.bodySmall)
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        SelectionContainer {
-                            Text(command, modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace)
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
-                                as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("VREC ADB command", command))
-                        }) { Text("Copy command") }
-                        OutlinedButton(onClick = { checkTick++ }) { Text("Check access") }
-                    }
-                    Text(
-                        if (granted) "Ready. Advanced detection is authorized."
-                        else "Not enabled yet. VREC will keep using its normal call detection.",
-                        color = if (granted) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                PermissionStatusBadge(
+                    label = when {
+                        !supported -> "Unavailable"
+                        granted -> "Granted"
+                        else -> "Not granted"
+                    },
+                    granted = granted,
+                )
+                IconButton(
+                    onClick = { checkTick++ },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Recheck permission")
                 }
             }
+
+            if (!supported) {
+                Text(
+                    "Requires Android 12 or newer. Normal call detection still works.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Use advanced detection", modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = enabled, onCheckedChange = ::updateEnabled)
+                }
+
+                if (!granted) {
+                    Text(
+                        "Grant access once to use this feature. Normal call detection still works.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "With USB debugging enabled, run this on a computer:",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                command,
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                    }
+                    // Equal-width buttons use the full available screen width.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText("VRec ADB command", command),
+                                )
+                            },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        ) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Copy command")
+                        }
+                        OutlinedButton(
+                            onClick = { checkTick++ },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = null,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Check access")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionStatusBadge(label: String, granted: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = if (granted) Color(0xFF176C45) else Color(0xFFB3261E),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                if (granted) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp),
+                tint = Color.White,
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
         }
     }
 }

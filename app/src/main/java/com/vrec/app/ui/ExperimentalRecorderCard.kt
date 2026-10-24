@@ -106,7 +106,7 @@ fun ExperimentalRecorderCard() {
         ) {
             Text("Recording method", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
-            Text("Choose how VRec records. Standard still works without debugging.",
+            Text("Choose a recording method.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!com.vrec.app.Prefs.recordingEnabled(context)) {
@@ -116,11 +116,11 @@ fun ExperimentalRecorderCard() {
             }
             listOf(
                 Triple(ExperimentalRecording.Method.STANDARD,
-                    "Standard (recommended)", "VRec microphone recorder. No extra setup."),
+                    "Standard (recommended)", "Record with the microphone. No setup needed."),
                 Triple(ExperimentalRecording.Method.BUILT_IN_ADB,
-                    "Built-in ADB", "Pair directly on this phone without notification or Shizuku."),
+                    "Built-in ADB", "Enhanced recording, set up on this phone."),
                 Triple(ExperimentalRecording.Method.SHIZUKU,
-                    "Shizuku", "Use an already running, authorized Shizuku service."),
+                    "Shizuku", "Use your connected Shizuku service."),
             ).forEach { (method, label, subtitle) ->
                 Row(
                     Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
