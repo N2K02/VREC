@@ -2,6 +2,10 @@ package com.vrec.app.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +57,18 @@ import kotlinx.coroutines.launch
 fun ExperimentalRecorderCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val networkPermission = when {
+        Build.VERSION.SDK_INT >= 37 -> "android.permission.ACCESS_LOCAL_NETWORK"
+        Build.VERSION.SDK_INT >= 36 -> Manifest.permission.NEARBY_WIFI_DEVICES
+        else -> null
+    }
+    var networkAllowed by remember {
+        mutableStateOf(networkPermission == null ||
+            context.checkSelfPermission(networkPermission) == PackageManager.PERMISSION_GRANTED)
+    }
+    val networkPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { networkAllowed = it }
     val state by ExperimentalRecording.status.collectAsState()
     val recorderMessage by ExperimentalCaptureDaemon.message.collectAsState()
     val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
@@ -194,6 +210,13 @@ fun ExperimentalRecorderCard() {
                     Text(if (showPairing) "Hide pairing setup" else "Pair without notification")
                 }
                 if (showPairing) {
+                    if (networkPermission != null && !networkAllowed) {
+                        Text("Android requires local network access to find its ADB pairing port.",
+                            style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = {
+                            networkPermissionLauncher.launch(networkPermission)
+                        }) { Text("Allow local ADB discovery") }
+                    }
                     Text("1. Open Android Developer options → Wireless debugging → Pair with pairing code.",
                         style = MaterialTheme.typography.bodySmall)
                     Text("2. Use split screen to keep Android's code visible while entering it in VRec.",
@@ -202,7 +225,7 @@ fun ExperimentalRecorderCard() {
                         Text("Open Developer options")
                     }
                     OutlinedButton(
-                        enabled = !state.busy && Build.VERSION.SDK_INT >= 30,
+                        enabled = !state.busy && networkAllowed && Build.VERSION.SDK_INT >= 30,
                         onClick = {
                             scope.launch {
                                 val result = ExperimentalRecording.discover(context)
