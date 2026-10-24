@@ -88,10 +88,16 @@ fun SettingsScreen(
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
     var permissionCheckTick by remember { mutableIntStateOf(0) }
-    val advancedPermissionGranted = remember(resumeTick, section, permissionCheckTick) {
+    // Recheck after an ADB connection finishes its automatic AppOp command.
+    val advancedPermissionGranted = remember(
+        resumeTick, section, permissionCheckTick, connection.message, connection.busy
+    ) {
         CallDetectionAccess.isGranted(context)
     }
-    val advancedDetectionEnabled = remember(resumeTick, section, permissionCheckTick) {
+    val advancedDetectionEnabled = remember(
+        resumeTick, section, permissionCheckTick, connection.message, connection.busy,
+        recordingMethod
+    ) {
         Prefs.experimentalCallDetection(context)
     }
     LaunchedEffect(resumeTick, section, recordingMethod) {
@@ -102,11 +108,25 @@ fun SettingsScreen(
 
     fun selectRecordingMethod(method: ExperimentalRecording.Method) {
         if (recordingMethod == method) return
-        // Selection never bootstraps a shell process or changes the Home master switch.
-        // A previously running helper is rearmed/put on standby based on the new mode.
+        // Never start an unauthorized ADB session just by selecting a radio.
         recordingMethod = method
         ExperimentalRecording.select(context, method)
-        scope.launch { AdbPrivilegedApiHelper.reconnect(context) }
+        val alreadyGranted = method == ExperimentalRecording.Method.BUILT_IN_ADB &&
+            CallDetectionAccess.isGranted(context)
+        Prefs.of(context).edit().putBoolean(
+            Prefs.EXPERIMENTAL_CALL_DETECTION, alreadyGranted
+        ).apply()
+        permissionCheckTick++
+        scope.launch {
+            // If the user previously connected ADB, use that already-authorized
+            // shell to grant the special AppOp without requiring a manual command.
+            if (method == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                connection.connected && connection.shellUid == 2000) {
+                ExperimentalRecording.grantAdvancedDetection(context)
+                permissionCheckTick++
+            }
+            AdbPrivilegedApiHelper.reconnect(context)
+        }
     }
 
     // Local mirror of the stored values, so the UI updates immediately.
