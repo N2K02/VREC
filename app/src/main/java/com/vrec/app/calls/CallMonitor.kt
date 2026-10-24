@@ -413,7 +413,10 @@ object CallMonitor {
 
     @Synchronized
     fun activeVoipPackages(): Set<String> = sessions.values
-        .filter { it.active && it.isVoip && it.packageName != null }
+        // Telecom already owns its own lifecycle. Poll only independent
+        // notification-based sessions, not all WhatsApp Telecom sessions.
+        .filter { it.active && it.source == Source.VOIP_NOTIFICATION &&
+            it.packageName != null }
         .mapNotNull { it.packageName }.toSet()
 
     @Synchronized
