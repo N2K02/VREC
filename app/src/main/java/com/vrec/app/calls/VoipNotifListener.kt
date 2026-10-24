@@ -34,6 +34,70 @@ class VoipNotifListener : NotificationListenerService() {
     private val signals = mutableMapOf<String, MutableMap<String, Signal>>()
     private val handler = Handler(Looper.getMainLooper())
     private val expiry = mutableMapOf<String, Runnable>()
+    private val reconcileIntervalMs = 3_000L
+    // Some VoIP apps update/remove call notifications without sending a
+    // symmetrical callback; compare the listener cache with Android's actual
+    // active notifications while VRec has a notification-based VoIP call.
+    private val watchdog = object : Runnable {
+        override fun run() {
+            reconcileActiveNotifications()
+            if (signals.isNotEmpty() || expiry.isNotEmpty() ||
+                CallMonitor.activeVoipPackages().isNotEmpty()) {
+                handler.postDelayed(this, reconcileIntervalMs)
+            }
+        }
+    }
+
+    private fun scheduleWatchdog() {
+        handler.removeCallbacks(watchdog)
+        handler.postDelayed(watchdog, reconcileIntervalMs)
+    }
+
+    private fun reconcileActiveNotifications() {
+        val live = runCatching { activeNotifications.orEmpty().toList() }.getOrNull() ?: return
+        val watched = (signals.keys + CallMonitor.activeVoipPackages()).toSet()
+        for (pkg in watched) {
+            if (pkg !in VOIP_PACKAGES) continue
+            val latest = live.asSequence()
+                .filter { it.packageName == pkg }
+                .mapNotNull { sbn ->
+                    val n = sbn.notification ?: return@mapNotNull null
+                    val state = stateOf(n) ?: return@mapNotNull null
+                    sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n))
+                }
+                .toMap()
+            if (latest.isEmpty()) {
+                signals.remove(pkg)
+                scheduleCallEnd(pkg)
+            } else {
+                expiry.remove(pkg)?.let(handler::removeCallbacks)
+                if (signals[pkg] != latest) {
+                    signals[pkg] = latest.toMutableMap()
+                    publish(pkg, false)
+                }
+            }
+        }
+    }
+
+    private fun scheduleCallEnd(pkg: String) {
+        if (expiry.containsKey(pkg)) return
+        val task = Runnable {
+            expiry.remove(pkg)
+            val remaining = runCatching {
+                activeNotifications.orEmpty().any { it.packageName == pkg &&
+                    it.notification?.let(::stateOf) != null }
+            }.getOrNull()
+            if (remaining != false) {
+                if (remaining == true) reconcileActiveNotifications()
+                return@Runnable
+            }
+            signals.remove(pkg)
+            Log.i("VoIP call notification ended app=" + pkg)
+            CallMonitor.onNotification(this, pkg, false, "IDLE", null)
+        }
+        expiry[pkg] = task
+        handler.postDelayed(task, 2_500L)
+    }
 
     private fun dialer(): String? =
         runCatching { getSystemService(TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()
@@ -41,12 +105,16 @@ class VoipNotifListener : NotificationListenerService() {
     override fun onListenerConnected() {
         Log.i("Call notification metadata listener connected")
         signals.clear()
+        expiry.values.forEach(handler::removeCallbacks)
+        expiry.clear()
         runCatching { activeNotifications.orEmpty().forEach(::onNotificationPosted) }
+        scheduleWatchdog()
     }
 
     override fun onListenerDisconnected() {
         Log.w("Call notification metadata listener disconnected")
         // Listener reconnection should not end a real call or discard its last caller.
+        handler.removeCallbacks(watchdog)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -54,11 +122,18 @@ class VoipNotifListener : NotificationListenerService() {
         val phone = pkg == dialer()
         if (!phone && pkg !in VOIP_PACKAGES) return
         val n = sbn.notification ?: return
-        val state = stateOf(n) ?: return
+        val state = stateOf(n)
+        if (state == null) {
+            // A former call notification may be rewritten as an ordinary
+            // notification with the same key; do not keep its old ACTIVE entry.
+            onNotificationRemoved(sbn)
+            return
+        }
         expiry.remove(pkg)?.let(handler::removeCallbacks)
         val map = signals.getOrPut(pkg) { mutableMapOf() }
         map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n))
         publish(pkg, phone)
+        if (!phone) scheduleWatchdog()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -68,17 +143,8 @@ class VoipNotifListener : NotificationListenerService() {
         if (remaining.isNotEmpty()) {
             publish(pkg, pkg == dialer())
         } else {
-            // WhatsApp can replace a ringing notification with another key when answered.
-            // A short grace window prevents spurious stop/start sequences.
-            expiry.remove(pkg)?.let(handler::removeCallbacks)
-            val task = Runnable {
-                if (signals[pkg].isNullOrEmpty()) {
-                    signals.remove(pkg)
-                    CallMonitor.onNotification(this, pkg, pkg == dialer(), "IDLE", null)
-                }
-            }
-            expiry[pkg] = task
-            handler.postDelayed(task, 2_500L)
+            // Short grace window for WhatsApp's ringing -> answered key switch.
+            scheduleCallEnd(pkg)
         }
     }
 
@@ -114,6 +180,7 @@ class VoipNotifListener : NotificationListenerService() {
     override fun onDestroy() {
         expiry.values.forEach(handler::removeCallbacks)
         expiry.clear()
+        handler.removeCallbacks(watchdog)
         super.onDestroy()
     }
 }
