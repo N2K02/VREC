@@ -1,7 +1,26 @@
 package com.vrec.app
 
 import android.Manifest
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import dev.n2k02.updater.UpdateStatus
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -34,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -44,7 +64,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +81,7 @@ import com.vrec.app.calls.VoipNotifListener
 import kotlinx.coroutines.delay
 import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
+import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
@@ -74,13 +94,30 @@ import com.vrec.app.update.UpdateScreen
 private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val ACTION_OPEN_ADB_SETUP = "com.vrec.app.action.OPEN_ADB_SETUP"
+    }
+
+    private var openAdbSetup by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.initialize(applicationContext)
         LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
-        setContent { VrecTheme { App() } }
+        openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
+        setContent {
+            VrecTheme {
+                App(openAdbSetup = openAdbSetup, onAdbSetupHandled = { openAdbSetup = false })
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == ACTION_OPEN_ADB_SETUP) openAdbSetup = true
     }
 
     override fun onResume() {
@@ -91,12 +128,21 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App() {
+private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     // Keep Settings subsection state at the navigation level, so both system
     // Back and the app-bar arrow can return to the Settings overview.
     var settingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     var returnToSettings by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(openAdbSetup) {
+        if (openAdbSetup) {
+            screen = Screen.SETTINGS
+            settingsSection = "Experimental"
+            returnToSettings = false
+            onAdbSetupHandled()
+        }
+    }
 
     fun navigateTo(destination: Screen, fromSettings: Boolean = false) {
         screen = destination
@@ -119,7 +165,7 @@ private fun App() {
     BackHandler(enabled = screen != Screen.HOME) { navigateBack() }
 
     val title = when (screen) {
-        Screen.HOME -> "VREC"
+        Screen.HOME -> "Home"
         Screen.RECORDINGS -> "Recordings"
         Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
@@ -129,25 +175,62 @@ private fun App() {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    if (screen != Screen.HOME) {
-                        IconButton(onClick = { navigateBack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                },
+            VrecBrandHeader(
+                title = if (screen == Screen.SETTINGS) settingsSection ?: "Settings" else title,
+                screen = screen,
+                onBack = if (screen == Screen.HOME) null else { { navigateBack() } },
             )
         },
         bottomBar = {
-            NavigationBar {
-                listOf(
-                    Triple(Screen.HOME, "Home", Icons.Filled.FolderOpen),
-                    Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
-                    Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
-                ).forEach { (destination, label, icon) ->
-                    NavigationBarItem(selected = screen == destination, onClick = { navigateTo(destination) }, icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
+            val recordingState by RecordingService.state.collectAsState()
+            val updateStatus by LiveUpdater.controller.status.collectAsState()
+            val updateAvailable = updateStatus is UpdateStatus.Available ||
+                updateStatus is UpdateStatus.Ready ||
+                updateStatus is UpdateStatus.NeedsInstallPermission
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.navigationBarsPadding()) {
+                    if (screen != Screen.HOME &&
+                        recordingState !is RecordingService.State.Idle) {
+                        VrecRecordingMiniBar(recordingState) { navigateTo(Screen.HOME) }
+                    }
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 0.dp,
+                    ) {
+                        listOf(
+                            Triple(Screen.HOME, "Home", Icons.Rounded.Home),
+                            Triple(Screen.RECORDINGS, "Recordings", Icons.Rounded.Folder),
+                            Triple(Screen.SETUP, "Setup", Icons.Rounded.Tune),
+                            Triple(Screen.SETTINGS, "Settings", Icons.Rounded.Settings),
+                        ).forEach { (destination, label, icon) ->
+                            NavigationBarItem(
+                                selected = when {
+                                    screen == Screen.SETUP && returnToSettings ->
+                                        destination == Screen.SETTINGS
+                                    screen == Screen.LOG || screen == Screen.UPDATE ->
+                                        destination == Screen.SETTINGS
+                                    else -> screen == destination
+                                },
+                                onClick = { navigateTo(destination) },
+                                icon = {
+                                    if (destination == Screen.SETTINGS) {
+                                        BadgedBox(badge = { if (updateAvailable) Badge() }) {
+                                            Icon(icon, contentDescription = null)
+                                        }
+                                    } else Icon(icon, contentDescription = null)
+                                },
+                                label = { Text(label) },
+                                alwaysShowLabel = true,
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -155,12 +238,13 @@ private fun App() {
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.HOME -> HomeScreen(onOpenSetup = { navigateTo(Screen.SETUP) }, onNavigate = { navigateTo(it) })
-                Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
+                Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+                ) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,
                     onSectionChange = { settingsSection = it },
-                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                     onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
                 )
@@ -171,95 +255,232 @@ private fun App() {
     }
 }
 
+/** MRadio-style header: screen icon/title on the left, app logo on the right. */
+@Composable
+private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?) {
+    val icon = when (screen) {
+        Screen.HOME -> Icons.Rounded.Home
+        Screen.RECORDINGS -> Icons.Rounded.Folder
+        Screen.SETUP -> Icons.Rounded.Tune
+        Screen.SETTINGS -> Icons.Rounded.Settings
+        Screen.LOG -> Icons.Rounded.Article
+        Screen.UPDATE -> Icons.Rounded.Info
+    }
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(Modifier.weight(1f),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                    Icon(icon, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp))
+                } else {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp))
+                }
+                Text(title, style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AndroidView(
+                    factory = { ctx ->
+                        android.widget.ImageView(ctx).apply {
+                            setImageDrawable(ctx.packageManager.getApplicationIcon(ctx.packageName))
+                            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                            contentDescription = null
+                        }
+                    },
+                    modifier = Modifier.size(28.dp),
+                )
+                Text("VRec", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+/** Recording equivalent of MRadio's persistent Now Playing mini-bar. */
+@Composable
+private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Unit) {
+    val peer = when (state) {
+        is RecordingService.State.Recording -> state.peer
+        is RecordingService.State.Paused -> state.peer
+        else -> null
+    }
+    val status = when (state) {
+        is RecordingService.State.Paused -> "Recording paused"
+        is RecordingService.State.Starting -> "Starting recording"
+        is RecordingService.State.Recording -> "Recording now"
+        is RecordingService.State.Stopping -> "Saving recording"
+        else -> "Recording"
+    }
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Rounded.Mic, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f)) {
+                Text(status, style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold)
+                Text(peer?.takeIf { it.isNotBlank() } ?: "Tap to view recording controls",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(Icons.Rounded.ChevronRight, contentDescription = "View recording",
+                tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
 @Composable
 private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
-    val recording = recState !is RecordingService.State.Idle
+    val standardFallback by AdbFallbackNotice.active.collectAsState()
+    val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val recording = recState !is RecordingService.State.Idle || enhancedActive
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        RecordingMasterCard(
-            enabled = recordingEnabled,
-            onEnabledChange = { enabled ->
-                CallMonitor.setRecordingEnabled(context, enabled)
-                recordingEnabled = enabled
-            },
-        )
-        if (recordingEnabled) {
-            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-            if (!ready) SetupPromptCard(onOpenSetup)
-            if (ready) ManualRecordButton(recording)
+        RecordingMasterCard(enabled = recordingEnabled, onEnabledChange = { enabled ->
+            CallMonitor.setRecordingEnabled(context, enabled)
+            recordingEnabled = enabled
+        })
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Surface(shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer) {
+                        Icon(Icons.Rounded.Mic, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(14.dp).size(30.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("VREC", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            if (!recordingEnabled) "Recording is off"
+                            else if (recState is RecordingService.State.Stopping) "Saving recording"
+                            else if (enhancedActive) "Enhanced ADB recording"
+                            else if (recording && standardFallback) "Standard recording fallback"
+                            else if (recording) "Recording in progress"
+                            else if (ready) "Ready to record"
+                            else "Complete setup",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            if (!recordingEnabled) "Enable recording above to capture calls"
+                            else if (enhancedActive)
+                                "Standard segment saved · enhanced recorder is active"
+                            else if (recording && standardFallback)
+                                "ADB helper unavailable · recording with the microphone"
+                            else if (ready) "Keep your calls saved privately on this device"
+                            else "Enable microphone and call access to begin",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (recordingEnabled) {
+                    (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+                }
+                if (!ready) {
+                    Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
+                        Text("Finish setup")
+                    }
+                } else if (recordingEnabled && !enhancedActive) ManualRecordButton(recState)
+            }
         }
-
-        Text("Quick access", style = MaterialTheme.typography.titleMedium)
+        Text("Explore", style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 4.dp, top = 4.dp))
         NavigationCard(
             title = "Recordings",
             subtitle = "Browse, play and manage saved recordings",
-            icon = Icons.Filled.FolderOpen,
+            icon = Icons.Rounded.Folder,
             onClick = { onNavigate(Screen.RECORDINGS) },
         )
         if (!ready) NavigationCard(
             title = "Setup",
             subtitle = "Permissions and recording accessibility",
-            icon = Icons.Filled.Tune,
+            icon = Icons.Rounded.Tune,
             onClick = { onNavigate(Screen.SETUP) },
         )
         NavigationCard(
             title = "Settings",
             subtitle = "Configure recording behavior",
-            icon = Icons.Filled.Settings,
+            icon = Icons.Rounded.Settings,
             onClick = { onNavigate(Screen.SETTINGS) },
         )
         NavigationCard(
             title = "Activity log",
             subtitle = "Review app events and diagnostics",
-            icon = Icons.Filled.Article,
+            icon = Icons.Rounded.Article,
             onClick = { onNavigate(Screen.LOG) },
         )
     }
 }
 
 
+/** Prominent, stable-compatible master toggle shown even before permissions are granted. */
 @Composable
-private fun RecordingMasterCard(
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer
+private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = if (enabled) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onEnabledChange(!enabled) }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().clickable { onEnabledChange(!enabled) }
+                .padding(horizontal = 18.dp, vertical = 18.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text("Recording", style = MaterialTheme.typography.titleMedium)
+            Icon(Icons.Rounded.Mic, contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Recording", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (enabled) "On — automatic and manual recording are available."
-                    else "Off — VREC will not record calls.",
+                    if (enabled) "On — auto-start once per call; use controls to pause, stop or record again."
+                    else "Off — stops all recording and closes its controls.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-            )
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
         }
     }
 }
@@ -271,9 +492,11 @@ private fun NavigationCard(
     icon: ImageVector,
     onClick: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -291,7 +514,7 @@ private fun NavigationCard(
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                imageVector = Icons.Rounded.ChevronRight,
                 contentDescription = "Open $title",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -300,19 +523,30 @@ private fun NavigationCard(
 }
 
 @Composable
-private fun ManualRecordButton(recording: Boolean) {
+private fun ManualRecordButton(state: RecordingService.State) {
     val context = LocalContext.current
-    if (recording) {
-        Button(
-            onClick = { CallMonitor.manualStop(context) },
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("■  Stop recording") }
-    } else {
-        FilledTonalButton(onClick = { CallMonitor.manualStart(context) }, modifier = Modifier.fillMaxWidth()) {
-            Text("●  Record now")
+    when (state) {
+        is RecordingService.State.Stopping -> {
+            FilledTonalButton(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Saving recording…") }
+        }
+        is RecordingService.State.Idle -> {
+            FilledTonalButton(
+                onClick = { CallMonitor.manualStart(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (CallMonitor.canRecordAgain()) "▶  Record again" else "●  Record now") }
+        }
+        else -> {
+            Button(
+                onClick = { CallMonitor.manualStop(context) },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("■  Stop recording") }
         }
     }
 }

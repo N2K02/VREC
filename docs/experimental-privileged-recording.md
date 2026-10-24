@@ -1,0 +1,157 @@
+# VRec experimental call recording — unified PR #32
+
+This document describes the actual experimental implementation and its limitations.
+**PR #32 is the only open experimental PR, targeting `main`.** PRs #19, #23, #26, and #31 are closed as superseded. Stable is unchanged until review and testing.
+
+## Recording methods
+
+**Standard (default):** The Android app's own foreground microphone recorder
+tries `VOICE_CALL`, `VOICE_RECOGNITION`, then `VOICE_COMMUNICATION`; the optional
+mic/loudspeaker fallback depends on user settings. Auto mode selects the first
+source that starts and produces measurable sound. A non-silent recording does
+**not** prove that both participants were captured.
+
+**Built-in ADB (opt-in):** VRec pairs with the device's own Android Wireless
+debugging using a bundled ADB client, or connects to an already enabled TCP/5555
+endpoint. After verifying shell UID 2000 it can install and start the bundled
+Apache-2.0 scrcpy/JemRec-derived Java `app_process` recording daemon. The
+daemon captures into a shell-side file, uses a local nonce/HMAC-authenticated
+loopback channel, and imports completed Opus/Ogg audio into VRec's library.
+
+**Shizuku is not installed or required.** Its UI and dependency/provider/binder
+integration were removed. A previously saved Shizuku choice migrates to Standard.
+
+### Persistence and `AdbPrivilegedApiHelper`
+
+- A successfully started shell Java process may continue running after the ADB
+  session or Wi-Fi disconnects; it is **not** a permanent system service.
+- `AdbPrivilegedApiHelper.kt` provides authenticated `reconnect()`,
+  privileged `startWithAdb()`, and `checkHealth()` states. VRec uses it on
+  app-process startup and in the Experimental recording screen.
+  Full background monitoring and privileged automatic restart are **not**
+  implemented; a lost shell process requires renewed authorized ADB access.
+- Neither the APK nor its helper can start a new shell-UID process without
+  already-authorized ADB access. If Android kills the daemon or the phone
+  reboots, a fresh privileged start may be necessary.
+- Shell UID is not root. Android/OEM audio HAL restrictions still apply.
+  InCallService and the Telecom AppOp help detect calls; they do **not**
+  automatically unlock protected two-way audio.
+
+## Setup and permission separation
+
+- **Setup** contains only the everyday recording permissions (microphone,
+  phone state and Accessibility) and optional Contacts, notifications and floating
+  controls. A second WhatsApp enable switch and redundant Setup complete banner
+  are no longer shown.
+- The main Settings page has the only **Recording method** radio selector:
+  Regular recording (default) or ADB privileged helper.
+- **Settings → VoIP** owns the VoIP enable switch and Notification access
+  permission, keeping internet-call options out of everyday setup.
+- **Settings → Experimental** owns ADB pairing, Wireless/TCP connection, helper
+  status and optional advanced Telecom AppOp permission. Merely choosing the
+  ADB option does not establish elevated access or enable Home recording.
+
+## Built-in ADB setup
+
+1. On the main Settings page, choose **ADB privileged helper** under **Recording method**. Then tap **Configure ADB access**, or open Settings → Experimental.
+2. For first-time phone-local authorization, use Android Developer options →
+   Wireless debugging → Pair device with pairing code, preferably in split screen.
+   Enter its temporary pairing code/port in VRec and pair.
+3. Choose **Wireless** or **TCP/5555** in the single-choice connection
+   selector, then tap **Connect**. Wireless uses discovery or an explicitly
+   entered paired port; it does not silently fall back to TCP/5555. TCP requires
+   an already enabled and authorized listener (e.g. `adb tcpip 5555` over USB).
+4. After shell UID 2000 is verified, VRec **automatically starts or reconnects**
+   the enhanced Java helper. The button then changes to **Disconnect ADB**:
+   this closes VRec's ADB session **without stopping the shell helper or an
+   active recording**. Home's Recording switch independently controls capture.
+   Completed shell calls are automatically imported into VRec's recording library
+   by the authenticated call-ended import service, so the extra Import calls
+   button is unnecessary. Complete a consented test call and listen to both
+   participants before relying on this mode.
+
+Switching an existing connection into TCP/5555 restarts `adbd` and naturally
+drops the previous ADB session. VRec retries the new localhost connection,
+but Android may disable legacy TCP mode on reboot, debugging changes, or OEM
+policy. ADB over TCP might listen on LAN interfaces and expose device access
+to other authorized ADB clients. **Never enable it automatically.** Turn it
+off when not required.
+
+## Runtime fallback when the ADB helper is unavailable
+
+- Selecting **ADB privileged helper** does not switch off the Home master
+  recording toggle and does not silently turn Android debugging on.
+- When recording is enabled on Home and a recording actually starts while
+  ADB mode is selected but the enhanced helper is unavailable, VRec uses its
+  normal microphone recorder **for that recording**. It retains the selected
+  ADB method for future calls.
+- Once the standard fallback starts, VRec posts a dismissible **ADB helper
+  unavailable · Standard recording** notification with **Enable debugging**
+  (opens Android Developer options) and **ADB setup** (opens the Experimental
+  settings page) actions. Android 13+ requires notification permission for
+  this reminder. Home also displays the fallback state while it is recording.
+- No reminder is posted merely because the Home master switch is turned on,
+  or while the enhanced helper remains healthy despite Wi-Fi/ADB transport
+  disconnecting.
+- If ADB is restored during a standard fallback on an ongoing **cellular**
+  call, VRec now checks that both the app's call monitor and the shell daemon's
+  own live call watcher recognize that call. Only then does VRec **save the
+  standard segment, enable enhanced capture and explicitly start a new shell
+  segment for the remaining call**. The two segments are kept separately.
+  Neither an existing helper nor ADB authorization alone proves handoff safe.
+- If the shell daemon cannot verify the active call, standard recording
+  continues without interruption. If the enhanced segment fails to start after
+  standard finalization, VRec disables shell capture and attempts a fresh
+  standard segment while the call is still live; any small transition gap is
+  unavoidable. Paused, VoIP, unknown-direction and ended calls are never
+  forcibly switched mid-call.
+- Home shows the enhanced segment after a confirmed handoff, hides the
+  duplicate Record now button, and clears the indicator on call end.
+- This runtime fallback is not a guarantee of audible remote-side audio on
+  every phone. Android may prevent microphone recording from starting in the
+  background or capturing the far end of the call.
+
+## Call detection, recordings and metadata
+
+- Unified `CallMonitor` handles SIM phone state, optional non-UI Telecom
+  InCallService, WhatsApp/other VoIP notifications, and manual recording.
+  One active standard recording is allowed; device-dependent sources may fail.
+- The Home recording master switch is opt-in and stops/prevents capture when
+  disabled. Advanced call-detection permission status is shown in one card
+  (Granted / Not granted).
+- Standard capture is stored as M4A; imported enhanced recordings use Ogg,
+  both with backwards-compatible JSON sidecars. Current metadata can be
+  incomplete or estimated for some sources and old recordings; audio duration
+  and call duration are different quantities.
+- The recording library has a single in-card player with seek, pause/resume
+  and stop, rounded recording action/detail sheets, share, sorting, bookmarks,
+  notes and metadata editing.
+
+## Verification status and acceptance criteria
+
+On the user's Pixel, a **26-minute Standard Voice recognition recording**
+contained both participants, with the remote person faint. The same logs
+showed `VOICE_CALL` start exceptions and a silent Voice recognition probe
+on another short call. This is **not** proof that enhanced shell capture works
+for every SIM or third-party VoIP app.
+
+Acceptance testing should check: no duplicate recordings; correct caller and
+direction metadata; silent-source fallback; the Home Off guard; in-card player,
+sort/action sheets and existing recordings; privileged ADB pairing, launch,
+loopback reconnect, Wi-Fi loss and TCP security; import and two-sided listening;
+and overlay/master toggle integration. Passing GitHub CI establishes build
+compatibility, not a device-specific protected audio entitlement.
+
+Future improvements requested but **not yet implemented** include a stronger
+source-quality selector, validated per-recording audio-source diagnostics,
+metadata-consistency fixes, and fully integrated helper lifecycle recovery.
+
+## Attribution
+
+Embedded ADB and audio capture follow the Apache-2.0 compatible JemRec/scrcpy
+architecture. `shellserver/LICENSE-scrcpy` and `shellserver/PATCHES.md`
+record the required licensing and adaptation details. ShizuCallRecorder and
+other GPL-only projects served as design references rather than copied code.
+
+**Do not merge this experimental PR into stable until current CI and
+real-device tests have passed.**

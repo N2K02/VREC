@@ -7,12 +7,15 @@
 
     <!-- Detecting SIM calls -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Non-UI Telecom call observer; activation additionally needs the MANAGE_ONGOING_CALLS AppOp. -->
+    <uses-permission android:name="android.permission.MANAGE_ONGOING_CALLS" />
     <!-- Optional: resolve the other party's name from contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!-- Foreground service that holds the mic while a call is recorded -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- User-enabled floating controls over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -20,6 +23,9 @@
 
     <!-- In-app updater (same pipeline as the other apps) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Discover local ADB endpoints and support Android 16/17 local-network checks. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -51,7 +57,14 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- Optional floating Pause/Resume and Stop controls. -->
+        <!-- Shell-UID-only bridge for collecting finished enhanced call recordings. -->
+        <service
+            android:name=".experimental.adb.EnhancedRecordingEventService"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Optional floating Record/Pause/Stop and Close controls. -->
         <service
             android:name=".recording.OverlayControlService"
             android:exported="false" />
@@ -74,6 +87,18 @@
                 android:resource="@xml/vrec_accessibility" />
         </service>
 
+        <!-- Android 12+ opt-in, non-UI observer; does not replace the user's dialer. -->
+        <service
+            android:name=".calls.VrecInCallService"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="false" />
+            <meta-data android:name="android.telecom.INCLUDE_SELF_MANAGED_CALLS" android:value="true" />
+        </service>
+
         <!-- Optional VoIP detection (WhatsApp etc.) via user-granted Notification access. -->
         <service
             android:name=".calls.VoipNotifListener"
@@ -84,6 +109,10 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".calls.CallControlReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".calls.PhoneStateReceiver"

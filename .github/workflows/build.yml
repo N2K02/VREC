@@ -9,7 +9,7 @@ on:
       - '.gitignore'
       - '.github/workflows/ci.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, experimental/incall-unified-detection ]
     types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:

@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -31,8 +35,9 @@ fun LogScreen() {
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Text("Recording activity", style = MaterialTheme.typography.titleMedium)
         Text(
-            "What VREC has been doing, newest at the bottom. Handy for seeing which source was used and whether a recording was silent.",
+            "Recent recording events and diagnostics",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -40,11 +45,16 @@ fun LogScreen() {
             Button(onClick = { copy(context, Log.snapshot()) }) { Text("Copy") }
             OutlinedButton(onClick = { Log.clear() }) { Text("Clear") }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            if (lines.isEmpty()) {
-                Text("Nothing yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+        Card(shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().weight(1f),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (lines.isEmpty()) {
+                    Text("Nothing yet.", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
             }
         }
     }

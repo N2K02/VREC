@@ -2,6 +2,7 @@ package com.vrec.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.vrec.app.experimental.adb.ExperimentalRecording
 
 /**
  * All of VREC's settings in one place. [AudioSource] values below are stored by name.
@@ -9,10 +10,10 @@ import android.content.SharedPreferences
 object Prefs {
     private const val NAME = "vrec"
 
-    /** Master switch. No automatic or manual recording may start while this is off. */
+    /** Same persisted, opt-in recording master preference as stable VRec. */
     const val RECORDING_ENABLED = "recording_enabled"
 
-    /** Record calls automatically as they happen after recording has been enabled. */
+    /** Record calls automatically when the master switch is on. */
     const val AUTO_RECORD = "auto_record"
 
     /**
@@ -35,6 +36,12 @@ object Prefs {
     const val DISCARD_SILENT = "discard_silent"
 
     const val SHOW_OVERLAY = "show_overlay"
+
+    /** Advanced Telecom detection is only active in the explicitly selected ADB mode. */
+    const val EXPERIMENTAL_CALL_DETECTION = "experimental_call_detection"
+    fun experimentalCallDetection(c: Context) =
+        ExperimentalRecording.method(c) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+            of(c).getBoolean(EXPERIMENTAL_CALL_DETECTION, false)
 
     fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, false)
 

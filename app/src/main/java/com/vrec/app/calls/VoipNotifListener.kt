@@ -3,121 +3,184 @@ package com.vrec.app.calls
 import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
-import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telecom.TelecomManager
 import com.vrec.app.Log
 
-/**
- * Optional VoIP detection. Android can't give an app the audio of a WhatsApp/Telegram/Signal call
- * directly, so VREC records these the same way it records a SIM call where needed: with the
- * loudspeaker fallback. This listener only tells [CallMonitor] when such a call is active, read
- * from the app's own call notification. Requires user-granted Notification access, and is used
- * only when "Record VoIP calls" is turned on.
- */
+/** Caller metadata enrichment for Telecom calls; standalone VoIP detection where Telecom is silent. */
 class VoipNotifListener : NotificationListenerService() {
-
     companion object {
         fun isEnabled(context: Context): Boolean {
             val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
                 ?: return false
-            return flat.contains(ComponentName(context, VoipNotifListener::class.java).flattenToString())
+            return flat.split(':').any {
+                it.equals(ComponentName(context, VoipNotifListener::class.java).flattenToString(), true)
+            }
         }
 
-        /** Apps whose calls VREC will try to record. */
         private val VOIP_PACKAGES = setOf(
-            "com.whatsapp", "com.whatsapp.w4b",
-            "org.telegram.messenger", "org.thoughtcrime.securesms",
-            "com.facebook.orca", "com.viber.voip", "com.skype.raider",
-            "com.google.android.apps.tachyon", // Google Meet / Duo
+            "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger",
+            "org.thoughtcrime.securesms", "com.facebook.orca", "com.viber.voip",
+            "com.skype.raider", "com.google.android.apps.tachyon",
         )
-
         private const val EXTRA_CALL_TYPE = "android.callType"
-        private const val CALL_TYPE_ONGOING = 2
-        private const val CALL_TYPE_INCOMING = 1
+    }
 
-        private fun isCallStyle(n: Notification): Boolean {
-            val ex = n.extras ?: return false
-            return ex.containsKey(EXTRA_CALL_TYPE) ||
-                ex.getString(Notification.EXTRA_TEMPLATE)?.endsWith("\$CallStyle") == true
-        }
-
-        /** True when the notification shows a call that is actually connected (not just ringing). */
-        private fun isActiveCall(n: Notification): Boolean {
-            val ex = n.extras ?: return false
-            if (ex.getInt(EXTRA_CALL_TYPE, 0) == CALL_TYPE_ONGOING) return true
-            // Fallback: an ongoing call-category notification that isn't the incoming ring.
-            return n.category == Notification.CATEGORY_CALL &&
-                ex.getInt(EXTRA_CALL_TYPE, 0) != CALL_TYPE_INCOMING &&
-                (n.flags and Notification.FLAG_ONGOING_EVENT) != 0
+    private data class Signal(val status: String, val metadata: CallerMetadata?)
+    private val signals = mutableMapOf<String, MutableMap<String, Signal>>()
+    private val handler = Handler(Looper.getMainLooper())
+    private val expiry = mutableMapOf<String, Runnable>()
+    private val reconcileIntervalMs = 3_000L
+    // Some VoIP apps update/remove call notifications without sending a
+    // symmetrical callback; compare the listener cache with Android's actual
+    // active notifications while VRec has a notification-based VoIP call.
+    private val watchdog = object : Runnable {
+        override fun run() {
+            reconcileActiveNotifications()
+            if (signals.isNotEmpty() || expiry.isNotEmpty() ||
+                CallMonitor.activeVoipPackages().isNotEmpty()) {
+                handler.postDelayed(this, reconcileIntervalMs)
+            }
         }
     }
 
-    /** Keys of notifications currently showing an active call, per package. */
-    private val activeKeys = HashMap<String, MutableSet<String>>()
+    private fun scheduleWatchdog() {
+        handler.removeCallbacks(watchdog)
+        handler.postDelayed(watchdog, reconcileIntervalMs)
+    }
+
+    private fun reconcileActiveNotifications() {
+        val live = runCatching { activeNotifications.orEmpty().toList() }.getOrNull() ?: return
+        val watched = (signals.keys + CallMonitor.activeVoipPackages()).toSet()
+        for (pkg in watched) {
+            if (pkg !in VOIP_PACKAGES) continue
+            val latest = live.asSequence()
+                .filter { it.packageName == pkg }
+                .mapNotNull { sbn ->
+                    val n = sbn.notification ?: return@mapNotNull null
+                    val state = stateOf(n) ?: return@mapNotNull null
+                    sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n))
+                }
+                .toMap()
+            if (latest.isEmpty()) {
+                signals.remove(pkg)
+                scheduleCallEnd(pkg)
+            } else {
+                expiry.remove(pkg)?.let(handler::removeCallbacks)
+                if (signals[pkg] != latest) {
+                    signals[pkg] = latest.toMutableMap()
+                    publish(pkg, false)
+                }
+            }
+        }
+    }
+
+    private fun scheduleCallEnd(pkg: String) {
+        if (expiry.containsKey(pkg)) return
+        val task = Runnable {
+            expiry.remove(pkg)
+            val remaining = runCatching {
+                activeNotifications.orEmpty().any { it.packageName == pkg &&
+                    it.notification?.let(::stateOf) != null }
+            }.getOrNull()
+            if (remaining != false) {
+                if (remaining == true) reconcileActiveNotifications()
+                return@Runnable
+            }
+            signals.remove(pkg)
+            Log.i("VoIP call notification ended app=" + pkg)
+            CallMonitor.onNotification(this, pkg, pkg == dialer(), "IDLE", null)
+        }
+        expiry[pkg] = task
+        handler.postDelayed(task, 2_500L)
+    }
+
+    private fun dialer(): String? =
+        runCatching { getSystemService(TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()
 
     override fun onListenerConnected() {
-        Log.i("VoIP notification access active")
-        activeKeys.clear()
+        Log.i("Call notification metadata listener connected")
+        signals.clear()
+        expiry.values.forEach(handler::removeCallbacks)
+        expiry.clear()
         runCatching { activeNotifications.orEmpty().forEach(::onNotificationPosted) }
+        scheduleWatchdog()
     }
 
     override fun onListenerDisconnected() {
-        activeKeys.clear()
-        Log.i("VoIP notification listener disconnected")
+        Log.w("Call notification metadata listener disconnected")
+        // Listener reconnection should not end a real call or discard its last caller.
+        handler.removeCallbacks(watchdog)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val pkg = sbn.packageName
-        if (pkg !in VOIP_PACKAGES) return
+        val phone = pkg == dialer()
+        if (!phone && pkg !in VOIP_PACKAGES) return
         val n = sbn.notification ?: return
-        if (!isCallStyle(n) && n.category != Notification.CATEGORY_CALL) return
-
-        val active = isActiveCall(n)
-        val keys = activeKeys.getOrPut(pkg) { mutableSetOf() }
-        val wasActive = keys.isNotEmpty()
-        if (active) keys.add(sbn.key) else keys.remove(sbn.key)
-
-        if (active && keys.isNotEmpty()) {
-            Log.i("VoIP call signal: ${appLabel(pkg)}; type=${n.extras?.getInt(EXTRA_CALL_TYPE, 0)}; callerPresent=${callerName(n) != null}; actions=${n.actions?.size ?: 0}")
-            CallMonitor.onVoipState(this, appLabel(pkg), callerName(n), active = true)
-        } else if (wasActive && keys.isEmpty()) {
-            CallMonitor.onVoipState(this, appLabel(pkg), null, active = false)
+        val state = stateOf(n)
+        if (state == null) {
+            // A former call notification may be rewritten as an ordinary
+            // notification with the same key; do not keep its old ACTIVE entry.
+            onNotificationRemoved(sbn)
+            return
         }
+        expiry.remove(pkg)?.let(handler::removeCallbacks)
+        val map = signals.getOrPut(pkg) { mutableMapOf() }
+        map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n))
+        publish(pkg, phone)
+        if (!phone) scheduleWatchdog()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         val pkg = sbn.packageName
-        val keys = activeKeys[pkg] ?: return
-        if (keys.remove(sbn.key) && keys.isEmpty()) {
-            CallMonitor.onVoipState(this, appLabel(pkg), null, active = false)
+        val remaining = signals[pkg] ?: return
+        remaining.remove(sbn.key)
+        if (remaining.isNotEmpty()) {
+            publish(pkg, pkg == dialer())
+        } else {
+            // Short grace window for WhatsApp's ringing -> answered key switch.
+            scheduleCallEnd(pkg)
         }
     }
 
-    private fun callerName(n: Notification): String? {
-        val extras = n.extras ?: return null
-        val person = if (Build.VERSION.SDK_INT >= 33)
-            extras.getParcelable(Notification.EXTRA_CALL_PERSON, android.app.Person::class.java)
-        else if (Build.VERSION.SDK_INT >= 28) {
-            @Suppress("DEPRECATION")
-            extras.getParcelable<android.app.Person>(Notification.EXTRA_CALL_PERSON)
-        } else null
-        val candidates = listOf(
-            person?.name?.toString(),
-            if (Build.VERSION.SDK_INT >= 28) extras.getParcelableArrayList<android.app.Person>(Notification.EXTRA_PEOPLE_LIST)?.firstOrNull()?.name?.toString() else null,
-            extras.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
-            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
-        )
-        return candidates.firstOrNull { value ->
-            !value.isNullOrBlank() && value.length <= 100 &&
-                !value.equals("Ongoing call", true) &&
-                !value.equals("Incoming call", true) &&
-                !value.equals("Call in progress", true)
-        }?.trim()
+    private fun publish(pkg: String, phone: Boolean) {
+        val values = signals[pkg]?.values.orEmpty()
+        val status = when {
+            values.any { it.status == "ACTIVE" } -> "ACTIVE"
+            values.any { it.status == "RINGING" } -> "RINGING"
+            else -> "UNKNOWN"
+        }
+        val metadata = values.firstNotNullOfOrNull { it.metadata?.takeIf { m ->
+            m.number != null || m.name != null
+        } }
+        CallMonitor.onNotification(this, pkg, phone, status, metadata)
     }
 
-    private fun appLabel(pkg: String): String = runCatching {
-        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-    }.getOrDefault(pkg)
+    private fun stateOf(n: Notification): String? {
+        val type = n.extras?.getInt(EXTRA_CALL_TYPE, 0) ?: 0
+        if (type == 1 || type == 3) return "RINGING"
+        if (type == 2) return "ACTIVE"
+        val callStyle = n.extras?.getString(Notification.EXTRA_TEMPLATE)
+            ?.endsWith("\$CallStyle") == true
+        if (n.category != Notification.CATEGORY_CALL && !callStyle) return null
+        val labels = n.actions.orEmpty().mapNotNull { it.title?.toString()?.lowercase() }
+        if (labels.any { it.contains("end call") || it.contains("hang up") || it.contains("disconnect") })
+            return "ACTIVE"
+        if (labels.any { it.contains("answer") || it.contains("accept") } &&
+            labels.any { it.contains("decline") || it.contains("reject") }) return "RINGING"
+        if ((n.flags and Notification.FLAG_ONGOING_EVENT) != 0) return "ACTIVE"
+        return "UNKNOWN"
+    }
+
+    override fun onDestroy() {
+        expiry.values.forEach(handler::removeCallbacks)
+        expiry.clear()
+        handler.removeCallbacks(watchdog)
+        super.onDestroy()
+    }
 }

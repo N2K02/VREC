@@ -27,6 +27,7 @@ data class Recording(
     val simSlot: Int? = null,
     val carrier: String? = null,
     val callType: String? = null,
+    val sourcePackage: String? = null,
     val notes: String = "",
     val favorite: Boolean = false,
     val bookmarksMs: List<Long> = emptyList(),
@@ -78,6 +79,13 @@ object RecordingStore {
         contactName: String? = peer?.takeIf { phoneNumber != null && it != phoneNumber },
         callConnectedAt: Long? = null,
         callEndedAt: Long? = null,
+        appPackage: String? = null,
+        accountId: String? = null,
+        numberSource: String? = null,
+        callFlowDirection: String? = null,
+        simLabel: String? = null,
+        simSlot: Int? = null,
+        carrier: String? = null,
     ) {
         val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
@@ -95,10 +103,14 @@ object RecordingStore {
             .put("phoneNumber", phoneNumber ?: JSONObject.NULL)
             .put("contactName", contactName ?: JSONObject.NULL)
             .put("countryCode", inferCountryCode(phoneNumber) ?: JSONObject.NULL)
-            .put("simLabel", JSONObject.NULL)
-            .put("simSlot", JSONObject.NULL)
-            .put("carrier", JSONObject.NULL)
-            .put("callType", direction.name)
+            .put("simLabel", simLabel ?: JSONObject.NULL)
+            .put("simSlot", simSlot ?: JSONObject.NULL)
+            .put("carrier", carrier ?: JSONObject.NULL)
+            .put("callType", if (direction == CallDirection.VOIP) "VOIP" else direction.name)
+            .put("sourcePackage", appPackage ?: JSONObject.NULL)
+            .put("phoneAccountId", accountId ?: JSONObject.NULL)
+            .put("numberSource", numberSource ?: JSONObject.NULL)
+            .put("callFlowDirection", callFlowDirection ?: JSONObject.NULL)
             .put("source", sourceLabel ?: JSONObject.NULL)
             .put("silent", silent)
             .put("durationMs", durationMs)
@@ -125,7 +137,7 @@ object RecordingStore {
             .put("source", recording.sourceLabel ?: JSONObject.NULL)
             .put("silent", recording.silent)
             .put("durationMs", recording.durationMs)
-        json.put("schemaVersion", 2)
+        json.put("schemaVersion", 3)
             .put("notes", notes.take(2000))
             .put("favorite", favorite)
             .put("contactName", contactName?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
@@ -147,7 +159,7 @@ object RecordingStore {
     }
 
     fun list(context: Context): List<Recording> =
-        dir(context).listFiles { f -> f.isFile && f.name.endsWith(".m4a", ignoreCase = true) }
+        dir(context).listFiles { f -> f.isFile && (f.name.endsWith(".m4a", ignoreCase = true) || f.name.endsWith(".ogg", ignoreCase = true)) }
             ?.map { read(it) }
             ?.sortedByDescending { it.startedAt }
             ?: emptyList()
@@ -171,14 +183,33 @@ object RecordingStore {
 
     private fun read(file: File): Recording {
         val meta = readJson(file)
+        // Our own yyyyMMdd_HHmmss_(IN|OUT|VOIP) filename is reliable for the
+        // recorded start time and direction even before JSON sidecars existed.
+        val filenameInfo = Regex("^([0-9]{8}_[0-9]{6})(?:_(IN|OUT|VOIP))?(?:_|\\.)")
+            .find(file.name)
+        val filenameStartedAt = filenameInfo?.groupValues?.get(1)?.let { value ->
+            runCatching {
+                SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                    .apply { isLenient = false }.parse(value)?.time
+            }.getOrNull()
+        }
+        val filenameDirection = when (filenameInfo?.groupValues?.getOrNull(2)) {
+            "IN" -> CallDirection.INCOMING
+            "OUT" -> CallDirection.OUTGOING
+            "VOIP" -> CallDirection.VOIP
+            else -> CallDirection.UNKNOWN
+        }
         val peer = meta?.optString("peer")?.takeIf { it.isNotBlank() && it != "null" }
         val phone = meta?.optString("phoneNumber")?.takeIf { it.isNotBlank() && it != "null" }
             ?: extractPhone(peer)
         val bookmarks = meta?.optJSONArray("bookmarksMs")?.let { a -> (0 until a.length()).map { a.optLong(it) } } ?: emptyList()
         return Recording(
             file = file,
-            startedAt = meta?.optLong("startedAt", file.lastModified()) ?: file.lastModified(),
-            direction = runCatching { CallDirection.valueOf(meta?.optString("direction") ?: "") }.getOrDefault(CallDirection.UNKNOWN),
+            startedAt = meta?.optLong("startedAt")?.takeIf { it > 0 }
+                ?: filenameStartedAt ?: file.lastModified(),
+            direction = if (meta == null) filenameDirection else
+                runCatching { CallDirection.valueOf(meta.optString("direction")) }
+                    .getOrDefault(CallDirection.UNKNOWN),
             peer = peer,
             sourceLabel = meta?.optString("source")?.takeIf { it.isNotBlank() && it != "null" },
             silent = meta?.optBoolean("silent", false) ?: false,
@@ -190,6 +221,8 @@ object RecordingStore {
             simSlot = meta?.optInt("simSlot")?.takeIf { it > 0 },
             carrier = meta?.optString("carrier")?.takeIf { it.isNotBlank() && it != "null" },
             callType = meta?.optString("callType")?.takeIf { it.isNotBlank() && it != "null" },
+            sourcePackage = meta?.optString("sourcePackage")
+                ?.takeIf { it.isNotBlank() && it != "null" },
             notes = meta?.optString("notes")?.takeIf { it != "null" } ?: "",
             favorite = meta?.optBoolean("favorite", false) ?: false,
             bookmarksMs = bookmarks,
