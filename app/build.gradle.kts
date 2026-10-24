@@ -16,6 +16,8 @@ val appVersionCode = appVersion.split(".").let { (major, minor) ->
 android {
     namespace = "com.vrec.app"
     compileSdk = 37
+    // Needed by the source-built shell-side recorder jar (d8 36.0.0).
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.vrec.app"
@@ -83,3 +85,22 @@ dependencies {
     implementation("dev.n2k02:theme:0.1.4")
         implementation("dev.n2k02:updater:0.1.13")
 }
+
+
+// Build the Apache-2.0 audio-only scrcpy/JemRec-derived service FROM SOURCE.
+// The jar is bundled in the APK; no runtime download or companion app.
+val daemonDir = rootProject.file("shellserver")
+val daemonJar = File(daemonDir, "vrec-capture.jar")
+val buildVrecShellDaemon = tasks.register<Exec>("buildVrecShellDaemon") {
+    workingDir = daemonDir
+    commandLine("bash", "build.sh")
+    inputs.dir(File(daemonDir, "src"))
+    inputs.file(File(daemonDir, "build.sh"))
+    outputs.file(daemonJar)
+}
+val bundleVrecShellDaemon = tasks.register<Copy>("bundleVrecShellDaemon") {
+    dependsOn(buildVrecShellDaemon)
+    from(daemonJar)
+    into(layout.projectDirectory.dir("src/main/assets"))
+}
+tasks.named("preBuild") { dependsOn(bundleVrecShellDaemon) }
