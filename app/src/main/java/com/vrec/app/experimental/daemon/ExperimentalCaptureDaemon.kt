@@ -44,6 +44,7 @@ object ExperimentalCaptureDaemon {
     val message = MutableStateFlow("Recorder not started.")
     val ready = MutableStateFlow(false)
     private val importMutex = Mutex()
+    private val modeMutex = Mutex()
 
     private fun token(context: Context): String {
         val prefs = context.getSharedPreferences("vrec_experimental_recorder", Context.MODE_PRIVATE)
@@ -176,15 +177,17 @@ object ExperimentalCaptureDaemon {
     }
 
     suspend fun setMode(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
-        // The shell daemon can outlive this APK process. Never arm it unless Home
-        // explicitly enabled recording, including after reboot or ADB reconnect.
-        val allowed = enabled && Prefs.recordingEnabled(context) &&
-            ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD
-        runCatching {
-            open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
-                it.getInputStream().read() >= 0
-            }
-        }.getOrDefault(false)
+        modeMutex.withLock {
+            // Serialize mode updates and reread Home preference at the point of use.
+            // A late enable operation must never re-arm capture after the user switched off.
+            val allowed = enabled && Prefs.recordingEnabled(context) &&
+                ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD
+            runCatching {
+                open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
+                    it.getInputStream().read() >= 0
+                }
+            }.getOrDefault(false)
+        }
     }
 
     suspend fun stopRecording(context: Context) {
