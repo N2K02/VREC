@@ -341,6 +341,12 @@ class RecordingService : Service() {
                 if (result != null) {
                     val keep = !(result.silent && Prefs.discardSilent(this))
                     if (keep) {
+                        // Attribute SIM details only when there is exactly one active
+                        // subscription and this is a verified cellular call.
+                        val sim = if (direction == CallDirection.INCOMING ||
+                            direction == CallDirection.OUTGOING)
+                            com.vrec.app.calls.CallInfo.singleActiveSim(this)
+                        else null
                         RecordingStore.writeMeta(result.file, direction, peer,
                             result.source.label, result.silent, result.durationMs,
                             phoneNumber = phoneNumber,
@@ -350,7 +356,9 @@ class RecordingService : Service() {
                             },
                             callConnectedAt = callConnectedAt, callEndedAt = callEndedAt,
                             appPackage = appPackage, accountId = accountId,
-                            numberSource = numberSource, callFlowDirection = callFlow)
+                            numberSource = numberSource, callFlowDirection = callFlow,
+                            simLabel = sim?.label, simSlot = sim?.slot,
+                            carrier = sim?.carrier)
                         Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
                     } else {
                         RecordingStore.delete(RecordingToDelete(result.file))
