@@ -191,9 +191,9 @@ fun SettingsScreen(
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
-                    supportingContent = { Text(if (index == 1 && updateStatus.hasPendingUpdate()) "A new update is available" else detail) },
+                    supportingContent = { Text(detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
-                    trailingContent = { if (index == 1) dev.n2k02.updater.N2K02UpdateBadge(updateStatus) else Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                     colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                         .clickable { onSectionChange(name) },
@@ -214,9 +214,9 @@ fun SettingsScreen(
             ).forEachIndexed { index, (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
-                    supportingContent = { Text(detail) },
+                    supportingContent = { Text(if (index == 1 && updateStatus.hasPendingUpdate()) "A new update is available" else detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    trailingContent = { if (index == 1) dev.n2k02.updater.N2K02UpdateBadge(updateStatus) else Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                     colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable {
                         when (index) {
