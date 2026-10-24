@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, experimental/incall-unified-detection ]
   workflow_dispatch:
 
 concurrency:
