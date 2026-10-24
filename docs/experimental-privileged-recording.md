@@ -77,6 +77,29 @@ policy. ADB over TCP might listen on LAN interfaces and expose device access
 to other authorized ADB clients. **Never enable it automatically.** Turn it
 off when not required.
 
+## Runtime fallback when the ADB helper is unavailable
+
+- Selecting **ADB privileged helper** does not switch off the Home master
+  recording toggle and does not silently turn Android debugging on.
+- When recording is enabled on Home and a recording actually starts while
+  ADB mode is selected but the enhanced helper is unavailable, VRec uses its
+  normal microphone recorder **for that recording**. It retains the selected
+  ADB method for future calls.
+- Once the standard fallback starts, VRec posts a dismissible **ADB helper
+  unavailable · Standard recording** notification with **Enable debugging**
+  (opens Android Developer options) and **ADB setup** (opens the Experimental
+  settings page) actions. Android 13+ requires notification permission for
+  this reminder. Home also displays the fallback state while it is recording.
+- No reminder is posted merely because the Home master switch is turned on,
+  or while the enhanced helper remains healthy despite Wi-Fi/ADB transport
+  disconnecting.
+- If the user reconnects ADB during a standard fallback, the helper must
+  remain in standby until that recording finishes, preventing duplicate files.
+  Once finalized, VRec can rearm the healthy helper for later calls.
+- This runtime fallback is not a guarantee of audible remote-side audio on
+  every phone. Android may prevent microphone recording from starting in the
+  background or capturing the far end of the call.
+
 ## Call detection, recordings and metadata
 
 - Unified `CallMonitor` handles SIM phone state, optional non-UI Telecom
