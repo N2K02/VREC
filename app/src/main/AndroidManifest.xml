@@ -64,7 +64,7 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Optional floating Pause/Resume and Stop controls. -->
+        <!-- Optional floating Record/Pause/Stop and Close controls. -->
         <service
             android:name=".recording.OverlayControlService"
             android:exported="false" />
@@ -109,6 +109,10 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".calls.CallControlReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".calls.PhoneStateReceiver"
