@@ -238,10 +238,8 @@ public final class Main {
 
             startCallWatcher(token);
             startVoipWatcher(token);
-            // Off the main thread: it runs `cmd appops`, which takes a moment.
-            Thread tracking = new Thread(Main::applyTracking, "jemrec-tracking");
-            tracking.setDaemon(true);
-            tracking.start();
+            // VRec owns its optional InCallService AppOp independently.
+            // The capture daemon must not change users' existing AppOp grants.
 
             // The main thread loops instead of blocking in accept(), so the
             // fake ActivityThread's handler has a thread to run on. The
