@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-ANDROID_PLATFORM="${ANDROID_PLATFORM:-37}"
+ANDROID_PLATFORM="${ANDROID_PLATFORM:-36}"
 BUILD_TOOLS="${BUILD_TOOLS:-36.0.0}"
 
 # THE JAVAC MAJOR IS PART OF THE BUILD, and it is checked, not assumed.
