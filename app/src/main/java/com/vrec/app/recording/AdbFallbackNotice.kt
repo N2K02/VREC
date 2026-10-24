@@ -23,6 +23,8 @@ object AdbFallbackNotice {
     private const val CHANNEL = "vrec_adb_fallback"
     private const val NOTIFICATION_ID = 86
     val active = MutableStateFlow(false)
+    val handoffInProgress = MutableStateFlow(false)
+    val enhancedActive = MutableStateFlow(false)
 
     /** Reserve before starting the standard recorder to prevent concurrent daemon arming. */
     fun reserve() {
@@ -34,8 +36,36 @@ object AdbFallbackNotice {
         active.value = false
     }
 
+    fun beginHandoff() { handoffInProgress.value = true }
+    fun endHandoff() { handoffInProgress.value = false }
+
     fun dismiss(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+    }
+
+    fun notifyEnhancedStarted(context: Context) {
+        dismiss(context)
+        enhancedActive.value = true
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val notice = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Switched to enhanced ADB recording")
+            .setContentText("Standard segment saved. Enhanced capture is now active for this call.")
+            .setContentIntent(PendingIntent.getActivity(
+                context, 86,
+                Intent(context, MainActivity::class.java)
+                    .setAction(MainActivity.ACTION_OPEN_ADB_SETUP)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        runCatching { manager.notify(NOTIFICATION_ID, notice) }
+            .onFailure { Log.w("Unable to confirm enhanced capture handoff", it) }
     }
 
     fun notifyStandardStarted(context: Context) {
