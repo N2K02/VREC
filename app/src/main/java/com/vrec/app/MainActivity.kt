@@ -163,15 +163,23 @@ private fun App() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        if (screen == Screen.HOME) {
-                            Icon(Icons.Rounded.Home, contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp))
-                        } else {
+                        val subpage = screen == Screen.SETUP || screen == Screen.LOG ||
+                            screen == Screen.UPDATE ||
+                            (screen == Screen.SETTINGS && settingsSection != null)
+                        if (subpage) {
                             IconButton(onClick = { navigateBack() }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Back")
                             }
+                        } else {
+                            val sectionIcon = when (screen) {
+                                Screen.RECORDINGS -> Icons.Rounded.Folder
+                                Screen.SETTINGS -> Icons.Rounded.Settings
+                                else -> Icons.Rounded.Home
+                            }
+                            Icon(sectionIcon, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp))
                         }
                         Text(title, style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold, maxLines = 1)
