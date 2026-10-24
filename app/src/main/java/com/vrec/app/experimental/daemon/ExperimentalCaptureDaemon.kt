@@ -184,7 +184,8 @@ object ExperimentalCaptureDaemon {
                 ExperimentalRecording.method(context) != ExperimentalRecording.Method.STANDARD
             runCatching {
                 open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
-                    it.getInputStream().read() >= 0
+                    val confirmedMode = it.getInputStream().bufferedReader().readLine()?.trim()
+                    confirmedMode == if (allowed) "1" else "0"
                 }
             }.getOrDefault(false)
         }
