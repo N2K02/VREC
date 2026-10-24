@@ -16,6 +16,7 @@ import androidx.core.app.ServiceCompat
 import com.vrec.app.Log
 import com.vrec.app.Prefs
 import com.vrec.app.R
+import com.vrec.app.calls.CallMonitor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.concurrent.thread
@@ -30,6 +31,7 @@ class RecordingService : Service() {
     sealed interface State {
         data object Idle : State
         data object Starting : State
+        data object Stopping : State
         data class Recording(
             val sourceLabel: String,
             val peer: String?,
@@ -50,6 +52,7 @@ class RecordingService : Service() {
 
         const val ACTION_START = "com.vrec.app.START"
         const val ACTION_STOP = "com.vrec.app.STOP"
+        const val ACTION_USER_STOP = "com.vrec.app.USER_STOP"
         const val ACTION_PAUSE = "com.vrec.app.PAUSE"
         const val ACTION_UPDATE_PEER = "com.vrec.app.UPDATE_PEER"
         const val ACTION_UPDATE_METADATA = "com.vrec.app.UPDATE_METADATA"
@@ -133,6 +136,8 @@ class RecordingService : Service() {
     }
 
     private var engine: RecordingEngine? = null
+    private var finalizing = false
+    private var stopPending = false
     @Volatile private var direction = CallDirection.UNKNOWN
     @Volatile private var peer: String? = null
     @Volatile private var phoneNumber: String? = null
@@ -168,6 +173,7 @@ class RecordingService : Service() {
                 callEndedAt = intent.getLongExtra(EXTRA_CALL_ENDED_AT, 0L).takeIf { it > 0L }
                 finish()
             }
+            ACTION_USER_STOP -> CallMonitor.userStop(this)
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
             ACTION_UPDATE_PEER -> {
@@ -248,23 +254,35 @@ class RecordingService : Service() {
         engine = e
         val file = RecordingStore.newFile(this, direction, peer)
         thread(name = "vrec-record") {
-            val source = e.start(file)
-            if (source == null) {
-                engine = null
-                _state.value = State.Idle
-                finish()
-                return@thread
-            }
-            _state.value = State.Recording(source.label, peer, silentSoFar = true)
+            val source = runCatching { e.start(file) }.onFailure {
+                Log.w("Recorder could not prepare an audio source", it)
+            }.getOrNull()
             handler.post {
+                if (stopPending) {
+                    if (source == null) engine = null
+                    finalizeRecording()
+                    return@post
+                }
+                if (source == null) {
+                    engine = null
+                    _state.value = State.Idle
+                    CallMonitor.onRecordingFinalized(this)
+                    stopSelfAndForeground()
+                    return@post
+                }
+                _state.value = State.Recording(source.label, peer, silentSoFar = true)
                 update(recordingNotification(source.label))
-                if (com.vrec.app.Prefs.showOverlay(this)) startService(Intent(this, OverlayControlService::class.java).setAction(OverlayControlService.ACTION_SHOW))
+                if (Prefs.showOverlay(this) && !CallMonitor.overlayWasDismissed()) {
+                    startService(Intent(this, OverlayControlService::class.java)
+                        .setAction(OverlayControlService.ACTION_SHOW))
+                }
                 handler.post(sampler)
             }
         }
     }
 
     private fun pauseRecording() {
+        if (!Prefs.recordingEnabled(this) || finalizing || stopPending) return
         val e = engine ?: return
         val current = _state.value as? State.Recording ?: return
         if (!e.pause()) return
@@ -275,6 +293,7 @@ class RecordingService : Service() {
     }
 
     private fun resumeRecording() {
+        if (!Prefs.recordingEnabled(this) || finalizing || stopPending) return
         val e = engine ?: return
         val current = _state.value as? State.Paused ?: return
         if (!e.resume()) return
@@ -284,31 +303,72 @@ class RecordingService : Service() {
     }
 
     private fun finish() {
+        if (finalizing || stopPending) return
+        handler.removeCallbacks(sampler)
+        if (_state.value is State.Starting) {
+            // An audio source is being prepared on another thread. Waiting for
+            // that thread avoids racing MediaRecorder.start() against stop().
+            stopPending = true
+            _state.value = State.Stopping
+            update(stoppingNotification())
+            return
+        }
+        finalizeRecording()
+    }
+
+    private fun finalizeRecording() {
+        if (finalizing) return
+        finalizing = true
+        stopPending = false
         handler.removeCallbacks(sampler)
         val e = engine
         engine = null
+        _state.value = State.Stopping
+        update(stoppingNotification())
         if (e == null) {
+            _state.value = State.Idle
+            finalizing = false
+            CallMonitor.onRecordingFinalized(this)
+            stopService(Intent(this, OverlayControlService::class.java))
             stopSelfAndForeground()
             return
         }
         thread(name = "vrec-stop") {
-            val result = e.stop()
-            if (result != null) {
-                val keep = !(result.silent && Prefs.discardSilent(this))
-                if (keep) {
-                    RecordingStore.writeMeta(result.file, direction, peer, result.source.label, result.silent, result.durationMs, phoneNumber = phoneNumber, contactName = peer?.substringBefore(" (")?.takeIf { direction == CallDirection.VOIP && it.isNotBlank() && it != peer || phoneNumber != null && it != phoneNumber }, callConnectedAt = callConnectedAt, callEndedAt = callEndedAt,
-                        appPackage = appPackage, accountId = accountId, numberSource = numberSource,
-                        callFlowDirection = callFlow)
-                    Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
-                } else {
-                    RecordingStore.delete(RecordingToDelete(result.file))
-                    Log.i("Discarded a silent recording (setting on)")
+            try {
+                val result = e.stop()
+                if (result != null) {
+                    val keep = !(result.silent && Prefs.discardSilent(this))
+                    if (keep) {
+                        RecordingStore.writeMeta(result.file, direction, peer,
+                            result.source.label, result.silent, result.durationMs,
+                            phoneNumber = phoneNumber,
+                            contactName = peer?.substringBefore(" (")?.takeIf {
+                                (direction == CallDirection.VOIP && it.isNotBlank() && it != peer) ||
+                                    (phoneNumber != null && it != phoneNumber)
+                            },
+                            callConnectedAt = callConnectedAt, callEndedAt = callEndedAt,
+                            appPackage = appPackage, accountId = accountId,
+                            numberSource = numberSource, callFlowDirection = callFlow)
+                        Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
+                    } else {
+                        RecordingStore.delete(RecordingToDelete(result.file))
+                        Log.i("Discarded a silent recording (setting on)")
+                    }
+                }
+            } catch (error: Exception) {
+                Log.w("Recording finalization failed", error)
+            } finally {
+                handler.post {
+                    _state.value = State.Idle
+                    _level.value = 0
+                    finalizing = false
+                    CallMonitor.onRecordingFinalized(this)
+                    if (!CallMonitor.canRecordAgain() || !Prefs.recordingEnabled(this)) {
+                        stopService(Intent(this, OverlayControlService::class.java))
+                    }
+                    stopSelfAndForeground()
                 }
             }
-            _state.value = State.Idle
-            _level.value = 0
-            stopService(Intent(this, OverlayControlService::class.java))
-            stopSelfAndForeground()
         }
     }
 
@@ -373,18 +433,23 @@ class RecordingService : Service() {
         .setContentText(peer ?: "Call")
         .build()
 
+    private fun stoppingNotification(): Notification = baseNotification()
+        .setContentTitle("Saving recording…")
+        .setContentText("Finishing the current audio file")
+        .build()
+
     private fun recordingNotification(sourceLabel: String): Notification = baseNotification()
         .setContentTitle("Recording call")
         .setContentText((peer?.let { "$it · " } ?: "") + sourceLabel)
         .addAction(0, "Pause", actionPendingIntent(ACTION_PAUSE, 2))
-        .addAction(0, "Stop", actionPendingIntent(ACTION_STOP, 1))
+        .addAction(0, "Stop", actionPendingIntent(ACTION_USER_STOP, 1))
         .build()
 
     private fun pausedNotification(sourceLabel: String): Notification = baseNotification()
         .setContentTitle("Recording paused")
         .setContentText(peer?.let { "$it · $sourceLabel" } ?: sourceLabel)
         .addAction(0, "Resume", actionPendingIntent(ACTION_RESUME, 3))
-        .addAction(0, "Stop", actionPendingIntent(ACTION_STOP, 1))
+        .addAction(0, "Stop", actionPendingIntent(ACTION_USER_STOP, 1))
         .build()
 
     private fun actionPendingIntent(action: String, requestCode: Int) = android.app.PendingIntent.getService(
