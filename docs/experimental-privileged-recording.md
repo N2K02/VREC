@@ -93,9 +93,20 @@ off when not required.
 - No reminder is posted merely because the Home master switch is turned on,
   or while the enhanced helper remains healthy despite Wi-Fi/ADB transport
   disconnecting.
-- If the user reconnects ADB during a standard fallback, the helper must
-  remain in standby until that recording finishes, preventing duplicate files.
-  Once finalized, VRec can rearm the healthy helper for later calls.
+- If ADB is restored during a standard fallback on an ongoing **cellular**
+  call, VRec now checks that both the app's call monitor and the shell daemon's
+  own live call watcher recognize that call. Only then does VRec **save the
+  standard segment, enable enhanced capture and explicitly start a new shell
+  segment for the remaining call**. The two segments are kept separately.
+  Neither an existing helper nor ADB authorization alone proves handoff safe.
+- If the shell daemon cannot verify the active call, standard recording
+  continues without interruption. If the enhanced segment fails to start after
+  standard finalization, VRec disables shell capture and attempts a fresh
+  standard segment while the call is still live; any small transition gap is
+  unavoidable. Paused, VoIP, unknown-direction and ended calls are never
+  forcibly switched mid-call.
+- Home shows the enhanced segment after a confirmed handoff, hides the
+  duplicate Record now button, and clears the indicator on call end.
 - This runtime fallback is not a guarantee of audible remote-side audio on
   every phone. Android may prevent microphone recording from starting in the
   background or capturing the far end of the call.
