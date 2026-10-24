@@ -16,6 +16,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ListItem
@@ -62,6 +67,17 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val prefs = remember { Prefs.of(context) }
+    val scope = rememberCoroutineScope()
+    var recordingMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
+
+    fun selectRecordingMethod(method: ExperimentalRecording.Method) {
+        if (recordingMethod == method) return
+        // Selection never bootstraps a shell process or changes the Home master switch.
+        // A previously running helper is rearmed/put on standby based on the new mode.
+        recordingMethod = method
+        ExperimentalRecording.select(context, method)
+        scope.launch { AdbPrivilegedApiHelper.reconnect(context) }
+    }
 
     // Local mirror of the stored values, so the UI updates immediately.
     var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
@@ -80,6 +96,25 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (section == null) {
+            SettingCard("Recording method") {
+                RecordingMethodOption(
+                    label = "Regular recording",
+                    detail = "Uses the phone microphone and existing call permissions.",
+                    selected = recordingMethod == ExperimentalRecording.Method.STANDARD,
+                    onSelect = { selectRecordingMethod(ExperimentalRecording.Method.STANDARD) },
+                )
+                RecordingMethodOption(
+                    label = "ADB privileged helper",
+                    detail = "Optional enhanced helper. Requires separate Android debugging setup.",
+                    selected = recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB,
+                    onSelect = { selectRecordingMethod(ExperimentalRecording.Method.BUILT_IN_ADB) },
+                )
+                if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                    TextButton(onClick = { onSectionChange("Experimental") }) {
+                        Text("Configure ADB access →")
+                    }
+                }
+            }
             Text("Make recording your own",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -94,7 +129,7 @@ fun SettingsScreen(
                 Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Experimental", "Recording methods, ADB, TCP and call detection", Icons.Rounded.Tune),
+                Triple("Experimental", "ADB connection, helper and advanced access", Icons.Rounded.Tune),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -184,10 +219,24 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "Experimental") ExperimentalRecorderCard()
-
-        // A single card owns both permission status and the opt-in toggle.
-        if (section == "Experimental") TelecomAdbInstructionCard()
+        if (section == "Experimental") {
+            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                ExperimentalRecorderCard()
+                // Special Telecom AppOp access is configured only in Experimental.
+                TelecomAdbInstructionCard()
+            } else {
+                SettingCard("ADB privileged helper") {
+                    Text(
+                        "The ADB helper is off. Select it under Recording method in the main Settings page to configure connection and special access.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { onSectionChange(null) }) {
+                        Text("Go to recording method")
+                    }
+                }
+            }
+        }
 
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
@@ -242,5 +291,23 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
     ) {
         RadioButton(selected = selected == value, onClick = { onSelect(value) })
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+    }
+}
+
+@Composable
+private fun RecordingMethodOption(
+    label: String, detail: String, selected: Boolean, onSelect: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onSelect)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Column(Modifier.weight(1f).padding(start = 8.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
