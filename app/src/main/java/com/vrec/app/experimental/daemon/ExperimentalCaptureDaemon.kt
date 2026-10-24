@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.DataInputStream
 import java.io.IOException
@@ -28,7 +27,7 @@ import org.json.JSONObject
 
 /**
  * Shell UID audio capture service adapted from JemRec under Apache 2.0.
- * ADB/Shizuku are used for ONE-TIME bootstrap; completed call audio travels
+ * Built-in ADB is used for ONE-TIME bootstrap; completed call audio travels
  * over an authenticated loopback channel even with Wi-Fi disconnected.
  */
 object ExperimentalCaptureDaemon {
@@ -124,8 +123,6 @@ object ExperimentalCaptureDaemon {
             ExperimentalRecording.Method.BUILT_IN_ADB -> {
                 AdbTransport.exec(command, timeoutMs = 30_000).getOrThrow()
             }
-            ExperimentalRecording.Method.SHIZUKU ->
-                com.vrec.app.experimental.adb.ShizukuShell.run(command)
             else -> error("Standard mode does not need the shell daemon")
         }
 
@@ -133,7 +130,7 @@ object ExperimentalCaptureDaemon {
         val method = ExperimentalRecording.method(context)
         runCatching {
             check(method != ExperimentalRecording.Method.STANDARD) {
-                "Select Built-in ADB or Shizuku first."
+                "Select Built-in ADB first."
             }
             if (probe(context)) {
                 setMode(context, Prefs.recordingEnabled(context))

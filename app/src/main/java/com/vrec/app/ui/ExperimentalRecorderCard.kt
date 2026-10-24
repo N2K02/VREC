@@ -80,7 +80,6 @@ fun ExperimentalRecorderCard() {
     var tcpWarning by remember { mutableStateOf(false) }
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
-    var shizukuLabel by remember { mutableStateOf(ExperimentalRecording.shizukuStatus()) }
     var localError by remember { mutableStateOf<String?>(null) }
 
     fun openDeveloperOptions() {
@@ -106,7 +105,7 @@ fun ExperimentalRecorderCard() {
         ) {
             Text("Recording method", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
-            Text("Choose a recording method.",
+            Text("Choose Standard or Built-in ADB.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!com.vrec.app.Prefs.recordingEnabled(context)) {
@@ -118,9 +117,7 @@ fun ExperimentalRecorderCard() {
                 Triple(ExperimentalRecording.Method.STANDARD,
                     "Standard (recommended)", "Record with the microphone. No setup needed."),
                 Triple(ExperimentalRecording.Method.BUILT_IN_ADB,
-                    "Built-in ADB", "Use Android debugging. No Shizuku app needed."),
-                Triple(ExperimentalRecording.Method.SHIZUKU,
-                    "Shizuku", "Start Shizuku separately and authorize VRec."),
+                    "Built-in ADB", "Use Android debugging without another app."),
             ).forEach { (method, label, subtitle) ->
                 Row(
                     Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -348,31 +345,6 @@ fun ExperimentalRecorderCard() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            if (selection == ExperimentalRecording.Method.SHIZUKU) {
-                HorizontalDivider()
-                Text("Shizuku service: " + shizukuLabel,
-                    style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        shizukuLabel = ExperimentalRecording.shizukuStatus()
-                    }) { Text("Check service") }
-                    Button(onClick = {
-                        runCatching { ExperimentalRecording.requestShizuku() }
-                            .onFailure { localError = it.message }
-                    }) { Text("Authorize") }
-                }
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        ExperimentalRecording.testShizuku()
-                            .onSuccess { localError = "Shizuku shell verified (UID " + it + ")." }
-                            .onFailure { localError = it.message }
-                        shizukuLabel = ExperimentalRecording.shizukuStatus()
-                    }
-                }) { Text("Test Shizuku shell") }
-                Text("Shizuku is an alternative to VRec's ADB connection. It must be running and VRec must be authorized. Start it again after reboot.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             localError?.let {
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant,

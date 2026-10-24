@@ -1,7 +1,6 @@
 package com.vrec.app.experimental.adb
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import io.github.muntashirakon.adb.android.AdbMdns
@@ -9,13 +8,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
-import rikka.shizuku.Shizuku
 import java.net.InetSocketAddress
 import java.net.Socket
 
 /** Privilege/setup controller, intentionally independent from the standard audio recorder. */
 object ExperimentalRecording {
-    enum class Method { STANDARD, BUILT_IN_ADB, SHIZUKU }
+    enum class Method { STANDARD, BUILT_IN_ADB }
     data class Status(
         val message: String = "Standard recording available.",
         val pairingPort: Int? = null,
@@ -28,10 +26,14 @@ object ExperimentalRecording {
     private const val PREFERENCES = "vrec_experimental_recorder"
     private const val METHOD_KEY = "recorder_method"
 
-    fun method(context: Context): Method = runCatching {
-        Method.valueOf(context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .getString(METHOD_KEY, Method.STANDARD.name) ?: Method.STANDARD.name)
-    }.getOrDefault(Method.STANDARD)
+    fun method(context: Context): Method {
+        val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val stored = prefs.getString(METHOD_KEY, Method.STANDARD.name)
+        val resolved = Method.entries.firstOrNull { it.name == stored } ?: Method.STANDARD
+        // Migrate unsupported legacy settings to Standard safely.
+        if (stored != resolved.name) prefs.edit().putString(METHOD_KEY, resolved.name).apply()
+        return resolved
+    }
 
     fun select(context: Context, method: Method) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -178,31 +180,4 @@ object ExperimentalRecording {
         return result
     }
 
-    fun shizukuStatus(): String {
-        val running = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
-        return when {
-            !running -> "Not running"
-            runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }
-                .getOrDefault(false) -> "Authorized"
-            else -> "Needs permission"
-        }
-    }
-
-    fun requestShizuku() {
-        check(Shizuku.pingBinder()) { "Shizuku is not running." }
-        Shizuku.requestPermission(6720)
-    }
-
-    suspend fun testShizuku(): Result<Int> = withContext(Dispatchers.IO) {
-        runCatching {
-            check(Shizuku.pingBinder()) { "Start Shizuku first." }
-            check(Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                "Authorize VRec in Shizuku first."
-            }
-            val output = ShizukuShell.run("id -u").trim()
-            val uid = output.toInt()
-            check(uid == 2000 || uid == 0) { "Expected shell/root, got UID " + uid }
-            uid
-        }
-    }
 }

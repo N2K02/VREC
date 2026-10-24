@@ -76,8 +76,6 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk15to18:1.81")
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
     implementation("org.conscrypt:conscrypt-android:2.7.0")
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
