@@ -162,17 +162,10 @@ object ExperimentalRecording {
             check(Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 "Authorize VRec in Shizuku first."
             }
-            @Suppress("DEPRECATION")
-            val proc = Shizuku.newProcess(arrayOf("sh", "-c", "id -u"), null, null)
-            try {
-                val output = proc.inputStream.bufferedReader().readText().trim()
-                check(proc.waitFor() == 0) { "Shizuku command failed." }
-                val uid = output.toInt()
-                check(uid == 2000 || uid == 0) { "Expected shell/root, got UID " + uid }
-                uid
-            } finally {
-                proc.destroy()
-            }
+            val output = ShizukuShell.run("id -u").trim()
+            val uid = output.toInt()
+            check(uid == 2000 || uid == 0) { "Expected shell/root, got UID " + uid }
+            uid
         }
     }
 }

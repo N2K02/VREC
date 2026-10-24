@@ -122,19 +122,8 @@ object ExperimentalCaptureDaemon {
             ExperimentalRecording.Method.BUILT_IN_ADB -> {
                 AdbTransport.exec(command, timeoutMs = 30_000).getOrThrow()
             }
-            ExperimentalRecording.Method.SHIZUKU -> withContext(Dispatchers.IO) {
-                check(Shizuku.pingBinder()) { "Shizuku is not running" }
-                @Suppress("DEPRECATION")
-                val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-                try {
-                    val output = process.inputStream.bufferedReader().readText()
-                    val exit = process.waitFor()
-                    check(exit == 0) { "Shizuku shell failed: " + output.take(400) }
-                    output
-                } finally {
-                    process.destroy()
-                }
-            }
+            ExperimentalRecording.Method.SHIZUKU ->
+                com.vrec.app.experimental.adb.ShizukuShell.run(command)
             else -> error("Standard mode does not need the shell daemon")
         }
 

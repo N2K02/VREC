@@ -2,6 +2,7 @@ package com.vrec.app
 
 import android.app.Application
 import com.vrec.app.update.AppUpdater
+import com.vrec.app.experimental.adb.ShizukuShell
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,7 @@ import kotlinx.coroutines.launch
 class VrecApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        ShizukuShell.init(this)
         AppUpdater.init(this, repo = "N2K02/VREC", appName = "VREC")
         // Recheck the local shell daemon after process restart without ADB.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
