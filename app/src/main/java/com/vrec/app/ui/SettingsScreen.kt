@@ -22,6 +22,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material3.LinearProgressIndicator
+import com.vrec.app.calls.CallDetectionAccess
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import android.os.Build
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import kotlinx.coroutines.launch
@@ -75,6 +84,21 @@ fun SettingsScreen(
     val resumeTick = rememberOnResumeTick()
     val voipNotificationGranted = remember(resumeTick) { VoipNotifListener.isEnabled(context) }
     var recordingMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
+    val connection by ExperimentalRecording.status.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    var permissionCheckTick by remember { mutableIntStateOf(0) }
+    val advancedPermissionGranted = remember(resumeTick, section, permissionCheckTick) {
+        CallDetectionAccess.isGranted(context)
+    }
+    val advancedDetectionEnabled = remember(resumeTick, section, permissionCheckTick) {
+        Prefs.experimentalCallDetection(context)
+    }
+    LaunchedEffect(resumeTick, section, recordingMethod) {
+        if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+            AdbPrivilegedApiHelper.checkHealth(context)
+        }
+    }
 
     fun selectRecordingMethod(method: ExperimentalRecording.Method) {
         if (recordingMethod == method) return
@@ -115,11 +139,16 @@ fun SettingsScreen(
                     selected = recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB,
                     onSelect = { selectRecordingMethod(ExperimentalRecording.Method.BUILT_IN_ADB) },
                 )
-                if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
-                    TextButton(onClick = { onSectionChange("Experimental") }) {
-                        Text("Configure ADB access →")
-                    }
-                }
+            }
+            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                AdbSetupProgressCard(
+                    adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
+                        (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
+                    helperReady = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING,
+                    advancedGranted = advancedPermissionGranted,
+                    advancedEnabled = advancedDetectionEnabled,
+                    onConfigure = { onSectionChange("Experimental") },
+                )
             }
             Text("Make recording your own",
                 style = MaterialTheme.typography.titleMedium,
@@ -227,9 +256,16 @@ fun SettingsScreen(
 
         if (section == "Experimental") {
             if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                AdbSetupProgressCard(
+                    adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
+                        (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
+                    helperReady = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING,
+                    advancedGranted = advancedPermissionGranted,
+                    advancedEnabled = advancedDetectionEnabled,
+                )
                 ExperimentalRecorderCard()
-                // Special Telecom AppOp access is configured only in Experimental.
-                TelecomAdbInstructionCard()
+                // Advanced AppOp is a separate explicit user action.
+                TelecomAdbInstructionCard(onAccessChanged = { permissionCheckTick++ })
             } else {
                 SettingCard("ADB privileged helper") {
                     Text(
@@ -336,6 +372,104 @@ private fun RecordingMethodOption(
         Column(Modifier.weight(1f).padding(start = 8.dp)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
             Text(detail, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Persistent setup feedback for ADB; disconnecting a healthy daemon doesn't undo setup. */
+@Composable
+private fun AdbSetupProgressCard(
+    adbAuthorized: Boolean,
+    helperReady: Boolean,
+    advancedGranted: Boolean,
+    advancedEnabled: Boolean,
+    onConfigure: (() -> Unit)? = null,
+) {
+    // Advanced Telecom detection is only supported from Android 12. On earlier
+    // versions it is skipped; the shell helper still works independently.
+    val supportsAdvanced = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val advancedReady = !supportsAdvanced || (advancedGranted && advancedEnabled)
+    val done = listOf(adbAuthorized, helperReady, advancedReady).count { it }
+    val complete = done == 3
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    if (complete) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                    contentDescription = null,
+                    tint = if (complete) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (complete) "ADB setup complete" else "ADB setup required",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "$done of 3 checks complete",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            LinearProgressIndicator(
+                progress = { done / 3f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            AdbSetupStep("ADB authorization", adbAuthorized,
+                if (adbAuthorized) "Verified" else "Connect using Wireless or TCP/5555")
+            AdbSetupStep("Recording helper", helperReady,
+                if (helperReady) "Ready" else "Connect ADB to start or restore")
+            AdbSetupStep(
+                "Advanced call detection",
+                advancedReady,
+                when {
+                    !supportsAdvanced -> "Not supported on this Android version"
+                    !advancedGranted -> "Grant special access in Experimental"
+                    !advancedEnabled -> "Enable advanced detection in Experimental"
+                    else -> "Granted and enabled"
+                },
+            )
+            if (onConfigure != null && !complete) {
+                TextButton(onClick = onConfigure) {
+                    Text("Complete ADB setup →")
+                }
+            }
+            if (complete) {
+                Text(
+                    "The helper is ready, but recording both voices still requires device testing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdbSetupStep(label: String, done: Boolean, message: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(
+            if (done) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.padding(start = 2.dp),
+            tint = if (done) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(message, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
