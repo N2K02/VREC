@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings
+import android.telecom.TelecomManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vrec.app.Log
@@ -45,7 +46,12 @@ class VrecAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!Prefs.experimentalCallDetection(this)) return
         val pkg = event?.packageName?.toString() ?: return
-        if (pkg !in packages || !CallMonitor.needsScreenMetadata(pkg)) return
+        val dialer = runCatching {
+            getSystemService(TelecomManager::class.java)?.defaultDialerPackage
+        }.getOrNull()
+        val isDialer = pkg == dialer
+        if (pkg !in packages && !isDialer) return
+        if (!CallMonitor.needsScreenMetadata(pkg, isDialer)) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val now = SystemClock.elapsedRealtime()
@@ -78,7 +84,7 @@ class VrecAccessibilityService : AccessibilityService() {
         }
         if (!hasEndCallControl) return
         val metadata = CallMetadataResolver.fromVisibleLabels(this, labels) ?: return
-        CallMonitor.onAccessibilityMetadata(this, pkg, metadata)
+        CallMonitor.onAccessibilityMetadata(this, pkg, metadata, isDialer)
     }
 
     override fun onInterrupt() {}

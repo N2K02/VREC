@@ -178,14 +178,19 @@ object CallMonitor {
     }
 
     @Synchronized
-    fun needsScreenMetadata(packageName: String): Boolean =
-        sessions.values.count { it.active && it.packageName == packageName } == 1 &&
-        sessions.values.any { it.active && it.packageName == packageName &&
-            (it.name == null || it.number == null) }
+    fun needsScreenMetadata(packageName: String, phoneDialer: Boolean = false): Boolean {
+        val candidates = sessions.values.filter {
+            it.active && (it.packageName == packageName || (phoneDialer && !it.isVoip))
+        }
+        return candidates.size == 1 && (candidates.single().name == null || candidates.single().number == null)
+    }
 
     @Synchronized
-    fun onAccessibilityMetadata(context: Context, packageName: String, metadata: CallerMetadata) {
-        val candidates = sessions.values.filter { it.active && it.packageName == packageName }
+    fun onAccessibilityMetadata(context: Context, packageName: String,
+                                metadata: CallerMetadata, phoneDialer: Boolean = false) {
+        val candidates = sessions.values.filter {
+            it.active && (it.packageName == packageName || (phoneDialer && !it.isVoip))
+        }
         if (candidates.size != 1) return // Never attach a caller to the wrong parallel call.
         val session = candidates.single()
         applyMetadata(session, metadata)
