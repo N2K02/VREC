@@ -231,8 +231,6 @@ fun SetupScreen() {
                             Uri.parse("package:${context.packageName}"),
                         )
                     }
-                    HorizontalDivider()
-                    TelecomAdbInstructionCard()
                 }
             }
         }
