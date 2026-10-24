@@ -1,18 +1,15 @@
 package com.vrec.app.ui
 
 import android.Manifest
-import android.content.pm.PackageManager
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,34 +18,46 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vrec.app.Prefs
 import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.VrecAccessibilityService
-import com.vrec.app.corePermissions
 import com.vrec.app.isReady
 
 @Composable
 fun rememberReadiness(): Boolean {
     val context = LocalContext.current
     val tick = rememberOnResumeTick()
-    return androidx.compose.runtime.remember(tick) { isReady(context) }
+    return remember(tick) { isReady(context) }
 }
 
+/** Two required steps first; extra permissions and ADB are always optional and collapsed. */
 @Composable
 fun SetupScreen() {
     val context = LocalContext.current
@@ -56,156 +65,251 @@ fun SetupScreen() {
     var permissionTick by remember { mutableIntStateOf(0) }
     val tick = resumeTick + permissionTick
 
-    val micGranted = androidx.compose.runtime.remember(tick) {
-        context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
+    val basicsReady = remember(tick) {
+        context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+            context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
     }
-    val phoneGranted = androidx.compose.runtime.remember(tick) { context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED }
-    val contactsGranted = androidx.compose.runtime.remember(tick) { context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
-    val notificationsGranted = androidx.compose.runtime.remember(tick) { Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED }
-    val accessibilityOn = androidx.compose.runtime.remember(tick) { VrecAccessibilityService.isEnabled(context) }
-    val notifAccessOn = androidx.compose.runtime.remember(tick) { VoipNotifListener.isEnabled(context) }
-    val overlayAllowed = androidx.compose.runtime.remember(tick) {
+    val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
+    val contactsOn = remember(tick) {
+        context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+    val appAlertsOn = remember(tick) {
+        Build.VERSION.SDK_INT < 33 ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+    val voipAccessOn = remember(tick) { VoipNotifListener.isEnabled(context) }
+    val floatingOn = remember(tick) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
     }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
+    var moreOpen by rememberSaveable { mutableStateOf(false) }
+    var accessibilityHelpOpen by rememberSaveable { mutableStateOf(false) }
+    var recordVoip by remember { mutableStateOf(Prefs.recordVoip(context)) }
+    val completed = listOf(basicsReady, accessibilityOn).count { it }
+    val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissionTick++ }
+    fun request(vararg permissions: String) {
+        val missing = permissions.filter {
+            context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) launcher.launch(missing.toTypedArray())
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Text("Set up VREC", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "VREC records calls without root, Shizuku or debugging. Two steps are required; the rest are optional.",
+            if (completed == 2) "You're ready to record calls."
+            else "Just two steps to get started.",
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("$completed of 2 complete", style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary)
+        }
+        LinearProgressIndicator(
+            progress = { completed / 2f },
+            modifier = Modifier.fillMaxWidth(),
         )
 
-        Step(
+        SetupStepCard(
             number = "1",
-            title = "Microphone & phone permissions",
-            done = micGranted && phoneGranted,
-            body = "Needed to record and to notice when a call starts. Contacts is optional and only used to show who you were talking to.",
-            actionLabel = if (micGranted && phoneGranted) "Granted" else "Grant permissions",
-            onAction = { permissionLauncher.launch(corePermissions().filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()) },
-            extra = {
-                Note("Microphone: ${if (micGranted) "Granted" else "Not granted"}")
-                Note("Phone state: ${if (phoneGranted) "Granted" else "Not granted"}")
-                Note("Contacts (optional): ${if (contactsGranted) "Granted" else "Not granted"}")
-                if (Build.VERSION.SDK_INT >= 33) Note("Notifications (optional): ${if (notificationsGranted) "Granted" else "Not granted"}")
-            },
+            title = "Allow microphone & calls",
+            detail = "To detect and record phone calls.",
+            done = basicsReady,
+            actionLabel = "Allow access",
+            onAction = { request(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_PHONE_STATE) },
         )
 
-        Step(
+        SetupStepCard(
             number = "2",
-            title = "Accessibility service",
+            title = "Turn on VREC Accessibility",
+            detail = "Helps VREC capture audio during calls.",
             done = accessibilityOn,
-            body = "Enable VREC in Accessibility settings, then return here and tap Check access. This does not guarantee two-sided call audio capture.",
-            actionLabel = if (accessibilityOn) "Enabled" else "Open Accessibility settings",
-            onAction = { context.openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
-            onVerify = { permissionTick++ },
-            extra = {
-            Note(
-                "If the switch is greyed out with \"Restricted setting\" (Android 13+), open " +
-                    "Settings ▸ Apps ▸ VREC ▸ ⋮ ▸ Allow restricted settings, then try again. " +
-                    "On Android 16 you can't turn accessibility on during a call, so set this up beforehand.",
-            )
-            },
-        )
-
-        Step(
-            number = "3",
-            title = "Floating recording controls (optional)",
-            done = overlayAllowed,
-            body = "Allow VREC to display a small movable Pause/Resume and Stop panel over other apps while recording. The required silent foreground-service notification remains available as a fallback.",
-            actionLabel = if (overlayAllowed) "Enabled" else "Allow floating controls",
-            onAction = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    context.openSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+            actionLabel = "Open settings",
+            onAction = { context.openPermissionSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+            footer = {
+                if (!accessibilityOn) {
+                    TextButton(onClick = { accessibilityHelpOpen = !accessibilityHelpOpen }) {
+                        Text(if (accessibilityHelpOpen) "Hide help" else "Can't turn it on?")
+                    }
+                    if (accessibilityHelpOpen) {
+                        Text(
+                            "If Android says Restricted setting: Settings → Apps → VREC → ⋮ → Allow restricted settings. Then return and turn on VREC Accessibility.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             },
         )
 
-        Step(
-            number = "4",
-            title = "VoIP calls (optional)",
-            done = notifAccessOn,
-            body = "Optional: let VREC detect call notifications from supported VoIP apps. This identifies call activity, but does not grant access to protected call audio.",
-            actionLabel = if (notifAccessOn) "Granted" else "Open Notification access",
-            onAction = { context.openSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) },
-        )
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Good to know", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Note("Whether the other person is captured depends on your phone. VREC tries several microphone sources and keeps the first that has sound; if none do, turn on \"Put call on loudspeaker\" in Settings so the mic can pick up both sides from the room.")
-                Note("Recording calls may require the other person's consent where you live. You're responsible for using VREC lawfully.")
+        if (completed == 2) {
+            Card(colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            )) {
+                Row(Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary)
+                    Text("Setup complete", style = MaterialTheme.typography.titleSmall)
+                }
             }
         }
-    }
-}
 
-@Composable
-private fun Step(
-    number: String,
-    title: String,
-    done: Boolean,
-    body: String,
-    actionLabel: String,
-    onAction: () -> Unit,
-    extra: @Composable (() -> Unit)? = null,
-    onVerify: (() -> Unit)? = null,
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (done) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (done) "✓" else number,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    "  $title",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Text(body, style = MaterialTheme.typography.bodyMedium)
-            extra?.invoke()
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (done) {
-                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Granted", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-                } else {
-                    Button(onClick = onAction) { Text(actionLabel) }
-                    if (onVerify != null) {
-                        TextButton(onClick = onVerify) { Text("Check access") }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { moreOpen = !moreOpen },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Extra features", style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold)
+                        Text("Optional • You can set these up later",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(
+                        if (moreOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = if (moreOpen) "Collapse extra features" else "Expand extra features",
+                    )
+                }
+                if (moreOpen) {
+                    HorizontalDivider()
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("WhatsApp and other app calls", style = MaterialTheme.typography.titleSmall)
+                            Text("Record supported internet calls",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = recordVoip, onCheckedChange = {
+                            recordVoip = it
+                            Prefs.of(context).edit().putBoolean(Prefs.RECORD_VOIP, it).apply()
+                        })
+                    }
+                    ExtraPermissionRow(
+                        title = "Notification access",
+                        detail = "Find incoming and ongoing app calls",
+                        enabled = voipAccessOn,
+                        buttonLabel = "Allow",
+                    ) { context.openPermissionSettings(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) }
+                    HorizontalDivider()
+                    ExtraPermissionRow(
+                        title = "Contact names",
+                        detail = "Show saved names instead of numbers",
+                        enabled = contactsOn,
+                        buttonLabel = "Allow",
+                    ) { request(Manifest.permission.READ_CONTACTS) }
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        ExtraPermissionRow(
+                            title = "App notifications",
+                            detail = "Show recording alerts",
+                            enabled = appAlertsOn,
+                            buttonLabel = "Allow",
+                        ) { request(Manifest.permission.POST_NOTIFICATIONS) }
+                    }
+                    ExtraPermissionRow(
+                        title = "Floating controls",
+                        detail = "Pause or stop recordings over other apps",
+                        enabled = floatingOn,
+                        buttonLabel = "Allow",
+                    ) {
+                        context.openPermissionSettings(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}"),
+                        )
                     }
                 }
             }
         }
+
+        Text(
+            "Audio quality depends on your phone. Recording calls may require consent.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun Note(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun SetupStepCard(
+    number: String,
+    title: String,
+    detail: String,
+    done: Boolean,
+    actionLabel: String,
+    onAction: () -> Unit,
+    footer: @Composable (() -> Unit)? = null,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (done) Icon(Icons.Filled.CheckCircle, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary)
+                else Text(number, color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(detail, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (done) {
+                Text("Enabled", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary)
+            } else {
+                Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
+                    Text(actionLabel)
+                }
+            }
+            footer?.invoke()
+        }
+    }
 }
 
-private fun Context.openSettings(action: String, uri: Uri? = null) {
+@Composable
+private fun ExtraPermissionRow(
+    title: String,
+    detail: String,
+    enabled: Boolean,
+    buttonLabel: String,
+    onAction: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(detail, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (enabled) Text("On", color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge)
+        else OutlinedButton(onClick = onAction) { Text(buttonLabel) }
+    }
+}
+
+private fun Context.openPermissionSettings(action: String, uri: Uri? = null) {
     runCatching {
-        val intent = if (uri != null) Intent(action, uri) else Intent(action)
+        val intent = if (uri == null) Intent(action) else Intent(action, uri)
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }

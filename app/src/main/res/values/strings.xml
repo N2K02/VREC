@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="accessibility_label">VREC call recording</string>
-    <string name="accessibility_description">VREC uses this service to keep access to the microphone while a call is in progress. Since Android 10 an ordinary app is handed silence during a call, and an active accessibility service is one of the only exceptions. VREC does not read your screen, tap buttons or control calls through this service — it only needs it switched on so recording works.</string>
+    <string name="accessibility_description">VREC uses this service to keep access to the microphone while a call is in progress. Since Android 10 an ordinary app is handed silence during a call, and an active accessibility service is one of the only exceptions. In experimental call detection mode, VREC may additionally read visible caller details from supported call screens when Telecom and notifications provide no identity. It never taps buttons or controls calls.</string>
 </resources>

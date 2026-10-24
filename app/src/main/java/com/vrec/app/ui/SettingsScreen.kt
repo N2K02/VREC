@@ -19,6 +19,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Mic
@@ -40,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.Prefs
+import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.recording.RecordingEngine
 
 @Composable
@@ -60,35 +69,58 @@ fun SettingsScreen(
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(prefs.getBoolean(Prefs.SHOW_OVERLAY, false)) }
+    var experimentalDetection by remember { mutableStateOf(Prefs.experimentalCallDetection(context)) }
     var sourceMode by remember { mutableStateOf(Prefs.sourceMode(context)) }
 
     fun putBool(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
     fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (section == null) {
-            Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            Text("Make recording your own",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
             listOf(
-                Triple("Recording", "Automatic recording and silent files", Icons.Filled.Mic),
-                Triple("Microphone source", "Choose the audio input", Icons.Filled.Tune),
-                Triple("Capturing the other side", "Speaker and communication mode", Icons.Filled.Call),
-                Triple("Floating controls", "Recording overlay", Icons.Filled.Notifications),
-                Triple("VoIP", "Internet call recording", Icons.Filled.Call),
+                Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
+                Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
+                Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
+                Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
+                Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
+                Triple("Experimental", "Recording methods, ADB, TCP and call detection", Icons.Rounded.Tune),
             ).forEach { (name, detail, icon) ->
-                Card(modifier = Modifier.fillMaxWidth().clickable { onSectionChange(name) }) {
-                    ListItem(headlineContent = { Text(name) }, supportingContent = { Text(detail) }, leadingContent = { Icon(icon, null) })
-                }
+                ListItem(
+                    headlineContent = { Text(name) },
+                    supportingContent = { Text(detail) },
+                    leadingContent = { Icon(icon, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable { onSectionChange(name) },
+                )
             }
-            HorizontalDivider()
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSetup)) { ListItem(headlineContent = { Text("Setup & permissions") }, supportingContent = { Text("Configure recording access") }, leadingContent = { Icon(Icons.Filled.Settings, null) }) }
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLog)) { ListItem(headlineContent = { Text("Activity log") }, supportingContent = { Text("Events and diagnostics") }, leadingContent = { Icon(Icons.Filled.Article, null) }) }
-            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenUpdates)) { ListItem(headlineContent = { Text("About & updates") }, supportingContent = { Text("Version, experimental builds and check for updates") }, leadingContent = { Icon(Icons.Filled.SystemUpdate, null) }) }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            listOf(
+                Triple("Setup & permissions", "Check recording access", Icons.Rounded.Settings),
+                Triple("Activity log", "Recording events and diagnostics", Icons.Rounded.Article),
+                Triple("About & updates", "Version and update checks", Icons.Rounded.SystemUpdate),
+            ).forEachIndexed { index, (name, detail, icon) ->
+                ListItem(
+                    headlineContent = { Text(name) },
+                    supportingContent = { Text(detail) },
+                    leadingContent = { Icon(icon, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        when (index) {
+                            0 -> onOpenSetup()
+                            1 -> onOpenLog()
+                            else -> onOpenUpdates()
+                        }
+                    },
+                )
+            }
         } else {
-            Text("‹  Settings", modifier = Modifier.fillMaxWidth().clickable { onSectionChange(null) }.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
-            Text(section ?: "", style = MaterialTheme.typography.headlineSmall)
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
@@ -134,6 +166,33 @@ fun SettingsScreen(
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
             }
         }
+
+        if (section == "Experimental") ExperimentalRecorderCard()
+
+        if (section == "Experimental") SettingCard("Advanced call detection") {
+            ToggleRow(
+                "Use InCallService detection (Android 12+)",
+                "Opt in to Telecom call-state tracking with notification, Contacts and Accessibility metadata fallbacks. Does not affect audio capture or change your dialer.",
+                experimentalDetection,
+            ) {
+                experimentalDetection = it
+                putBool(Prefs.EXPERIMENTAL_CALL_DETECTION, it)
+            }
+            Text(
+                if (CallDetectionAccess.isGranted(context)) "Telecom AppOp: authorized"
+                else "Telecom AppOp: not authorized. Legacy phone and notification detection remains available.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Requires a one-time elevated AppOp grant with ADB or a Shizuku shell. Enable Notification access for VoIP and caller names; Accessibility can enrich visible call screens.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSetup)) {
+                ListItem(headlineContent = { Text("Open permission setup") })
+            }
+        }
+
+        if (section == "Experimental") TelecomAdbInstructionCard()
 
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(

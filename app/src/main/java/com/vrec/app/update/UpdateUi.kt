@@ -295,8 +295,8 @@ fun LegacyUpdateFooterBar(appName: String, modifier: Modifier = Modifier) {
 @Composable
 fun UpdateScreen() {
     val experimentalEnabled by com.vrec.app.LiveUpdater.experimentalEnabled.collectAsState()
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("About & updates", style = MaterialTheme.typography.headlineMedium)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Keep VRec up to date", style = MaterialTheme.typography.titleMedium)
         androidx.compose.material3.ListItem(
             headlineContent = { Text("VREC") },
             supportingContent = { Text("Version " + com.vrec.app.BuildConfig.VERSION_NAME) },

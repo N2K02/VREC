@@ -12,6 +12,38 @@ only permissions you grant on the phone itself.
 Install the APK, open VREC, and follow the two setup steps. Each push to `main` builds a new APK
 through GitHub Actions and publishes it here; the app can also update itself from these releases.
 
+## If the in-app updater cannot open Android's installer
+
+VREC versions built before the dedicated recording-sharing FileProvider fix can fail
+with `Couldn't find meta-data for provider with authority
+com.vrec.app.n2k02updater.files`. A valid update APK may already have downloaded,
+but that older app cannot present it to Android's package installer.
+
+**Recovery:** download the latest stable VREC APK from
+[the official VREC releases](https://github.com/N2K02/VREC/releases/latest)
+and open the APK in Android's Files or Downloads app to install it over VREC.
+Use the same `com.vrec.app` package and signing identity; no uninstall or
+recording-data deletion should be necessary. After that one manual install,
+the shared in-app stable and experimental installer can use its own dedicated
+`n2k02updater.files` provider independently of recording sharing.
+
+## Experimental call detection (Android 12+)
+
+VREC's optional non-UI InCallService observes Telecom-managed SIM calls and third-party
+self-managed calls without becoming the default dialer. This is **detection only**;
+the existing recording engine remains unchanged. Some VoIP apps/OEMs do not expose calls
+through Telecom, so Notification access remains the fallback. Accessibility is a
+last-resort source for missing visible caller metadata, not the call-state authority.
+The observer needs the elevated `android:manage_ongoing_calls` AppOp (for example,
+`adb shell appops set com.vrec.app android:manage_ongoing_calls allow`).
+Enable **Settings → Experimental call detection** and grant the AppOp in Setup.
+The experiment is off by default, independent of the updater channel.
+
+The listener captures available app, account, caller and direction metadata; notification
+Person, title and tel URI are tried before Accessibility. A displayed contact name is
+mapped to a number only if there is exactly one unique number for an exact contact match.
+No source guarantees third-party call visibility, UI metadata or protected call audio.
+
 ## How it records
 
 Since Android 10, an ordinary app is handed **silence** while a call is active. The only no-privilege

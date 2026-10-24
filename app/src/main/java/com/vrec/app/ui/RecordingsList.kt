@@ -7,6 +7,7 @@ import android.widget.Toast
 import android.media.MediaPlayer
 import android.os.Build
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,6 +47,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -94,7 +97,6 @@ fun RecordingsList() {
     var search by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(RecordingFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(RecordingSort.NEWEST) }
-    var filterMenu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedPaths by remember { mutableStateOf(setOf<String>()) }
@@ -160,7 +162,7 @@ fun RecordingsList() {
 
     fun share(rec: Recording) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", rec.file)
-        val intent = Intent(Intent.ACTION_SEND).setType("audio/mp4")
+        val intent = Intent(Intent.ACTION_SEND).setType(if (rec.file.extension.equals("ogg", true)) "audio/ogg" else "audio/mp4")
             .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         runCatching { context.startActivity(Intent.createChooser(intent, "Share recording").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
@@ -172,29 +174,48 @@ fun RecordingsList() {
         runCatching { context.startActivity(Intent.createChooser(intent, "Export recording details").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
-    Text("Recordings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+    Text("Your call history",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 4.dp))
     Text("${recordings.size} recording${if (recordings.size == 1) "" else "s"} · ${formatSize(totalBytes)}",
-        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     if (recordings.isNotEmpty()) {
         OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
             singleLine = true, label = { Text("Search caller, number, note…") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) })
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { filterMenu = true }) {
-                Icon(Icons.Filled.FilterList, contentDescription = null)
-                Text("  ${filterLabel(filter)}")
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            RecordingFilter.entries.forEach { option ->
+                FilterChip(
+                    selected = filter == option,
+                    onClick = { filter = option },
+                    label = { Text(filterLabel(option)) },
+                )
             }
-            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
-                RecordingFilter.entries.forEach { item ->
-                    DropdownMenuItem(text = { Text(filterLabel(item)) }, leadingIcon = { Icon(Icons.Filled.FilterList, contentDescription = null) }, onClick = { filter = item; filterMenu = false })
-                }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(onClick = { sortMenu = true }) {
+                Icon(Icons.Filled.Sort, contentDescription = null)
+                Text("  ${sortLabel(sort)}")
             }
-            TextButton(onClick = { sortMenu = true }) { Text("Sort") }
-            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
+            DropdownMenu(
+                expanded = sortMenu,
+                onDismissRequest = { sortMenu = false },
+                modifier = Modifier.clip(RoundedCornerShape(22.dp)),
+            ) {
                 RecordingSort.entries.forEach { item ->
-                    DropdownMenuItem(text = { Text(sortLabel(item)) }, leadingIcon = { Icon(Icons.Filled.Sort, contentDescription = null) }, onClick = { sort = item; sortMenu = false })
+                    DropdownMenuItem(
+                        text = { Text(sortLabel(item)) },
+                        onClick = { sort = item; sortMenu = false },
+                    )
                 }
             }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
