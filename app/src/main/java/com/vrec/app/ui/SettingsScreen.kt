@@ -179,7 +179,7 @@ fun SettingsScreen(
         }
 
         if (section == "Floating controls") SettingCard("Floating controls") {
-            ToggleRow("Show compact overlay", "Optional icon-only Pause/Resume and Stop controls during recording. Requires Display over other apps permission in Setup.", showOverlay) {
+            ToggleRow("Show compact overlay", "Drag the dot; Pause/Resume, Stop or Record again, and Close. Stop saves audio; Close only hides the overlay. Requires Display over other apps permission.", showOverlay) {
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
             }
         }

@@ -437,8 +437,8 @@ private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> 
                 Text("Recording", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (enabled) "On — automatic and manual recording are available."
-                    else "Off — VRec will not start new recordings.",
+                    if (enabled) "On — auto-start once per call; use controls to pause, stop or record again."
+                    else "Off — stops all recording and closes its controls.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

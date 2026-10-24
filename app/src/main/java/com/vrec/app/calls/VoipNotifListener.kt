@@ -93,7 +93,7 @@ class VoipNotifListener : NotificationListenerService() {
             }
             signals.remove(pkg)
             Log.i("VoIP call notification ended app=" + pkg)
-            CallMonitor.onNotification(this, pkg, false, "IDLE", null)
+            CallMonitor.onNotification(this, pkg, pkg == dialer(), "IDLE", null)
         }
         expiry[pkg] = task
         handler.postDelayed(task, 2_500L)

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.telecom.Call
 import android.telecom.TelecomManager
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
@@ -57,6 +58,8 @@ object CallMonitor {
     private val suppressed = mutableSetOf<String>()
     private var recordingId: String? = null
     private var overlayDismissed = false
+    private val recentlyEndedVoip = mutableMapOf<String, Long>()
+    private const val RECENT_CALL_GUARD_MS = 12_000L
     private const val CONTROL_CHANNEL = "vrec_call_controls"
     private const val CONTROL_ID = 84
     private var sawRinging = false
@@ -104,6 +107,13 @@ object CallMonitor {
             session.connectedAt = connectedAt ?: System.currentTimeMillis()
         }
         if (state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) {
+            if (voip && packageName != null) {
+                // Telecom may disconnect before WhatsApp retracts its call
+                // notification. Do not re-detect that stale notification
+                // as a brand-new recording session.
+                recentlyEndedVoip[packageName] =
+                    SystemClock.elapsedRealtime() + RECENT_CALL_GUARD_MS
+            }
             Log.i("Telecom call ended app=" + (packageName ?: "phone") + " state=" + state)
             remove(context, id)
             return
@@ -191,6 +201,12 @@ object CallMonitor {
         if (isPhoneDialer || !Prefs.recordVoip(context)) return
 
         val id = "notif:" + packageName
+        if (status == "IDLE") recentlyEndedVoip.remove(packageName)
+        else if (SystemClock.elapsedRealtime() <
+            (recentlyEndedVoip[packageName] ?: 0L)) {
+            // A late notification must not revive an already-ended Telecom call.
+            return
+        }
         if (status == "IDLE") {
             remove(context, id)
             return
@@ -313,11 +329,17 @@ object CallMonitor {
     /** A user Stop suppresses automatic restart for the remainder of the live call. */
     @Synchronized
     fun userStop(context: Context) {
-        val id = recordingId ?: return
-        if (RecordingService.state.value is RecordingService.State.Idle) return
-        suppressed.add(id)
-        recordingId = null
-        if (id == "manual") sessions.remove(id)
+        val state = RecordingService.state.value
+        if (state is RecordingService.State.Idle ||
+            state is RecordingService.State.Stopping) return
+        val id = recordingId
+        if (id != null) {
+            suppressed.add(id)
+            recordingId = null
+            if (id == "manual") sessions.remove(id)
+        } else {
+            Log.w("User stopped a recorder with no tracked call session")
+        }
         Log.i("User stopped recording; an explicit Record is required to restart")
         RecordingService.stop(context.applicationContext)
     }
@@ -351,10 +373,25 @@ object CallMonitor {
             userRecordAgain(context)
             return
         }
-        val session = Session("manual", Source.MANUAL, active = true)
-        sessions[session.id] = session
-        recordingId = session.id
-        RecordingService.start(context.applicationContext, CallDirection.UNKNOWN, null)
+        val currentCall = sessions.values.firstOrNull {
+            it.active && it.source != Source.MANUAL
+        }
+        if (currentCall != null) {
+            // Explicit user-initiated recording is still linked to the call;
+            // Android's end signal will therefore stop and save this segment.
+            suppressed.add(currentCall.id)
+            autoAttempted.add(currentCall.id)
+            recordingId = currentCall.id
+            RecordingService.start(context.applicationContext, currentCall.direction,
+                currentCall.name ?: currentCall.number, currentCall.number,
+                currentCall.connectedAt, currentCall.packageName, currentCall.accountId,
+                currentCall.numberSource, currentCall.flowDirection.name)
+        } else {
+            val session = Session("manual", Source.MANUAL, active = true)
+            sessions[session.id] = session
+            recordingId = session.id
+            RecordingService.start(context.applicationContext, CallDirection.UNKNOWN, null)
+        }
     }
 
     @Synchronized
@@ -444,6 +481,7 @@ object CallMonitor {
             sessions.clear()
             suppressed.clear()
             autoAttempted.clear()
+            recentlyEndedVoip.clear()
             overlayDismissed = false
             dismissCallControls(context)
             dismissOverlay(context)

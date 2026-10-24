@@ -374,6 +374,9 @@ class RecordingService : Service() {
 
     private fun stopSelfAndForeground() {
         handler.post {
+            // A user may press Record again as soon as saving completes.
+            // Do not tear down a newly started recording during that transition.
+            if (_state.value !is State.Idle || engine != null) return@post
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
