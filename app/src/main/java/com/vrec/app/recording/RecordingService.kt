@@ -67,6 +67,10 @@ class RecordingService : Service() {
         val level: StateFlow<Int> = _level
 
         fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null, callConnectedAt: Long? = null) {
+            if (!Prefs.recordingEnabled(context)) {
+                Log.i("Recording function is off; ignoring recording start")
+                return
+            }
             val intent = Intent(context, RecordingService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_DIRECTION, direction.name)
@@ -149,6 +153,12 @@ class RecordingService : Service() {
 
     private fun begin(intent: Intent) {
         if (engine != null) return // already recording
+        if (!Prefs.recordingEnabled(this)) {
+            Log.i("Recording function was turned off before the service could start")
+            _state.value = State.Idle
+            stopSelf()
+            return
+        }
         direction = runCatching { CallDirection.valueOf(intent.getStringExtra(EXTRA_DIRECTION) ?: "") }
             .getOrDefault(CallDirection.UNKNOWN)
         peer = intent.getStringExtra(EXTRA_PEER)

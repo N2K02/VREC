@@ -23,6 +23,11 @@ object CallMonitor {
 
     @Synchronized
     fun onSimState(context: Context, state: String?, number: String?) {
+        if (!Prefs.recordingEnabled(context)) {
+            if (recording != Kind.NONE) stop(context)
+            if (state == "IDLE") resetDetection()
+            return
+        }
         when (state) {
             "RINGING" -> {
                 sawRinging = true
@@ -45,7 +50,7 @@ object CallMonitor {
 
     @Synchronized
     fun onVoipState(context: Context, appLabel: String, caller: String?, active: Boolean) {
-        if (!Prefs.recordVoip(context)) return
+        if (!Prefs.recordingEnabled(context) || !Prefs.recordVoip(context)) return
         if (active) {
             val peer = caller?.takeIf { it.isNotBlank() }?.let { "$it ($appLabel)" } ?: appLabel
             if (recording == Kind.VOIP && activeVoipApp == appLabel) {
@@ -74,6 +79,30 @@ object CallMonitor {
 
     val isRecording: Boolean get() = recording != Kind.NONE
 
+    /**
+     * Persists the Home-screen master switch. Turning it off immediately stops any active
+     * recording and clears call-detection state so a later enable starts cleanly.
+     */
+    @Synchronized
+    fun setRecordingEnabled(context: Context, enabled: Boolean) {
+        Prefs.setRecordingEnabled(context, enabled)
+        if (!enabled) {
+            recording = Kind.NONE
+            activeVoipApp = null
+            connectedAt = null
+            resetDetection()
+            if (RecordingService.state.value !is RecordingService.State.Idle) {
+                RecordingService.stop(context.applicationContext, System.currentTimeMillis())
+            }
+        }
+        Log.i("Recording function " + if (enabled) "enabled" else "disabled")
+    }
+
+    private fun resetDetection() {
+        sawRinging = false
+        pendingIncomingNumber = null
+    }
+
     private fun startIfArmed(
         context: Context,
         kind: Kind,
@@ -83,6 +112,10 @@ object CallMonitor {
         force: Boolean = false,
         callConnectedAt: Long? = null,
     ) {
+        if (!Prefs.recordingEnabled(context)) {
+            Log.i("Recording function is off; not starting a recording")
+            return
+        }
         if (!force && !Prefs.autoRecord(context)) {
             Log.i("Auto-record is off; not recording this call")
             return
