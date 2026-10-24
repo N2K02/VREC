@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.launch
 
 /**
@@ -53,6 +54,8 @@ fun ExperimentalRecorderCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by ExperimentalRecording.status.collectAsState()
+    val recorderMessage by ExperimentalCaptureDaemon.message.collectAsState()
+    val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
     var selection by remember { mutableStateOf(ExperimentalRecording.method(context)) }
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var pairingPort by rememberSaveable { mutableStateOf("") }
@@ -103,6 +106,13 @@ fun ExperimentalRecorderCard() {
                     RadioButton(selected = selection == method, onClick = {
                         selection = method
                         ExperimentalRecording.select(context, method)
+                        scope.launch {
+                            if (method == ExperimentalRecording.Method.STANDARD) {
+                                if (recorderReady) ExperimentalCaptureDaemon.stopRecording(context)
+                            } else if (recorderReady) {
+                                ExperimentalCaptureDaemon.setMode(context, true)
+                            }
+                        }
                     })
                     Column(Modifier.weight(1f)) {
                         Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -110,6 +120,54 @@ fun ExperimentalRecorderCard() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+
+            if (selection != ExperimentalRecording.Method.STANDARD) {
+                HorizontalDivider()
+                Text("Enhanced recording service", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        if (recorderReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp))
+                    Text(if (recorderReady) "Recorder running" else "Recorder not ready",
+                        style = MaterialTheme.typography.titleSmall)
+                }
+                Text(recorderMessage, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Once started, the shell recorder can keep recording without an active " +
+                        "ADB session. Its availability after Wi-Fi loss, force-stop or reboot " +
+                        "depends on your phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(enabled = !state.busy, onClick = {
+                    scope.launch {
+                        ExperimentalCaptureDaemon.ensureStarted(context).onFailure {
+                            localError = it.message
+                        }
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (recorderReady) "Check / restart recorder" else "Start enhanced recorder")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            ExperimentalCaptureDaemon.collect(context)
+                                .onSuccess { localError = "Imported " + it + " call recordings." }
+                                .onFailure { localError = it.message }
+                        }
+                    }) { Text("Import saved calls") }
+                    OutlinedButton(enabled = recorderReady, onClick = {
+                        scope.launch { ExperimentalCaptureDaemon.stopRecording(context) }
+                    }) { Text("Pause recorder") }
+                }
+                Text("Two-sided audio: not verified until a real consented call is recorded and played.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             if (selection == ExperimentalRecording.Method.BUILT_IN_ADB) {
