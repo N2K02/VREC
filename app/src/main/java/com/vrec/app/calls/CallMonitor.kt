@@ -15,7 +15,10 @@ import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.vrec.app.Log
 import com.vrec.app.Prefs
 import com.vrec.app.recording.CallDirection
@@ -52,6 +55,7 @@ object CallMonitor {
     private val sessions = linkedMapOf<String, Session>()
     private val handler = Handler(Looper.getMainLooper())
     private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val masterModeMutex = Mutex()
     // Automatic recording is attempted only once per active call session.
     // A user Stop must never trigger an automatic restart.
     private val autoAttempted = mutableSetOf<String>()
@@ -497,14 +501,24 @@ object CallMonitor {
         }
         val appContext = context.applicationContext
         modeScope.launch {
-            // The shell service can outlive the app, even before it has been probed.
-            // Always send the master state; setMode rechecks the live preference.
-            val applied = ExperimentalCaptureDaemon.setMode(appContext,
-                enabled && Prefs.recordingEnabled(appContext))
-            if (!applied && ExperimentalCaptureDaemon.ready.value) {
-                ExperimentalCaptureDaemon.message.value =
-                    "Could not confirm the enhanced recorder's capture state. " +
-                    "Check Settings → Experimental and stop it before sensitive calls."
+            // Ordering is essential when the user quickly switches Off / On.
+            // Read the CURRENT preference inside the serialized section; an
+            // older Off coroutine cannot disable a newer On choice afterwards.
+            masterModeMutex.withLock {
+                var applied = false
+                repeat(3) { attempt ->
+                    if (!applied) {
+                        applied = ExperimentalCaptureDaemon.setMode(appContext,
+                            Prefs.recordingEnabled(appContext))
+                        if (!applied && attempt < 2) delay(400L)
+                    }
+                }
+                if (!applied && ExperimentalCaptureDaemon.ready.value) {
+                    ExperimentalCaptureDaemon.message.value =
+                        "Recording switch changed, but the enhanced shell recorder did not " +
+                        "confirm the new state. Reconnect ADB and verify before sensitive calls."
+                    Log.w("Enhanced recording master switch could not be verified")
+                }
             }
         }
         Log.i("Recording function " + if (enabled) "enabled" else "disabled")
