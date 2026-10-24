@@ -34,6 +34,15 @@ D8="$SDK/build-tools/$BUILD_TOOLS/d8"
 OUT="$HERE/build"
 JAR="$HERE/vrec-capture.jar"
 
+# Gradle's preBuild hooks run before AGP auto-installs compileSdk.
+# Provision the matching platform/build tools explicitly on clean CI runners.
+if [ ! -f "$ANDROID_JAR" ] || [ ! -x "$D8" ]; then
+    SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+    [ -x "$SDKMANAGER" ] || { echo "missing Android sdkmanager: $SDKMANAGER" >&2; exit 1; }
+    echo "Installing shell-server SDK platform $ANDROID_PLATFORM and tools $BUILD_TOOLS"
+    yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses >/dev/null || true
+    "$SDKMANAGER" --sdk_root="$SDK" "platforms;android-$ANDROID_PLATFORM" "build-tools;$BUILD_TOOLS"
+fi
 [ -f "$ANDROID_JAR" ] || { echo "missing $ANDROID_JAR" >&2; exit 1; }
 [ -x "$D8" ] || { echo "missing $D8" >&2; exit 1; }
 
