@@ -92,11 +92,30 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App() {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
-    // Secondary pages should return to Home on Android system back / gesture.
-    // Leave the Home screen unhandled so Android can close the activity normally.
-    BackHandler(enabled = screen != Screen.HOME) {
-        screen = Screen.HOME
+    // Keep Settings subsection state at the navigation level, so both system
+    // Back and the app-bar arrow can return to the Settings overview.
+    var settingsSection by rememberSaveable { mutableStateOf<String?>(null) }
+    var returnToSettings by rememberSaveable { mutableStateOf(false) }
+
+    fun navigateTo(destination: Screen, fromSettings: Boolean = false) {
+        screen = destination
+        settingsSection = null
+        returnToSettings = fromSettings
     }
+
+    fun navigateBack() {
+        when {
+            screen == Screen.SETTINGS && settingsSection != null -> settingsSection = null
+            returnToSettings && screen != Screen.HOME -> {
+                screen = Screen.SETTINGS
+                returnToSettings = false
+            }
+            else -> navigateTo(Screen.HOME)
+        }
+    }
+
+    // Leave Home unhandled so Android can close the activity normally.
+    BackHandler(enabled = screen != Screen.HOME) { navigateBack() }
 
     val title = when (screen) {
         Screen.HOME -> "VREC"
@@ -113,7 +132,7 @@ private fun App() {
                 title = { Text(title) },
                 navigationIcon = {
                     if (screen != Screen.HOME) {
-                        IconButton(onClick = { screen = Screen.HOME }) {
+                        IconButton(onClick = { navigateBack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
@@ -127,20 +146,22 @@ private fun App() {
                     Triple(Screen.RECORDINGS, "Recordings", Icons.Filled.FolderOpen),
                     Triple(Screen.SETTINGS, "Settings", Icons.Filled.Settings),
                 ).forEach { (destination, label, icon) ->
-                    NavigationBarItem(selected = screen == destination, onClick = { screen = destination }, icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
+                    NavigationBarItem(selected = screen == destination, onClick = { navigateTo(destination) }, icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
                 }
             }
         },
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(onOpenSetup = { screen = Screen.SETUP }, onNavigate = { screen = it })
+                Screen.HOME -> HomeScreen(onOpenSetup = { navigateTo(Screen.SETUP) }, onNavigate = { navigateTo(it) })
                 Screen.RECORDINGS -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { RecordingsList() }
                 Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen(
-                    onOpenSetup = { screen = Screen.SETUP },
-                    onOpenLog = { screen = Screen.LOG },
-                    onOpenUpdates = { screen = Screen.UPDATE },
+                    section = settingsSection,
+                    onSectionChange = { settingsSection = it },
+                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
+                    onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
+                    onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
                 )
                 Screen.LOG -> LogScreen()
                 Screen.UPDATE -> UpdateScreen()
