@@ -2,6 +2,7 @@ package com.vrec.app.experimental.daemon
 
 import android.content.Context
 import com.vrec.app.Prefs
+import com.vrec.app.recording.RecordingService
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -27,6 +28,7 @@ object AdbPrivilegedApiHelper {
             ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB
         val ok = ExperimentalCaptureDaemon.setMode(context.applicationContext, armed)
         state.value = if (ok) State.RUNNING else State.ERROR
+        if (ok) RecordingService.requestAdbHandoff(context.applicationContext)
         ok
     }
 
@@ -58,12 +60,14 @@ object AdbPrivilegedApiHelper {
             ))
         }
         state.value = State.RUNNING
+        RecordingService.requestAdbHandoff(context.applicationContext)
         Result.success(Unit)
     }
 
     suspend fun checkHealth(context: Context): State = lock.withLock {
         val available = ExperimentalCaptureDaemon.probe(context.applicationContext)
         state.value = if (available) State.RUNNING else State.NEEDS_ADB
+        if (available) RecordingService.requestAdbHandoff(context.applicationContext)
         state.value
     }
 }
