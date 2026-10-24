@@ -77,20 +77,32 @@ fun ExperimentalRecorderCard() {
     val recorderMessage by ExperimentalCaptureDaemon.message.collectAsState()
     val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
-    var adbMode by rememberSaveable { mutableStateOf("wireless") }
+    var adbMode by rememberSaveable {
+        mutableStateOf(if (ExperimentalRecording.preferredTransport(context) ==
+            ExperimentalRecording.Transport.TCP) "tcp" else "wireless")
+    }
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var pairingPort by rememberSaveable { mutableStateOf("") }
     var connectionPort by rememberSaveable { mutableStateOf("") }
     var tcpWarning by remember { mutableStateOf(false) }
+    var usbSetupDialog by remember { mutableStateOf(false) }
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
 
+    val resumeTick = rememberOnResumeTick()
     LaunchedEffect(Unit) {
-        // Health-check on entry even if ADB or Wi-Fi is disconnected.
-        // Reconnect to an existing shell service; never spawn a privileged
-        // process silently or attempt an unauthorized ADB connection.
+        // The helper's authenticated loopback channel is independent of ADB.
         AdbPrivilegedApiHelper.reconnect(context)
+    }
+    LaunchedEffect(resumeTick) {
+        // Re-read listener and transport after a Developer options / USB setup visit.
+        ExperimentalRecording.refreshConnectionStatus()
+    }
+    LaunchedEffect(state.requestedTransport) {
+        state.requestedTransport?.let {
+            adbMode = if (it == ExperimentalRecording.Transport.TCP) "tcp" else "wireless"
+        }
     }
 
     fun openDeveloperOptions() {
@@ -132,8 +144,15 @@ fun ExperimentalRecorderCard() {
                     )
                     Column {
                         Text(
-                            if (state.connected) "Connected · shell UID ${state.shellUid ?: "unverified"}"
-                            else "Disconnected",
+                            when {
+                                state.connected -> {
+                                    val mode = if (state.connectedTransport == ExperimentalRecording.Transport.TCP)
+                                        "TCP/5555" else "Wireless"
+                                    "Connected via $mode · shell UID ${state.shellUid ?: "unverified"}"
+                                }
+                                state.busy -> "ADB setup in progress"
+                                else -> "Disconnected"
+                            },
                             style = MaterialTheme.typography.titleSmall,
                         )
                         Text(
@@ -151,7 +170,13 @@ fun ExperimentalRecorderCard() {
                             .forEachIndexed { index, (value, label) ->
                                 SegmentedButton(
                                     selected = adbMode == value,
-                                    onClick = { adbMode = value; localError = null },
+                                    onClick = {
+                                        adbMode = value
+                                        ExperimentalRecording.selectTransport(context,
+                                            if (value == "tcp") ExperimentalRecording.Transport.TCP
+                                            else ExperimentalRecording.Transport.WIRELESS)
+                                        localError = null
+                                    },
                                     shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
                                     label = { Text(label) },
                                     enabled = !state.busy,
@@ -236,11 +261,19 @@ fun ExperimentalRecorderCard() {
                         }
                     } else {
                         Text(
-                            "Connect to port 5555 after enabling TCP debugging via USB ADB " +
-                                "or an existing authorized wireless session.",
+                            if (state.tcpPortOpen)
+                                "TCP/5555 is listening. Tap Connect to verify Android shell authorization."
+                            else
+                                "TCP/5555 must be enabled once using an authorized ADB connection. " +
+                                    "On phones without Wireless debugging, use the one-time USB setup.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (!state.tcpPortOpen) {
+                            OutlinedButton(onClick = { usbSetupDialog = true }) {
+                                Text("One-time USB setup")
+                            }
+                        }
                     }
                 }
                 if (state.connected) {
@@ -271,10 +304,15 @@ fun ExperimentalRecorderCard() {
                                     else connectionPort.toIntOrNull()
                                 ExperimentalRecording.connect(context, port,
                                     wirelessOnly = adbMode == "wireless")
-                                    .onFailure { localError = it.message }
                             }
                         },
-                    ) { Text(if (state.busy) "Connecting…" else "Connect") }
+                    ) {
+                        Text(when {
+                            state.busy -> "Working…"
+                            adbMode == "tcp" -> "Connect TCP/5555"
+                            else -> "Connect wirelessly"
+                        })
+                    }
                 }
                 Text(
                     state.message,
@@ -288,9 +326,9 @@ fun ExperimentalRecorderCard() {
                     HorizontalDivider()
                     Text("TCP/5555", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "To enable TCP without a computer, connect using Wireless debugging first, " +
-                            "then enable TCP here. Alternatively run adb tcpip 5555 over USB. " +
-                            "Switching modes restarts adbd and may disconnect Wireless debugging.",
+                        "With verified Wireless ADB, tap Enable TCP and VREC sends the command " +
+                            "after confirmation. Otherwise use one-time USB setup from a trusted " +
+                            "ADB host. Android may restart adbd.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
@@ -318,11 +356,29 @@ fun ExperimentalRecorderCard() {
                         ) { Text("Disable TCP") }
                     }
                     Text(
-                        if (state.tcpPortOpen) "TCP/5555 is listening; disconnecting does not turn it off."
-                        else "TCP/5555 is not detected.",
+                        when {
+                            state.tcpPortOpen && state.connectedTransport == ExperimentalRecording.Transport.TCP ->
+                                "TCP/5555 listening and authorized. Disconnecting ADB will NOT close this port."
+                            state.tcpPortOpen ->
+                                "TCP/5555 is listening, but this TCP connection is not authorized and verified."
+                            else -> "No TCP listener detected on port 5555."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!state.connected && !state.tcpPortOpen) {
+                        OutlinedButton(onClick = { usbSetupDialog = true }) {
+                            Text("How to enable TCP once")
+                        }
+                    }
+                    if (state.tcpPortOpen && !state.connected) {
+                        Text(
+                            "To turn TCP off, first authorize ADB or use a trusted USB ADB host " +
+                                "to run adb usb. Closing VREC alone does not disable TCP debugging.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 HorizontalDivider()
@@ -373,6 +429,34 @@ fun ExperimentalRecorderCard() {
         }
     }
 
+    if (usbSetupDialog) {
+        AlertDialog(
+            onDismissRequest = { usbSetupDialog = false },
+            title = { Text("One-time ADB setup without Wireless debugging") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Android does not grant shell access through an ordinary app permission popup.")
+                    Text("1. Open Developer options, enable USB debugging, and connect to a trusted computer/ADB host.")
+                    Text("2. Approve Android's USB debugging authorization prompt.")
+                    Text("3. On the trusted host run: adb tcpip 5555")
+                    Text("4. Return to VREC, select TCP/5555 and tap Connect TCP/5555. " +
+                        "If it fails, check USB authorization and retry.")
+                    Text("If Wireless debugging is available, VREC can run the command for you after an authorized Wireless connection.")
+                    Text("TCP debugging may be reachable from other devices on the network. Disable it when finished.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    usbSetupDialog = false
+                    openDeveloperOptions()
+                }) { Text("Developer options") }
+            },
+            dismissButton = {
+                TextButton(onClick = { usbSetupDialog = false }) { Text("Close") }
+            },
+        )
+    }
+
     if (tcpWarning) {
         AlertDialog(
             onDismissRequest = { tcpWarning = false },
@@ -388,7 +472,6 @@ fun ExperimentalRecorderCard() {
                     scope.launch {
                         localError = null
                         ExperimentalRecording.enableTcp(context)
-                            .onFailure { localError = it.message }
                     }
                 }) { Text("Enable TCP/5555") }
             },
