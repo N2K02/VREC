@@ -118,9 +118,9 @@ fun ExperimentalRecorderCard() {
                 Triple(ExperimentalRecording.Method.STANDARD,
                     "Standard (recommended)", "Record with the microphone. No setup needed."),
                 Triple(ExperimentalRecording.Method.BUILT_IN_ADB,
-                    "Built-in ADB", "Enhanced recording, set up on this phone."),
+                    "Built-in ADB", "Use Android debugging. No Shizuku app needed."),
                 Triple(ExperimentalRecording.Method.SHIZUKU,
-                    "Shizuku", "Use your connected Shizuku service."),
+                    "Shizuku", "Start Shizuku separately and authorize VRec."),
             ).forEach { (method, label, subtitle) ->
                 Row(
                     Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -213,8 +213,14 @@ fun ExperimentalRecorderCard() {
                 }
                 Text(state.message, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "First use: pair once using Android Wireless debugging. " +
+                        "Already enabled TCP/5555? Connect directly below, without Wireless debugging.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 TextButton(onClick = { showPairing = !showPairing }) {
-                    Text(if (showPairing) "Hide pairing setup" else "Pair without notification")
+                    Text(if (showPairing) "Hide pairing steps" else "Pair with Android Wireless debugging")
                 }
                 if (showPairing) {
                     if (networkPermission != null && !networkAllowed) {
@@ -268,28 +274,42 @@ fun ExperimentalRecorderCard() {
                         },
                     ) { Text("Pair this phone") }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Button(enabled = !state.busy, onClick = {
+                Button(
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
                         scope.launch {
-                            runCatching {
-                                ExperimentalRecording.connect(
-                                    context, connectionPort.toIntOrNull(),
-                                ).getOrThrow()
-                            }.onFailure { localError = it.message }
+                            ExperimentalRecording.connect(context, connectionPort.toIntOrNull())
+                                .onFailure { localError = it.message }
                         }
-                    }) { Text("Connect & verify") }
-                    TextButton(onClick = { showAdvanced = !showAdvanced }) {
-                        Text(if (showAdvanced) "Hide advanced" else "Offline / TCP")
-                    }
+                    },
+                ) { Text("Connect with Wireless debugging") }
+                OutlinedButton(
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        scope.launch {
+                            ExperimentalRecording.connect(context, 5555)
+                                .onFailure { localError = it.message }
+                        }
+                    },
+                ) { Text("Connect TCP/5555 (no Wireless debugging)") }
+                TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                    Text(if (showAdvanced) "Hide TCP settings" else "Set up TCP/5555")
                 }
                 if (showAdvanced) {
                     HorizontalDivider()
-                    Text("TCP/5555 — optional, can stay reachable without Wi-Fi on supported phones.",
-                        style = MaterialTheme.typography.titleSmall)
+                    Text("TCP/5555 (optional)", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Security: TCP debugging may also listen on your Wi-Fi network. It does not" +
-                            " survive every reboot and does not guarantee access to call audio.",
+                        "1. Connect with Wireless debugging once, or use a computer to run " +
+                            "adb tcpip 5555 over USB. 2. Connect TCP/5555 in VRec. " +
+                            "After switching, Android normally disconnects the old ADB session. " +
+                            "VRec will try to reconnect automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "TCP debugging may be reachable by other devices on your Wi-Fi. " +
+                            "Turn it off when not needed; it may stop working after a reboot.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -303,10 +323,12 @@ fun ExperimentalRecorderCard() {
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(enabled = state.connected && !state.busy && !state.tcpPortOpen,
+                            modifier = Modifier.weight(1f),
                             onClick = { tcpWarning = true }) {
                             Text("Enable TCP")
                         }
-                        OutlinedButton(enabled = state.connected && !state.busy,
+                        OutlinedButton(enabled = state.connected && !state.busy && state.tcpPortOpen,
+                            modifier = Modifier.weight(1f),
                             onClick = {
                                 scope.launch {
                                     ExperimentalRecording.disableTcp().onFailure {
@@ -316,8 +338,8 @@ fun ExperimentalRecorderCard() {
                             }) { Text("Disable TCP") }
                     }
                     Text(
-                        if (state.tcpPortOpen) "TCP port 5555 is responding; keep debugging disabled when not needed."
-                        else "TCP mode is not verified.",
+                        if (state.tcpPortOpen) "TCP port 5555 is responding."
+                        else "TCP/5555 is not active. You can still use the normal Wireless debugging connection.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -348,7 +370,7 @@ fun ExperimentalRecorderCard() {
                         shizukuLabel = ExperimentalRecording.shizukuStatus()
                     }
                 }) { Text("Test Shizuku shell") }
-                Text("Shizuku must be started separately after reboot. It is not needed for Built-in ADB.",
+                Text("Shizuku is an alternative to VRec's ADB connection. It must be running and VRec must be authorized. Start it again after reboot.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -364,9 +386,9 @@ fun ExperimentalRecorderCard() {
             onDismissRequest = { tcpWarning = false },
             title = { Text("Enable TCP debugging?") },
             text = { Text(
-                "ADB may listen on network interfaces, not just this phone. " +
-                    "Anyone with trusted debugging credentials on your network could connect. " +
-                    "Use only on a trusted network, and disable it when finished. Continue?"
+                "Android will restart ADB. The current Wireless debugging connection will disconnect; " +
+                    "VRec will try to reconnect at TCP/5555. TCP debugging can also be accessed from " +
+                    "your network by trusted ADB clients. Use only on a trusted network. Continue?"
             ) },
             confirmButton = {
                 Button(onClick = {

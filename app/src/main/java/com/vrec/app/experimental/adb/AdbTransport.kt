@@ -7,6 +7,7 @@ import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -446,7 +447,9 @@ object AdbTransport {
             val mgr = manager ?: error("Connect with authenticated Wireless debugging first")
             check(mgr.isConnected) { "Connect with authenticated Wireless debugging first" }
             mgr.openStream("tcpip:$port").let { stream ->
-                // adbd often restarts immediately, closing the stream.
+                // The restart command is asynchronous. Do not close the stream
+                // immediately: let adbd accept the request before it restarts.
+                delay(400L)
                 runCatching { stream.close() }
             }
             runCatching { shell?.close() }

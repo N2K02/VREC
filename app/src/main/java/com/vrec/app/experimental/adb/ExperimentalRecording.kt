@@ -89,6 +89,9 @@ object ExperimentalRecording {
                     AdbTransport.autoConnect(context.applicationContext, timeoutMs = 6000).getOrThrow()
                 else {
                     require(manualPort in 1..65535)
+                    // A port-specific connection must not reuse a stale wireless
+                    // session and report it as a verified TCP session.
+                    AdbTransport.close()
                     AdbTransport.connect(context.applicationContext, "127.0.0.1", manualPort).getOrThrow()
                 }
                 val response = AdbTransport.exec("id -u").getOrThrow()
@@ -101,7 +104,10 @@ object ExperimentalRecording {
         status.value = status.value.copy(
             busy = false, connected = result.isSuccess, shellUid = result.getOrNull(),
             tcpPortOpen = tcpPresent(), message = result.fold(
-                onSuccess = { "ADB verified: shell UID 2000." },
+                onSuccess = {
+                    if (manualPort == 5555) "ADB verified over TCP/5555 (shell UID 2000)."
+                    else "ADB verified: shell UID 2000."
+                },
                 onFailure = { "Connection failed: " + it.message }
             )
         )
@@ -112,19 +118,50 @@ object ExperimentalRecording {
         status.value = status.value.copy(busy = true, message = "Switching ADB to TCP/5555…")
         val result = withContext(Dispatchers.IO) {
             runCatching {
+                // adbd is expected to drop the old TLS session on tcpip:5555.
+                // Do not interpret that deliberate disconnection as a failure.
                 AdbTransport.switchToTcp(5555).getOrThrow()
-                delay(1500)
-                AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
-                val uid = AdbTransport.exec("id -u").getOrThrow()
-                check(uid.lineSequence().any { it.trim() == "2000" })
+                AdbTransport.close()
+
+                var lastFailure: Throwable? = null
+                var verified = false
+                // Restart duration varies across Android versions and OEMs.
+                for (attempt in 1..8) {
+                    delay(1500L)
+                    if (!tcpPresent()) continue
+                    // A failed TLS/RSA handshake can poison libadb's manager;
+                    // use a new one on each attempt until the shell is verified.
+                    AdbTransport.close()
+                    val probe = runCatching {
+                        AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
+                        val uid = AdbTransport.exec("id -u").getOrThrow()
+                        check(uid.lineSequence().any { line -> line.trim() == "2000" }) {
+                            "TCP connected but Android shell UID was not verified"
+                        }
+                    }
+                    if (probe.isSuccess) {
+                        verified = true
+                        break
+                    }
+                    lastFailure = probe.exceptionOrNull()
+                }
+                check(verified && tcpPresent()) {
+                    "TCP/5555 did not become available after ADB restarted." +
+                        (lastFailure?.message?.let { " $it" } ?: "")
+                }
             }
         }
-        val ok = result.isSuccess && tcpPresent()
+        val open = tcpPresent()
+        val ok = result.isSuccess && open
         status.value = status.value.copy(
-            busy = false, connected = ok, tcpPortOpen = tcpPresent(),
+            busy = false, connected = ok, tcpPortOpen = open,
             shellUid = if (ok) 2000 else null,
-            message = if (ok) "TCP/5555 connected. This may expose debugging on your Wi-Fi network."
-                else "TCP could not be verified: " + (result.exceptionOrNull()?.message ?: "port closed")
+            message = if (ok)
+                "Connected via TCP/5555. The original Wireless debugging connection was replaced."
+            else
+                "ADB restarted but TCP could not be verified. Tap Connect TCP/5555 to retry; " +
+                    "if it is unavailable, turn Wireless debugging back on and reconnect. " +
+                    (result.exceptionOrNull()?.message ?: "")
         )
         return if (ok) Result.success(Unit)
             else Result.failure(result.exceptionOrNull() ?: IllegalStateException("TCP unavailable"))
