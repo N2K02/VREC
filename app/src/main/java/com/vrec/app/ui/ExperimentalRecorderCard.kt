@@ -1,5 +1,6 @@
 package com.vrec.app.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.Manifest
@@ -94,8 +95,9 @@ fun ExperimentalRecorderCard() {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
     ) {
         Column(

@@ -103,6 +103,7 @@ fun SettingsScreen(
                     supportingContent = { Text(detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clip(RoundedCornerShape(20.dp))
                         .clickable { onSectionChange(name) },
                 )
@@ -126,6 +127,7 @@ fun SettingsScreen(
                     supportingContent = { Text(detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable {
                         when (index) {
                             0 -> onOpenSetup()
