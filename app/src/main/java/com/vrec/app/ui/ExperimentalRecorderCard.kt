@@ -29,6 +29,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +80,7 @@ fun ExperimentalRecorderCard() {
     val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     var selection by remember { mutableStateOf(ExperimentalRecording.method(context)) }
+    var adbMode by rememberSaveable { mutableStateOf("wireless") }
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var pairingPort by rememberSaveable { mutableStateOf("") }
     var connectionPort by rememberSaveable { mutableStateOf("") }
@@ -152,193 +156,196 @@ fun ExperimentalRecorderCard() {
                 }
             }
 
-            if (selection != ExperimentalRecording.Method.STANDARD) {
-                HorizontalDivider()
-                Text("Enhanced recording service", style = MaterialTheme.typography.titleMedium)
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(
-                        if (recorderReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp))
-                    Text(
-                        when {
-                            helperState == AdbPrivilegedApiHelper.State.STARTING ->
-                                "Starting enhanced helper…"
-                            recorderReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
-                                "Enhanced helper ready"
-                            helperState == AdbPrivilegedApiHelper.State.ERROR ->
-                                "Helper needs attention"
-                            helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB ->
-                                "Connect ADB to start helper"
-                            else -> "Helper not running"
-                        },
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                }
-                Text(recorderMessage, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "The helper starts automatically after a successful Wireless debugging " +
-                        "or TCP/5555 connection. You only need to connect once while it keeps " +
-                        "running. If Android stops it or the phone reboots, connect ADB again. " +
-                        "Use the Home Recording switch to turn call capture on or off.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        ExperimentalCaptureDaemon.collect(context)
-                            .onSuccess { localError = "Imported " + it + " call recordings." }
-                            .onFailure { localError = it.message }
-                    }
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Import saved calls")
-                }
-                Text("Two-sided audio: not verified until a real consented call is recorded and played.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
             if (selection == ExperimentalRecording.Method.BUILT_IN_ADB) {
                 HorizontalDivider()
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
+                Text("ADB connection", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Icon(
                         if (state.connected) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp))
+                        modifier = Modifier.size(20.dp),
+                    )
                     Column {
                         Text(
-                            if (state.connected) "ADB shell connected" else "ADB not connected",
-                            style = MaterialTheme.typography.titleSmall)
-                        Text("Shell identity: " +
-                            (state.shellUid?.toString() ?: "not verified"),
-                            style = MaterialTheme.typography.bodySmall)
+                            if (state.connected) "Connected · shell UID ${state.shellUid ?: "unverified"}"
+                            else "Disconnected",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            if (state.connected) "ADB verified. The helper operates independently."
+                            else "Choose one connection method below.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
-                Text(state.message, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "Tap a connection method below. Once Android verifies ADB access, " +
-                        "VRec starts the enhanced helper automatically. " +
-                        "TCP/5555 can also be enabled using USB ADB from a computer.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(onClick = { showPairing = !showPairing }) {
-                    Text(if (showPairing) "Hide pairing steps" else "Pair with Android Wireless debugging")
+
+                if (!state.connected) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        listOf("wireless" to "Wireless", "tcp" to "TCP/5555")
+                            .forEachIndexed { index, (value, label) ->
+                                SegmentedButton(
+                                    selected = adbMode == value,
+                                    onClick = { adbMode = value; localError = null },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
+                                    label = { Text(label) },
+                                    enabled = !state.busy,
+                                )
+                            }
+                    }
+                    if (adbMode == "wireless") {
+                        Text(
+                            "Use Android Wireless debugging. Pair once; later connections only need Connect.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = { showPairing = !showPairing }) {
+                            Text(if (showPairing) "Hide pairing steps" else "Pair device (first time)")
+                        }
+                        if (showPairing) {
+                            if (networkPermission != null && !networkAllowed) {
+                                Text(
+                                    "Allow local network access to discover the ADB pairing port.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                OutlinedButton(onClick = {
+                                    networkPermissionLauncher.launch(networkPermission)
+                                }) { Text("Allow local ADB discovery") }
+                            }
+                            Text(
+                                "In Developer options, open Wireless debugging → Pair device with pairing code. " +
+                                    "Use split screen to enter the displayed code here.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedButton(onClick = ::openDeveloperOptions) {
+                                Text("Open Developer options")
+                            }
+                            OutlinedButton(
+                                enabled = !state.busy && networkAllowed && Build.VERSION.SDK_INT >= 30,
+                                onClick = {
+                                    scope.launch {
+                                        ExperimentalRecording.discover(context)
+                                            .onSuccess { pairingPort = it.toString() }
+                                            .onFailure { localError = it.message }
+                                    }
+                                },
+                            ) { Text("Find pairing port") }
+                            OutlinedTextField(
+                                value = pairingPort,
+                                onValueChange = { pairingPort = it.filter(Char::isDigit).take(5) },
+                                label = { Text("Pairing port") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            )
+                            OutlinedTextField(
+                                value = pairingCode,
+                                onValueChange = { pairingCode = it.filter(Char::isDigit).take(6) },
+                                label = { Text("Six-digit pairing code") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            )
+                            Button(
+                                enabled = !state.busy && pairingCode.length == 6 &&
+                                    (pairingPort.toIntOrNull() ?: 0) in 1..65535,
+                                onClick = {
+                                    scope.launch {
+                                        runCatching {
+                                            ExperimentalRecording.pair(context,
+                                                pairingPort.toInt(), pairingCode).getOrThrow()
+                                        }.onFailure { localError = it.message }
+                                        pairingCode = ""
+                                    }
+                                },
+                            ) { Text("Pair this phone") }
+                            OutlinedTextField(
+                                value = connectionPort,
+                                onValueChange = { connectionPort = it.filter(Char::isDigit).take(5) },
+                                label = { Text("Wireless ADB connection port (optional)") },
+                                supportingText = { Text("Leave blank for automatic discovery.") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            )
+                        }
+                    } else {
+                        Text(
+                            "Connect to port 5555 after enabling TCP debugging via USB ADB " +
+                                "or an existing authorized wireless session.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-                if (showPairing) {
-                    if (networkPermission != null && !networkAllowed) {
-                        Text("Android requires local network access to find its ADB pairing port.",
-                            style = MaterialTheme.typography.bodySmall)
-                        OutlinedButton(onClick = {
-                            networkPermissionLauncher.launch(networkPermission)
-                        }) { Text("Allow local ADB discovery") }
-                    }
-                    Text("1. Open Android Developer options → Wireless debugging → Pair with pairing code.",
-                        style = MaterialTheme.typography.bodySmall)
-                    Text("2. Use split screen to keep Android's code visible while entering it in VRec.",
-                        style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = ::openDeveloperOptions) {
-                        Text("Open Developer options")
-                    }
+                if (state.connected) {
                     OutlinedButton(
-                        enabled = !state.busy && networkAllowed && Build.VERSION.SDK_INT >= 30,
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             scope.launch {
-                                val result = ExperimentalRecording.discover(context)
-                                result.getOrNull()?.let { pairingPort = it.toString() }
+                                localError = null
+                                ExperimentalRecording.disconnect()
                             }
                         },
-                    ) { Text("Find pairing port") }
-                    OutlinedTextField(
-                        value = pairingPort, onValueChange = {
-                            pairingPort = it.filter(Char::isDigit).take(5)
-                        }, label = { Text("Pairing port") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    OutlinedTextField(
-                        value = pairingCode, onValueChange = {
-                            pairingCode = it.filter(Char::isDigit).take(6)
-                        }, label = { Text("Six-digit pairing code") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    )
-                    Button(
-                        enabled = !state.busy && pairingCode.length == 6 &&
-                            (pairingPort.toIntOrNull() ?: 0) in 1..65535,
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    ExperimentalRecording.pair(context,
-                                        pairingPort.toInt(), pairingCode).getOrThrow()
-                                }.onFailure { localError = it.message }
-                                pairingCode = ""
-                            }
-                        },
-                    ) { Text("Pair this phone") }
-                }
-                Button(
-                    enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        scope.launch {
-                            localError = null
-                            ExperimentalRecording.connect(context, connectionPort.toIntOrNull())
-                                .onFailure { localError = it.message }
-                        }
-                    },
-                ) { Text("Connect with Wireless debugging") }
-                OutlinedButton(
-                    enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        scope.launch {
-                            localError = null
-                            ExperimentalRecording.connect(context, 5555)
-                                .onFailure { localError = it.message }
-                        }
-                    },
-                ) { Text("Connect TCP/5555 (USB setup or existing TCP)") }
-                TextButton(onClick = { showAdvanced = !showAdvanced }) {
-                    Text(if (showAdvanced) "Hide TCP settings" else "Set up TCP/5555")
-                }
-                if (showAdvanced) {
-                    HorizontalDivider()
-                    Text("TCP/5555 (optional)", style = MaterialTheme.typography.titleSmall)
+                    ) { Text("Disconnect ADB") }
                     Text(
-                        "1. Connect with Wireless debugging once, or use a computer to run " +
-                            "adb tcpip 5555 over USB. 2. Connect TCP/5555 in VRec. " +
-                            "After switching, Android normally disconnects the old ADB session. " +
-                            "VRec will try to reconnect automatically.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        "TCP debugging may be reachable by other devices on your Wi-Fi. " +
-                            "Turn it off when not needed; it may stop working after a reboot.",
+                        "Disconnect only closes the ADB connection. The enhanced helper may " +
+                            "continue running; turn off Recording on Home to stop call capture.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedTextField(
-                        value = connectionPort,
-                        onValueChange = { connectionPort = it.filter(Char::isDigit).take(5) },
-                        label = { Text("Existing ADB port (optional)") },
-                        supportingText = { Text("Leave blank to discover port automatically.") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                } else {
+                    Button(
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            scope.launch {
+                                localError = null
+                                val port = if (adbMode == "tcp") 5555
+                                    else connectionPort.toIntOrNull()
+                                ExperimentalRecording.connect(context, port,
+                                    wirelessOnly = adbMode == "wireless")
+                                    .onFailure { localError = it.message }
+                            }
+                        },
+                    ) { Text(if (state.busy) "Connecting…" else "Connect") }
+                }
+                Text(
+                    state.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                    Text(if (showAdvanced) "Hide TCP/5555 settings" else "Advanced TCP/5555 settings")
+                }
+                if (showAdvanced) {
+                    HorizontalDivider()
+                    Text("TCP/5555", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "To enable TCP without a computer, connect using Wireless debugging first, " +
+                            "then enable TCP here. Alternatively run adb tcpip 5555 over USB. " +
+                            "Switching modes restarts adbd and may disconnect Wireless debugging.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "TCP debugging may be reachable from other devices on your network. " +
+                            "Disable it before leaving a trusted network.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(enabled = state.connected && !state.busy && !state.tcpPortOpen,
+                        Button(
+                            enabled = state.connected && !state.busy && !state.tcpPortOpen,
                             modifier = Modifier.weight(1f),
-                            onClick = { tcpWarning = true }) {
-                            Text("Enable TCP")
-                        }
-                        OutlinedButton(enabled = state.connected && !state.busy && state.tcpPortOpen,
+                            onClick = { tcpWarning = true },
+                        ) { Text("Enable TCP") }
+                        OutlinedButton(
+                            enabled = state.connected && !state.busy && state.tcpPortOpen,
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 scope.launch {
@@ -346,16 +353,55 @@ fun ExperimentalRecorderCard() {
                                         localError = it.message
                                     }
                                 }
-                            }) { Text("Disable TCP") }
+                            },
+                        ) { Text("Disable TCP") }
                     }
                     Text(
-                        if (state.tcpPortOpen) "TCP port 5555 is responding."
-                        else "TCP/5555 is not active. You can still use the normal Wireless debugging connection.",
+                        if (state.tcpPortOpen) "TCP/5555 is listening; disconnecting does not turn it off."
+                        else "TCP/5555 is not detected.",
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                HorizontalDivider()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        if (recorderReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Column {
+                        Text("Enhanced recording helper", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            when {
+                                helperState == AdbPrivilegedApiHelper.State.STARTING -> "Starting…"
+                                recorderReady && helperState == AdbPrivilegedApiHelper.State.RUNNING -> "Ready"
+                                helperState == AdbPrivilegedApiHelper.State.ERROR -> "Needs attention"
+                                helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB -> "Needs ADB to start"
+                                else -> "Not running"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (helperState == AdbPrivilegedApiHelper.State.ERROR ||
+                    helperState == AdbPrivilegedApiHelper.State.STARTING) {
+                    Text(
+                        recorderMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Text(
-                    "Audio status: not tested. Shell access is not proof of recording both voices.",
+                    "The helper starts automatically after ADB verification. " +
+                        "Use Home to control recording. Two-sided audio remains unverified " +
+                        "until a real consented call is played back.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
