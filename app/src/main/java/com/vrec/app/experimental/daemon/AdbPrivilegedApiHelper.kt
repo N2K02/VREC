@@ -14,7 +14,7 @@ import kotlinx.coroutines.sync.withLock
  * This does not grant root or bypass Android audio restrictions.
  */
 object AdbPrivilegedApiHelper {
-    enum class State { STOPPED, RUNNING, NEEDS_ADB, ERROR }
+    enum class State { STOPPED, STARTING, RUNNING, NEEDS_ADB, ERROR }
     val state = MutableStateFlow(State.STOPPED)
     private val lock = Mutex()
 
@@ -35,13 +35,30 @@ object AdbPrivilegedApiHelper {
             state.value = State.NEEDS_ADB
             return@withLock Result.failure(IllegalStateException("Select Built-in ADB first"))
         }
-        val result = ExperimentalCaptureDaemon.ensureStarted(context.applicationContext)
-        state.value = when {
-            result.isFailure -> State.NEEDS_ADB
-            ExperimentalCaptureDaemon.probe(context.applicationContext) -> State.RUNNING
-            else -> State.ERROR
+        // No auto-bootstrap from the background or from an unverified TCP port.
+        // Only the explicit ADB connection flow, after verifying shell UID 2000,
+        // can launch a new shell Java process.
+        val connection = ExperimentalRecording.status.value
+        if (!connection.connected || connection.shellUid != 2000) {
+            state.value = State.NEEDS_ADB
+            return@withLock Result.failure(IllegalStateException(
+                "Connect with Wireless debugging or TCP/5555 first (shell UID 2000)."
+            ))
         }
-        result
+        state.value = State.STARTING
+        val result = ExperimentalCaptureDaemon.ensureStarted(context.applicationContext)
+        if (result.isFailure) {
+            state.value = State.ERROR
+            return@withLock result
+        }
+        if (!ExperimentalCaptureDaemon.probe(context.applicationContext)) {
+            state.value = State.ERROR
+            return@withLock Result.failure(IllegalStateException(
+                "ADB connected, but the enhanced helper could not be verified."
+            ))
+        }
+        state.value = State.RUNNING
+        Result.success(Unit)
     }
 
     suspend fun checkHealth(context: Context): State = lock.withLock {

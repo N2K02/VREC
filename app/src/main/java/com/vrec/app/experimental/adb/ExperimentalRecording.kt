@@ -3,6 +3,7 @@ package com.vrec.app.experimental.adb
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -103,17 +104,38 @@ object ExperimentalRecording {
                 uid
             }
         }
-        status.value = status.value.copy(
-            busy = false, connected = result.isSuccess, shellUid = result.getOrNull(),
-            tcpPortOpen = tcpPresent(), message = result.fold(
-                onSuccess = {
-                    if (manualPort == 5555) "ADB verified over TCP/5555 (shell UID 2000)."
-                    else "ADB verified: shell UID 2000."
-                },
-                onFailure = { "Connection failed: " + it.message }
+        if (result.isFailure) {
+            status.value = status.value.copy(
+                busy = false, connected = false, shellUid = null,
+                tcpPortOpen = tcpPresent(),
+                message = "ADB connection failed: " + result.exceptionOrNull()?.message,
             )
+            return result
+        }
+        // A user explicitly selected Built-in ADB and successfully verified
+        // shell UID 2000. Start or reattach the privileged Java helper now,
+        // without another button or an unattended ADB bootstrap.
+        status.value = status.value.copy(
+            busy = true, connected = true, shellUid = 2000,
+            tcpPortOpen = tcpPresent(), message = "ADB connected. Starting enhanced helper…",
         )
-        return result
+        val helper = if (method(context) == Method.BUILT_IN_ADB)
+            AdbPrivilegedApiHelper.startWithAdb(context)
+        else Result.success(Unit)
+        status.value = status.value.copy(
+            busy = false,
+            message = if (helper.isSuccess) {
+                if (method(context) == Method.BUILT_IN_ADB)
+                    "ADB verified (shell UID 2000). Enhanced helper ready."
+                else "ADB verified (shell UID 2000)."
+            } else {
+                "ADB verified, but enhanced helper failed: " +
+                    (helper.exceptionOrNull()?.message ?: "unknown error")
+            },
+        )
+        return if (helper.isSuccess) result
+            else Result.failure(helper.exceptionOrNull()
+                ?: IllegalStateException("Enhanced helper failed to start"))
     }
 
     suspend fun enableTcp(context: Context): Result<Unit> {
@@ -155,18 +177,30 @@ object ExperimentalRecording {
         }
         val open = tcpPresent()
         val ok = result.isSuccess && open
+        if (ok) {
+            status.value = status.value.copy(
+                busy = true, connected = true, shellUid = 2000, tcpPortOpen = true,
+                message = "TCP/5555 verified. Starting enhanced helper…",
+            )
+            val helper = if (method(context) == Method.BUILT_IN_ADB)
+                AdbPrivilegedApiHelper.startWithAdb(context)
+            else Result.success(Unit)
+            status.value = status.value.copy(
+                busy = false, connected = true, shellUid = 2000, tcpPortOpen = true,
+                message = if (helper.isSuccess)
+                    "TCP/5555 connected. Enhanced helper ready; Wireless debugging is not required."
+                else "TCP/5555 connected, but enhanced helper failed: " +
+                    (helper.exceptionOrNull()?.message ?: "unknown error"),
+            )
+            return helper
+        }
         status.value = status.value.copy(
-            busy = false, connected = ok, tcpPortOpen = open,
-            shellUid = if (ok) 2000 else null,
-            message = if (ok)
-                "Connected via TCP/5555. The original Wireless debugging connection was replaced."
-            else
-                "ADB restarted but TCP could not be verified. Tap Connect TCP/5555 to retry; " +
-                    "if it is unavailable, turn Wireless debugging back on and reconnect. " +
-                    (result.exceptionOrNull()?.message ?: "")
+            busy = false, connected = false, tcpPortOpen = open, shellUid = null,
+            message = "ADB restarted but TCP could not be verified. " +
+                "Tap Connect TCP/5555 to retry, or enable Wireless debugging again. " +
+                (result.exceptionOrNull()?.message ?: ""),
         )
-        return if (ok) Result.success(Unit)
-            else Result.failure(result.exceptionOrNull() ?: IllegalStateException("TCP unavailable"))
+        return Result.failure(result.exceptionOrNull() ?: IllegalStateException("TCP unavailable"))
     }
 
     suspend fun disableTcp(): Result<Unit> {

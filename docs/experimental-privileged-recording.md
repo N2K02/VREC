@@ -43,12 +43,14 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
 2. For first-time phone-local authorization, use Android Developer options →
    Wireless debugging → Pair device with pairing code, preferably in split screen.
    Enter its temporary pairing code/port in VRec and pair.
-3. Use **Connect with Wireless debugging** and verify shell UID 2000.
-   Alternatively, when TCP/5555 has already been authorized and enabled
-   (e.g. `adb tcpip 5555` from a computer over USB), choose **Connect TCP/5555**.
-4. Start the enhanced recorder and verify its daemon readiness separately from
-   ADB connection state. Complete a consented test call, import the resulting
-   audio, and listen to both participants before relying on this mode.
+3. Tap **Connect with Wireless debugging**. Alternatively, when TCP/5555 has
+   already been authorized and enabled (e.g. `adb tcpip 5555` from a
+   computer over USB), tap **Connect TCP/5555**.
+4. After shell UID 2000 is verified, VRec **automatically starts or reconnects**
+   the enhanced Java helper. There is no separate Start button. Check **Helper
+   ready**; Home's Recording switch independently controls call capture.
+   Complete a consented test call, import its audio, and listen to both
+   participants before relying on this mode.
 
 Switching an existing connection into TCP/5555 restarts `adbd` and naturally
 drops the previous ADB session. VRec retries the new localhost connection,

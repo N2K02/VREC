@@ -164,10 +164,15 @@ fun ExperimentalRecorderCard() {
                         modifier = Modifier.size(20.dp))
                     Text(
                         when {
-                            recorderReady -> "Shell service running"
+                            helperState == AdbPrivilegedApiHelper.State.STARTING ->
+                                "Starting enhanced helper…"
+                            recorderReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
+                                "Enhanced helper ready"
+                            helperState == AdbPrivilegedApiHelper.State.ERROR ->
+                                "Helper needs attention"
                             helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB ->
-                                "ADB needed to start service"
-                            else -> "Shell service not ready"
+                                "Connect ADB to start helper"
+                            else -> "Helper not running"
                         },
                         style = MaterialTheme.typography.titleSmall,
                     )
@@ -175,32 +180,21 @@ fun ExperimentalRecorderCard() {
                 Text(recorderMessage, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    "Once started, the shell recorder can keep recording without an active " +
-                        "ADB session. Its availability after Wi-Fi loss, force-stop or reboot " +
-                        "depends on your phone.",
+                    "The helper starts automatically after a successful Wireless debugging " +
+                        "or TCP/5555 connection. You only need to connect once while it keeps " +
+                        "running. If Android stops it or the phone reboots, connect ADB again. " +
+                        "Use the Home Recording switch to turn call capture on or off.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Button(enabled = !state.busy, onClick = {
+                OutlinedButton(onClick = {
                     scope.launch {
-                        AdbPrivilegedApiHelper.startWithAdb(context).onFailure {
-                            localError = it.message
-                        }
+                        ExperimentalCaptureDaemon.collect(context)
+                            .onSuccess { localError = "Imported " + it + " call recordings." }
+                            .onFailure { localError = it.message }
                     }
                 }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (recorderReady) "Check / restart recorder" else "Start enhanced recorder")
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        scope.launch {
-                            ExperimentalCaptureDaemon.collect(context)
-                                .onSuccess { localError = "Imported " + it + " call recordings." }
-                                .onFailure { localError = it.message }
-                        }
-                    }) { Text("Import saved calls") }
-                    OutlinedButton(enabled = recorderReady, onClick = {
-                        scope.launch { ExperimentalCaptureDaemon.stopRecording(context) }
-                    }) { Text("Pause recorder") }
+                    Text("Import saved calls")
                 }
                 Text("Two-sided audio: not verified until a real consented call is recorded and played.",
                     style = MaterialTheme.typography.bodySmall,
@@ -228,8 +222,9 @@ fun ExperimentalRecorderCard() {
                 Text(state.message, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    "First use: pair once using Android Wireless debugging. " +
-                        "Already enabled TCP/5555? Connect directly below, without Wireless debugging.",
+                    "Tap a connection method below. Once Android verifies ADB access, " +
+                        "VRec starts the enhanced helper automatically. " +
+                        "TCP/5555 can also be enabled using USB ADB from a computer.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -293,6 +288,7 @@ fun ExperimentalRecorderCard() {
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         scope.launch {
+                            localError = null
                             ExperimentalRecording.connect(context, connectionPort.toIntOrNull())
                                 .onFailure { localError = it.message }
                         }
@@ -303,11 +299,12 @@ fun ExperimentalRecorderCard() {
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         scope.launch {
+                            localError = null
                             ExperimentalRecording.connect(context, 5555)
                                 .onFailure { localError = it.message }
                         }
                     },
-                ) { Text("Connect TCP/5555 (no Wireless debugging)") }
+                ) { Text("Connect TCP/5555 (USB setup or existing TCP)") }
                 TextButton(onClick = { showAdvanced = !showAdvanced }) {
                     Text(if (showAdvanced) "Hide TCP settings" else "Set up TCP/5555")
                 }
@@ -383,6 +380,7 @@ fun ExperimentalRecorderCard() {
                 Button(onClick = {
                     tcpWarning = false
                     scope.launch {
+                        localError = null
                         ExperimentalRecording.enableTcp(context)
                             .onFailure { localError = it.message }
                     }

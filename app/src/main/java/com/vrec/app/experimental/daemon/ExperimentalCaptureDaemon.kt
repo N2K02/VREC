@@ -138,7 +138,9 @@ object ExperimentalCaptureDaemon {
                 "Select Built-in ADB first."
             }
             if (probe(context)) {
-                setMode(context, Prefs.recordingEnabled(context))
+                check(setMode(context, Prefs.recordingEnabled(context))) {
+                    "Could not confirm the helper's recording mode."
+                }
                 message.value = if (Prefs.recordingEnabled(context))
                     "Recorder running. It can capture without a current ADB connection."
                 else "Recorder running; Home recording switch is off."
@@ -167,7 +169,9 @@ object ExperimentalCaptureDaemon {
                 }
             }
             check(started) { "Shell recorder did not start. Check capture log." }
-            setMode(context, Prefs.recordingEnabled(context))
+            check(setMode(context, Prefs.recordingEnabled(context))) {
+                "Shell recorder started, but its recording mode was not confirmed."
+            }
             message.value = if (Prefs.recordingEnabled(context))
                 "Shell recorder started. Calls can continue while Wi-Fi is off."
             else "Shell recorder started in standby; enable Recording on Home to capture."
