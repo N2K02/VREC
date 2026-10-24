@@ -44,6 +44,11 @@ object ExperimentalCaptureDaemon {
     val ready = MutableStateFlow(false)
     private val importMutex = Mutex()
     private val modeMutex = Mutex()
+    // Lifecycle entry point for the app's ADB-bootstrapped privileged Java service.
+    // The service runs as Android shell, not root, and survives ADB transport loss
+    // while its process remains alive. See AdbPrivilegedApiHelper.
+    val adbPrivilegedApiHelper: AdbPrivilegedApiHelper = AdbPrivilegedApiHelper
+
 
     private fun token(context: Context): String {
         val prefs = context.getSharedPreferences("vrec_experimental_recorder", Context.MODE_PRIVATE)
