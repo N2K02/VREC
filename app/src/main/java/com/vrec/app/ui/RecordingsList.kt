@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
@@ -172,21 +173,21 @@ fun RecordingsList() {
         runCatching { context.startActivity(Intent.createChooser(intent, "Export recording details").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
-    Text("Recordings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+    Text("Saved calls", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
     Text("${recordings.size} recording${if (recordings.size == 1) "" else "s"} · ${formatSize(totalBytes)}",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     if (recordings.isNotEmpty()) {
         OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
-            singleLine = true, label = { Text("Search caller, number, note…") },
+            singleLine = true, shape = CircleShape, label = { Text("Search caller, number, note…") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) })
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { filterMenu = true }) {
                 Icon(Icons.Filled.FilterList, contentDescription = null)
                 Text("  ${filterLabel(filter)}")
             }
-            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }, modifier = Modifier.clip(RoundedCornerShape(22.dp))) {
+            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }, modifier = Modifier.clip(RoundedCornerShape(24.dp))) {
                 RecordingFilter.entries.forEach { item ->
                     DropdownMenuItem(text = { Text(filterLabel(item)) }, leadingIcon = { Icon(Icons.Filled.FilterList, contentDescription = null) }, onClick = { filter = item; filterMenu = false })
                 }
@@ -306,7 +307,8 @@ private fun RecordingRow(
     onDelete: () -> Unit, onFavorite: () -> Unit,
 ) {
     var actionsExpanded by remember { mutableStateOf(false) }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    Card(shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth().clickable { if (selectionMode) onSelect() else onOpen() }) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode) {
