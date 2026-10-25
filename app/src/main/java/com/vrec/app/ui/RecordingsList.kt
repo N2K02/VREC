@@ -1,6 +1,12 @@
 package com.vrec.app.ui
 
 import android.content.Intent
+import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -106,6 +112,14 @@ fun RecordingsList() {
     val context = LocalContext.current
     val tick = rememberOnResumeTick()
     var refresh by remember { mutableStateOf(0) }
+    var contactsPermissionTick by remember { mutableStateOf(0) }
+    val contactsAllowed = remember(tick, contactsPermissionTick) {
+        context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+    val contactsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        contactsPermissionTick++
+        refresh++
+    }
     val recordings = remember(tick, refresh) { RecordingStore.list(context) }
     var playingPath by remember { mutableStateOf<String?>(null) }
     var playbackPaused by remember { mutableStateOf(false) }
@@ -122,6 +136,36 @@ fun RecordingsList() {
     var sort by rememberSaveable { mutableStateOf(RecordingSort.NEWEST) }
     var sortSheet by remember { mutableStateOf(false) }
     var actionsRecording by remember { mutableStateOf<Recording?>(null) }
+    var contactPickerRecording by remember { mutableStateOf<Recording?>(null) }
+    val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val target = contactPickerRecording
+        contactPickerRecording = null
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && target != null && uri != null) {
+            val selection = runCatching {
+                context.contentResolver.query(uri, arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
+                }
+            }.getOrNull()
+            if (selection != null) {
+                val (name, number) = selection
+                if (!name.isNullOrBlank() || !number.isNullOrBlank()) {
+                    RecordingStore.updateDetails(
+                        target, target.notes, target.favorite,
+                        contactName = name?.takeIf { it.isNotBlank() },
+                        phoneNumber = number?.takeIf { it.isNotBlank() },
+                    )
+                    refresh++
+                    Toast.makeText(context, "Recording contact updated", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "Could not read that contact", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedPaths by remember { mutableStateOf(setOf<String>()) }
     var speed by rememberSaveable { mutableStateOf(1f) }
@@ -247,6 +291,25 @@ fun RecordingsList() {
             }
             FilledTonalIconButton(onClick = { refresh++ }) {
                 Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+            }
+        }
+        if (!contactsAllowed && recordings.any { it.direction == CallDirection.INCOMING ||
+                    it.direction == CallDirection.OUTGOING }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Allow Contacts to show saved caller names when their numbers are available.",
+                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) }) {
+                        Text("Allow")
+                    }
+                }
             }
         }
         playbackError?.let { message ->
@@ -388,8 +451,25 @@ fun RecordingsList() {
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
                 Text("Recording actions", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
-                Text(rec.displayName, style = MaterialTheme.typography.bodyMedium,
+                Text(RecordingListLabels.contact(
+                    rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                ), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ListItem(headlineContent = { Text("Choose contact") },
+                    supportingContent = { Text("Assign a saved name and number to this recording") },
+                    leadingContent = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                        actionsRecording = null
+                        contactPickerRecording = rec
+                        runCatching {
+                            contactPicker.launch(Intent(Intent.ACTION_PICK).apply {
+                                type = ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE
+                            })
+                        }.onFailure {
+                            contactPickerRecording = null
+                            Toast.makeText(context, "Contacts picker unavailable", Toast.LENGTH_SHORT).show()
+                        }
+                    })
                 ListItem(headlineContent = { Text("Recording details") },
                     leadingContent = { Icon(Icons.Filled.Info, contentDescription = null) },
                     modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
