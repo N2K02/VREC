@@ -2002,6 +2002,7 @@ public final class Main {
                     rec.stop();
                     activeRecording = null;
                     boolean gone = new File(REC_DIR, rec.name).delete();
+                    new File(REC_DIR, rec.name + ".health").delete();
                     Ln.i("recording: the rules leave this call out; stopped and deleted " + rec.name + " -> " + gone);
                     wake(ACTION_CALL_ENDED, rec.incoming, "", null);
                     what = "current";
