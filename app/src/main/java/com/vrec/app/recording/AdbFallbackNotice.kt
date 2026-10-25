@@ -108,8 +108,8 @@ object AdbFallbackNotice {
             .setContentText("Recording with the microphone. Enable debugging to restore ADB for future calls.")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
                 "This call is being recorded using the standard microphone method. " +
-                    "To restore the enhanced helper for future calls, enable Wireless debugging " +
-                    "in Android Developer options and complete VRec ADB setup."
+                    "To restore the enhanced helper for future calls, enable USB debugging " +
+                    "and complete the one-time trusted USB ADB host setup (adb tcpip 5555) if needed."
             ))
             .setContentIntent(setupIntent)
             .addAction(0, "Enable debugging", debuggingIntent)

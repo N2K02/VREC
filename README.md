@@ -1,8 +1,10 @@
-# VREC — Call recorder (no root, no Shizuku, no debugging)
+# VREC — Call recorder (no root, no Shizuku)
 
-VREC is a personal Android call recorder that works **without root, without Shizuku, and without
-USB or wireless debugging**. It records SIM calls (and optionally VoIP calls like WhatsApp) using
-only permissions you grant on the phone itself.
+VREC is a personal Android call recorder. **Standard recording** works without
+debugging or root using the permissions granted on the phone. The optional
+**Enhanced ADB mode** requires an authorized USB ADB bootstrap to enable the
+localhost TCP/5555 connection; USB debugging alone does not provide shell access.
+VRec does not include a wireless ADB connection or pairing workflow.
 
 ## Download
 
