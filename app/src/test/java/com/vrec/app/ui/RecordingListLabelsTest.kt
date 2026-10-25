@@ -11,6 +11,8 @@ class RecordingListLabelsTest {
         assertEquals("Caller", RecordingListLabels.contact(null, "+2301234567", "Caller", "+2301234567"))
         assertEquals("+2301234567", RecordingListLabels.contact(null, null, null, "+2301234567"))
         assertEquals("Unknown contact", RecordingListLabels.contact(" ", "", null, null))
+        assertEquals("Sonu orange", RecordingListLabels.contact(null, null, null, null, "20261025_202514_VOIP_Sonu_orange.m4a"))
+        assertEquals("Unknown contact", RecordingListLabels.contact(null, null, null, null, "vrec_rec_1792945016544_in.ogg"))
     }
 
     @Test fun determinesDirectionWithoutGuessingForLegacyVoip() {
@@ -21,6 +23,7 @@ class RecordingListLabelsTest {
         assertEquals("VoIP", RecordingListLabels.direction(CallDirection.VOIP, null))
         assertEquals("VoIP", RecordingListLabels.direction(CallDirection.VOIP, "UNKNOWN"))
         assertEquals("Unknown direction", RecordingListLabels.direction(CallDirection.UNKNOWN, null))
+        assertEquals("Outgoing", RecordingListLabels.direction(CallDirection.UNKNOWN, "OUTGOING"))
     }
 
     @Test fun cellularSourcesPrioritizeVerifiedSimMetadata() {
