@@ -13,22 +13,30 @@ internal object RecordingListLabels {
         lookedUpName: String?,
         peer: String?,
         phoneNumber: String?,
+        fileName: String? = null,
     ): String = listOf(
         savedName,
         lookedUpName?.takeUnless { it.trim() == phoneNumber?.trim() },
         peer,
         phoneNumber,
+        legacyFilenameContact(fileName),
     ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) } ?: "Unknown contact"
+
+    private fun legacyFilenameContact(fileName: String?): String? {
+        val name = fileName ?: return null
+        val raw = Regex("^\\d{8}_\\d{6}_(?:IN|OUT|VOIP)_(.+)\\.(?:m4a|ogg)$", RegexOption.IGNORE_CASE)
+            .matchEntire(name)?.groupValues?.get(1) ?: return null
+        return raw.replace('_', ' ').trim().takeIf { it.isNotBlank() }
+    }
 
     fun direction(direction: CallDirection, callFlowDirection: String?): String = when (direction) {
         CallDirection.INCOMING -> "Incoming"
         CallDirection.OUTGOING -> "Outgoing"
-        CallDirection.VOIP -> when (callFlowDirection?.uppercase(Locale.ROOT)) {
+        CallDirection.VOIP, CallDirection.UNKNOWN -> when (callFlowDirection?.uppercase(Locale.ROOT)) {
             "INCOMING" -> "Incoming"
             "OUTGOING" -> "Outgoing"
-            else -> "VoIP"
+            else -> if (direction == CallDirection.VOIP) "VoIP" else "Unknown direction"
         }
-        CallDirection.UNKNOWN -> "Unknown direction"
     }
 
     fun source(
