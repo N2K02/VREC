@@ -1393,7 +1393,7 @@ public final class Main {
             File healthFile = new File(REC_DIR, name + ".health");
             String kind = app == null ? SimAudioCapture.label(simCaptureMode) : "VOIP_PLAYBACK_MIC";
             try (FileOutputStream info = new FileOutputStream(healthFile)) {
-                info.write((kind + " | " + summary + " | " + health.verdict() + "\\n")
+                info.write((kind + " | " + summary + " | " + health.verdict() + "\n")
                         .getBytes(StandardCharsets.UTF_8));
             } catch (IOException e) {
                 Ln.w("recording: could not save audio diagnostic " + e);
