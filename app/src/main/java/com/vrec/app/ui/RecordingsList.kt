@@ -319,17 +319,23 @@ fun RecordingsList() {
 
     when {
         recordings.isEmpty() -> {
-            Card(shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Filled.FolderOpen, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                    Text("No recordings yet", style = MaterialTheme.typography.titleMedium)
-                    Text("New recordings will appear here.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Keep the count and Refresh at the top, but center the empty state
+            // within the remaining available height rather than under the header.
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Card(shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                        Text("No recordings yet", style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center)
+                        Text("New recordings will appear here.",
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }

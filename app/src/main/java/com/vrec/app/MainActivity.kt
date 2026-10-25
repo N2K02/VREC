@@ -82,6 +82,10 @@ import kotlinx.coroutines.delay
 import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
@@ -94,6 +98,8 @@ import com.vrec.app.update.UpdateScreen
 private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
+    private var adbRecoveryJob: kotlinx.coroutines.Job? = null
+
     companion object {
         const val ACTION_OPEN_ADB_SETUP = "com.vrec.app.action.OPEN_ADB_SETUP"
     }
@@ -123,6 +129,20 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         LiveUpdater.onResume(this)
+        adbRecoveryJob?.cancel()
+        adbRecoveryJob = lifecycleScope.launch {
+            while (isActive) {
+                runCatching { AdbHelperAutoRecovery.check(applicationContext) }
+                    .onFailure { Log.w("ADB helper recovery failed", it) }
+                delay(30_000L)
+            }
+        }
+    }
+
+    override fun onPause() {
+        adbRecoveryJob?.cancel()
+        adbRecoveryJob = null
+        super.onPause()
     }
 }
 
