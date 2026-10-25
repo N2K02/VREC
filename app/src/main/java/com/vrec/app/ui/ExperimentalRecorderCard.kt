@@ -51,8 +51,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.ExperimentalRecording
-import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
-import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -78,9 +76,6 @@ fun ExperimentalRecorderCard() {
         ActivityResultContracts.RequestPermission(),
     ) { networkAllowed = it }
     val state by ExperimentalRecording.status.collectAsState()
-    val recorderMessage by ExperimentalCaptureDaemon.message.collectAsState()
-    val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     var adbMode by rememberSaveable {
         mutableStateOf(if (ExperimentalRecording.preferredTransport(context) ==
             ExperimentalRecording.Transport.TCP) "tcp" else "wireless")
@@ -401,47 +396,8 @@ fun ExperimentalRecorderCard() {
                     }
                 }
 
-                HorizontalDivider()
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        if (recorderReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Column {
-                        Text("Enhanced recording helper", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            when {
-                                helperState == AdbPrivilegedApiHelper.State.STARTING -> "Starting…"
-                                recorderReady && helperState == AdbPrivilegedApiHelper.State.RUNNING -> "Ready"
-                                helperState == AdbPrivilegedApiHelper.State.ERROR -> "Needs attention"
-                                helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB -> "Needs ADB to start"
-                                else -> "Not running"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                if (helperState == AdbPrivilegedApiHelper.State.ERROR ||
-                    helperState == AdbPrivilegedApiHelper.State.STARTING) {
-                    Text(
-                        recorderMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    "The helper starts automatically after ADB verification. " +
-                        "Use Home to control recording. Two-sided audio remains unverified " +
-                        "until a real consented call is played back.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                // Detailed helper health is on Home; the setup checklist above remains
+                // the single source for authorization and advanced-access steps.
             localError?.let {
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
