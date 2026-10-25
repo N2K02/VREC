@@ -910,6 +910,21 @@ private fun RecordingDetailsDialog(
                 RecordingDetailSection("Audio & file") {
                     DetailLine("Recording type", rec.recordingType?.name)
                     DetailLine("Source", rec.sourceLabel)
+                    DetailLine("Capture diagnostics", rec.audioHealth)
+                    if (rec.audioHealthWarning) {
+                        Text(
+                            "Audio warning: one or both channels were quiet, or clipping was detected. " +
+                                "Channel activity does not prove both participants were recorded.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else if (rec.audioHealth != null) {
+                        Text(
+                            "PCM diagnostics describe sound levels only; verify both voices by listening.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     DetailLine("Filename", rec.file.name)
                     DetailLine("Size", rec.sizeBytes.takeIf { it > 0 }?.let(::formatSize))
                     DetailLine("Audio", when {
