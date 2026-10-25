@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.LinearProgressIndicator
 import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.EnhancedCapturePreferences
+import com.vrec.app.experimental.daemon.SimCaptureSource
 import android.os.Build
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
@@ -140,6 +142,10 @@ fun SettingsScreen(
     var autoSpeaker by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_SPEAKER, false)) }
     var inComm by remember { mutableStateOf(prefs.getBoolean(Prefs.IN_COMM_MODE, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
+    var simCaptureSource by remember { mutableStateOf(EnhancedCapturePreferences.simSource(context)) }
+    val voipArmed by ExperimentalCaptureDaemon.voipArmed.collectAsState()
+    val voipMessage by ExperimentalCaptureDaemon.voipMessage.collectAsState()
+    val simSourceMessage by ExperimentalCaptureDaemon.simSourceMessage.collectAsState()
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
     val overlayPermissionGranted = remember(resumeTick) {
@@ -297,6 +303,28 @@ fun SettingsScreen(
                     advancedEnabled = advancedDetectionEnabled,
                 )
                 ExperimentalRecorderCard()
+                SettingCard("Enhanced SIM capture source") {
+                    Text(
+                        "Select the shell's call-audio source. This does not use VRec's " +
+                            "standard microphone source setting. Availability depends on Android and your phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SimCaptureSource.entries.forEach { option ->
+                        SourceOption(option.description, option.name, simCaptureSource.name) { chosen ->
+                            simCaptureSource = SimCaptureSource.from(chosen)
+                            EnhancedCapturePreferences.setSimSource(context, simCaptureSource)
+                            scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
+                        }
+                    }
+                    Text(
+                        "Dual captures uplink and downlink as separate stereo channels. " +
+                            "A selected source may be unavailable or silent on some phones; " +
+                            "changes during a call apply after the call ends. " + simSourceMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 // The advanced Telecom AppOp requires its own explicit consent.
                 TelecomAdbInstructionCard(onAccessChanged = { permissionCheckTick++ })
         }
@@ -304,9 +332,32 @@ fun SettingsScreen(
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
                 "Record VoIP calls",
-                "WhatsApp, Telegram and similar. Call detection uses Notification access; capturing the other voice depends on Android audio restrictions.",
+                if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB)
+                    "Use the independent ADB helper for supported apps on Android 14+, " +
+                        "when voice playback capture is permitted. Otherwise standard recording is used."
+                else "Standard recording uses call notifications and the phone microphone.",
                 recordVoip,
-            ) { recordVoip = it; putBool(Prefs.RECORD_VOIP, it) }
+            ) {
+                recordVoip = it
+                putBool(Prefs.RECORD_VOIP, it)
+                if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                    scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
+                }
+            }
+            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                Text(
+                    if (Build.VERSION.SDK_INT < 34)
+                        "Enhanced VoIP playback capture requires Android 14 or newer; standard capture may still work."
+                    else if (voipArmed) "Enhanced ADB VoIP ready · WhatsApp, Telegram, Signal, Viber and other supported apps."
+                    else voipMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("The shell uses its own microphone path for your voice. " +
+                    "VRec's microphone permission remains optional for standard fallback.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (recordVoip) {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
