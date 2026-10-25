@@ -1111,6 +1111,11 @@ public final class Main {
      * watches nothing.
      */
     private static final int COMMAND_SET_VOIP = 'V';
+    /** Set the next SIM call's AudioRecord source without restarting the shell helper. */
+    private static final int COMMAND_SET_SIM_SOURCE = 'Y';
+    /** Read the completed recording's short diagnostic sidecar. */
+    private static final int COMMAND_HEALTH = 'H';
+    private static volatile int simCaptureMode = SimAudioCapture.VOICE_CALL;
     private static final String VOIP_ENV = "VREC_VOIP";
     /** In a messenger call's rec-file name, before the app: vrec_rec_<ms>_voip-<app>.dat */
     private static final String VOIP_TAG = "_voip-";
@@ -1323,8 +1328,9 @@ public final class Main {
             // never change it. It answered before the off-hook that starts
             // this, so it is known now; any other call is not looked at.
             AnswerMachine machine = answerMachine;
+            int captureMode = simCaptureMode;
             AudioCapture capture = app != null ? Voip.newCapture()
-                    : new AudioDirectCapture(AUDIO_SOURCE);
+                    : SimAudioCapture.create(captureMode);
             if (capture == null) {
                 throw new IllegalStateException("messenger calls are not armed");
             }
@@ -1380,7 +1386,18 @@ public final class Main {
             }
             closeQuietly(out);
             Ln.i("recording: stopped -> " + name + " (" + file.length() + " bytes)");
-            Ln.i(channelHealth.snapshot().summary());
+            PcmChannelHealth.Snapshot health = channelHealth.snapshot();
+            String summary = health.summary();
+            Ln.i(summary);
+            // Only diagnostic metrics, not audio samples, identity or a call-log entry.
+            File healthFile = new File(REC_DIR, name + ".health");
+            String kind = app == null ? SimAudioCapture.label(simCaptureMode) : "VOIP_PLAYBACK_MIC";
+            try (FileOutputStream info = new FileOutputStream(healthFile)) {
+                info.write((kind + " | " + summary + " | " + health.verdict() + "\\n")
+                        .getBytes(StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                Ln.w("recording: could not save audio diagnostic " + e);
+            }
         }
     }
 
@@ -1997,6 +2014,41 @@ public final class Main {
             client.getOutputStream().flush();
             return;
         }
+        if (command == COMMAND_SET_SIM_SOURCE) {
+            int choice = client.getInputStream().read();
+            String replyValue;
+            synchronized (Main.class) {
+                if (activeRecording != null || callActive) {
+                    replyValue = "SOURCE BUSY";
+                } else if (SimAudioCapture.valid(choice)) {
+                    simCaptureMode = choice;
+                    replyValue = "SOURCE " + choice;
+                } else {
+                    replyValue = "SOURCE INVALID";
+                }
+            }
+            reply(client, replyValue);
+            return;
+        }
+        if (command == COMMAND_HEALTH) {
+            String name = readName(client);
+            File file = recFileFor(name);
+            if (file == null || !file.exists() || name.equals(activeName())) {
+                reply(client, "UNAVAILABLE");
+                return;
+            }
+            File sidecar = new File(REC_DIR, name + ".health");
+            if (!sidecar.isFile() || sidecar.length() > 1024) {
+                reply(client, "UNAVAILABLE");
+                return;
+            }
+            byte[] bytes = new byte[(int) sidecar.length()];
+            try (java.io.FileInputStream in = new java.io.FileInputStream(sidecar)) {
+                int read = in.read(bytes);
+                reply(client, read > 0 ? new String(bytes, 0, read, StandardCharsets.UTF_8).trim() : "UNAVAILABLE");
+            }
+            return;
+        }
         if (command == COMMAND_SET_VOIP) {
             // The messenger apps whose calls to record, comma-separated.
             Set<String> apps = Voip.parse(readName(client));
@@ -2051,6 +2103,7 @@ public final class Main {
             String name = readName(client);
             File file = recFileFor(name);
             boolean ok = !name.equals(activeName()) && file != null && file.delete();
+            if (ok) new File(REC_DIR, name + ".health").delete();
             Ln.i("session: delete " + name + " -> " + ok);
             client.getOutputStream().write((ok ? "OK\n" : "NO\n").getBytes("UTF-8"));
             client.getOutputStream().flush();
