@@ -218,6 +218,7 @@ public final class Main {
             String token = System.getenv(TOKEN_ENV);
             appToken = token == null ? "" : token;
             recordingMode = modeFromEnvironment(System.getenv(MODE_ENV));
+            requireOutgoingAnswer = "1".equals(System.getenv("VREC_WAIT_OUTGOING"));
             trackingOn = "1".equals(System.getenv(TRACK_ENV));
             answerSettings = AnswerSettings.parse(System.getenv(ANSWER_ENV));
 
@@ -1016,6 +1017,8 @@ public final class Main {
     /** On-demand: the app tells the daemon to start recording the call in
      *  progress, once the user has said yes to the start-of-call prompt. */
     private static final int COMMAND_START = 'S';
+    /** App-side Telecom observer verified an outgoing call is ACTIVE. */
+    private static final int COMMAND_ANSWERED = 'C';
 
     /**
      * Report on the call watch, for the app's self-test.
@@ -1067,6 +1070,10 @@ public final class Main {
     private static final int MODE_ON_DEMAND = 2;
     private static final String MODE_ENV = "VREC_MODE";
     private static volatile int recordingMode = MODE_OFF;
+    /** Updated by the authenticated E command when the Telecom AppOp changes. */
+    private static volatile boolean requireOutgoingAnswer;
+    private static final AnsweredCallGate answerGate = new AnsweredCallGate();
+    private static volatile long recentlyConfirmedAnswerAt;
 
     /** The call being recorded right now, or null between calls. */
     private static volatile RecordingSession activeRecording;
@@ -1416,6 +1423,9 @@ public final class Main {
             }
             if (!callActive) {
                 callSeq++;
+                answerGate.begin(incoming, app != null, requireOutgoingAnswer,
+                    android.os.SystemClock.elapsedRealtime() - recentlyConfirmedAnswerAt <= 3_000L &&
+                        recentlyConfirmedAnswerAt > 0);
             }
             callActive = true;
             callIncoming = incoming;
@@ -1439,6 +1449,10 @@ public final class Main {
         }
         switch (recordingMode) {
             case MODE_AUTOMATIC:
+                if (answerGate.waiting()) {
+                    Ln.i("recording: outgoing dialing; waiting for Telecom ACTIVE before capture");
+                    break;
+                }
                 String name = beginRecording(incoming, app);
                 if (name != null) {
                     // The app shows a "recording" notification; no audio needed.
@@ -1598,6 +1612,8 @@ public final class Main {
         // happened, and the next one is a whole call away.
         synchronized (Main.class) {
             callActive = false;
+            answerGate.reset();
+            recentlyConfirmedAnswerAt = 0;
             endedSeq = callSeq;
             app = callVoipApp;
             callVoipApp = null;
@@ -1843,9 +1859,12 @@ public final class Main {
         }
         if (command == COMMAND_SET_ENABLED) {
             int value = client.getInputStream().read();
+            int waitFlag = client.getInputStream().read();
             synchronized (Main.class) {
-                if (value >= MODE_OFF && value <= MODE_ON_DEMAND) {
+                if (value >= MODE_OFF && value <= MODE_ON_DEMAND &&
+                        (waitFlag == 0 || waitFlag == 1)) {
                     recordingMode = value;
+                    requireOutgoingAnswer = waitFlag == 1;
                     Ln.i("session: recording mode = " + recordingMode);
                     if (recordingMode == MODE_OFF && activeRecording != null) {
                         // Home Off must stop an existing recording, not merely
@@ -1858,7 +1877,30 @@ public final class Main {
                     Ln.w("session: ignoring unusable recording mode " + value + ", still " + recordingMode);
                 }
             }
-            client.getOutputStream().write((recordingMode + "\n").getBytes("UTF-8"));
+            client.getOutputStream().write(
+                (recordingMode + " WAIT " + (requireOutgoingAnswer ? "1" : "0") + "\n")
+                    .getBytes("UTF-8"));
+            client.getOutputStream().flush();
+            return;
+        }
+        if (command == COMMAND_ANSWERED) {
+            String started = null;
+            synchronized (Main.class) {
+                // An ACTIVE event can reach the app just before Telephony sends
+                // OFFHOOK. Remember it briefly to tolerate that ordering.
+                if (!callActive) {
+                    recentlyConfirmedAnswerAt = android.os.SystemClock.elapsedRealtime();
+                } else if (callVoipApp == null && !callIncoming &&
+                        recordingMode == MODE_AUTOMATIC && answerGate.confirm()) {
+                    started = beginRecording(false, null);
+                }
+            }
+            if (started != null) {
+                wake(ACTION_CALL_STARTED, false, started, null);
+                Ln.i("recording: confirmed outgoing answer -> " + started);
+            }
+            client.getOutputStream().write(
+                ("ANSWER " + (started != null ? "STARTED" : "ACK") + "\n").getBytes("UTF-8"));
             client.getOutputStream().flush();
             return;
         }

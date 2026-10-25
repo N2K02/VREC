@@ -107,7 +107,9 @@ object CallMonitor {
             session.nameSource = "telecom"
         }
         val wasActive = session.active
-        session.active = state == Call.STATE_ACTIVE || state == Call.STATE_HOLDING
+        // HOLD is not proof that a newly observed outgoing call was answered.
+        session.active = state == Call.STATE_ACTIVE ||
+            (state == Call.STATE_HOLDING && wasActive)
         if (session.active && !wasActive) {
             session.connectedAt = connectedAt ?: System.currentTimeMillis()
         }
@@ -135,6 +137,17 @@ object CallMonitor {
             if (autoAttempted.remove(legacy.id)) autoAttempted.add(id)
             sessions.remove(legacy.id)
         }
+        // The shell's off-hook signal is early for outgoing calls. Forward the
+        // authoritative ACTIVE transition over the authenticated loopback link.
+        // The shell ignores stale, repeated, incoming, and non-pending signals.
+        if (!wasActive && state == Call.STATE_ACTIVE && !voip &&
+            flow == CallDirection.OUTGOING &&
+            Prefs.experimentalCallDetection(context)) {
+            val app = context.applicationContext
+            modeScope.launch {
+                ExperimentalCaptureDaemon.confirmOutgoingAnswered(app)
+            }
+        }
         Log.i("Telecom call state=$state voip=$voip app=" + (packageName ?: "unknown") +
             " namePresent=" + (session.name != null) + " numberPresent=" + (session.number != null))
         reconcile(context)
@@ -159,6 +172,16 @@ object CallMonitor {
             }
             "OFFHOOK" -> {
                 if (sessions.values.any { it.source == Source.TELECOM && !it.isVoip }) return
+                if (OutgoingCallStartPolicy.waitForTelecomAnswer(
+                        incomingRang = sawRinging,
+                        telecomObserverBound = telecomBound,
+                        advancedDetectionAvailable = Prefs.experimentalCallDetection(context) &&
+                            CallDetectionAccess.isGranted(context))) {
+                    // For outgoing calls, OFFHOOK includes dialing. Wait for
+                    // Telecom STATE_ACTIVE instead of opening a silent recording.
+                    Log.i("Outgoing call off-hook: waiting for Telecom answer confirmation")
+                    return
+                }
                 val session = sessions.getOrPut("sim-legacy") {
                     Session("sim-legacy", Source.SIM, direction =
                         if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING)

@@ -30,6 +30,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Verify shell-side answered-call state machine
+        run: |
+          mkdir -p "$RUNNER_TEMP/vrec-shell-regression"
+          javac -d "$RUNNER_TEMP/vrec-shell-regression" \
+            shellserver/src/com/vrec/app/shell/AnsweredCallGate.java \
+            shellserver/tests/AnsweredCallGateTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.AnsweredCallGateTest
+
       - name: Build debug APK
         run: |
           chmod +x gradlew

@@ -195,3 +195,22 @@ other GPL-only projects served as design references rather than copied code.
 
 **Do not merge this experimental PR into stable until current CI and
 real-device tests have passed.**
+
+## Experimental overlay and answered-call regression safeguards
+
+- Compact floating controls now default to **on**, but Android's separate
+  **Display over other apps** permission is still required; an explicit
+  user-disabled value is preserved. The far-right three-dot grip and status
+  indicator move the controls and remember a position safely clamped to
+  the display after rotation.
+- Outgoing cellular calls with **enabled, authorized non-UI Telecom detection**
+  wait for the actual `Call.STATE_ACTIVE` event. OFFHOOK alone is *dialing*,
+  not an answer. A verified ACTIVE signal reaches the shell recorder via an
+  authenticated loopback command. Incoming calls start on their off-hook state.
+- When advanced Telecom observation is unavailable, Android exposes only the
+  coarser OFFHOOK signal; the legacy immediate fallback remains, and its precise
+  connection timing cannot be guaranteed. If an older shell helper is still
+  running, its mode handshake may need refreshing after upgrading the APK.
+- CI includes JVM tests for gate transitions, no double starts, Home-off/legacy
+  conditions, draggable overlay bounds, and the default enabled setting.
+  Real-device tests are still needed for OEM call states and overlay permission.

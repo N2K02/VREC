@@ -10,6 +10,7 @@ import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingStore
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.calls.CallDetectionAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,6 +134,16 @@ object ExperimentalCaptureDaemon {
             else -> error("Standard mode does not need the shell daemon")
         }
 
+    /**
+     * With authorized advanced Telecom detection, outgoing OFFHOOK is only
+     * dialing. The shell must wait for InCallService STATE_ACTIVE.
+     * Without the observer, the existing OFFHOOK fallback remains in place.
+     */
+    private fun requireOutgoingAnswer(context: Context): Boolean =
+        Prefs.experimentalCallDetection(context) &&
+            CallDetectionAccess.isGranted(context) &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+
     private fun shouldArmForNextCall(context: Context): Boolean =
         Prefs.recordingEnabled(context) &&
             !AdbFallbackNotice.active.value &&
@@ -164,6 +175,7 @@ object ExperimentalCaptureDaemon {
             check("STAGED" in copy) { "Could not stage capture jar: " + copy }
             val launch = "VREC_TOKEN=" + token(context) +
                 " VREC_MODE=" + (if (shouldArmForNextCall(context)) "1" else "0") +
+                " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
                 " VREC_TRACK=0 VREC_VOIP='' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
@@ -202,9 +214,16 @@ object ExperimentalCaptureDaemon {
                         RecordingService.state.value is RecordingService.State.Idle
                 else shouldArmForNextCall(context)
             runCatching {
-                open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
-                    val confirmedMode = it.getInputStream().bufferedReader().readLine()?.trim()
-                    confirmedMode == if (allowed) "1" else "0"
+                val waitForAnswer = allowed && requireOutgoingAnswer(context)
+                open(context, 'E', byteArrayOf(
+                        if (allowed) 1 else 0,
+                        if (waitForAnswer) 1 else 0,
+                    )).use {
+                    val confirmed = it.getInputStream().bufferedReader().readLine()?.trim()
+                    // A previous daemon may only know the old one-byte protocol.
+                    // Don't claim the precise answered-call guarantee in that case.
+                    confirmed == "${if (allowed) 1 else 0} WAIT ${if (waitForAnswer) 1 else 0}" ||
+                        (!waitForAnswer && confirmed == if (allowed) "1" else "0")
                 }
             }.getOrDefault(false)
         }
@@ -255,6 +274,19 @@ object ExperimentalCaptureDaemon {
                     attrs["watching"] == "1" && attrs["looper"] == "ok" &&
                         attrs["call"] == "1" && attrs["recording"] == "0" &&
                         attrs["mode"] == "0"
+                }
+            }.getOrDefault(false)
+        }
+
+    /** Confirm an outgoing cellular call really connected, not merely went OFFHOOK. */
+    suspend fun confirmOutgoingAnswered(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!Prefs.recordingEnabled(context) ||
+                ExperimentalRecording.method(context) != ExperimentalRecording.Method.BUILT_IN_ADB ||
+                !requireOutgoingAnswer(context)) return@withContext false
+            runCatching {
+                open(context, 'C').use { socket ->
+                    socket.getInputStream().bufferedReader().readLine()?.startsWith("ANSWER ") == true
                 }
             }.getOrDefault(false)
         }

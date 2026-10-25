@@ -19,6 +19,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Verify shell-side answered-call state machine
+        run: |
+          mkdir -p "$RUNNER_TEMP/vrec-shell-regression"
+          javac -d "$RUNNER_TEMP/vrec-shell-regression" \
+            shellserver/src/com/vrec/app/shell/AnsweredCallGate.java \
+            shellserver/tests/AnsweredCallGateTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.AnsweredCallGateTest
       - name: Compile and test without publishing
         run: |
           if [ -f ./gradlew ]; then
