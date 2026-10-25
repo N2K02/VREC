@@ -277,7 +277,10 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
-                Screen.SETUP -> SetupScreen()
+                Screen.SETUP -> SetupScreen(onOpenAdbSetup = {
+                    navigateTo(Screen.SETTINGS)
+                    settingsSection = "Experimental"
+                })
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,
                     onSectionChange = { settingsSection = it },
@@ -454,6 +457,7 @@ private fun HomeScreen(
                             else if (recording && standardFallback)
                                 "ADB helper unavailable · recording with the microphone"
                             else if (ready) "Keep your calls saved privately on this device"
+                            else if (adbSelected) "Authorize the enhanced ADB shell helper to begin"
                             else "Enable microphone and call access to begin",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -652,8 +656,11 @@ private fun SetupPromptCard(onOpenSetup: () -> Unit) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Finish setup", style = MaterialTheme.typography.titleMedium)
             Text(
-                "VREC needs the microphone permission and its accessibility service switched on " +
-                    "before it can record calls.",
+                if (ExperimentalRecording.method(LocalContext.current) ==
+                    ExperimentalRecording.Method.BUILT_IN_ADB)
+                    "Enhanced ADB mode needs call detection and an authorized shell helper. " +
+                        "Microphone access is optional for standard fallback."
+                else "Standard recording needs microphone, phone-state and Accessibility access.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(onClick = onOpenSetup) { Text("Open setup") }
@@ -661,17 +668,22 @@ private fun SetupPromptCard(onOpenSetup: () -> Unit) {
     }
 }
 
-/** Mic + accessibility together are the minimum for recording to work. */
+/** Readiness depends on the capture method; ADB shell capture does not need app microphone access. */
 fun isReady(context: Context): Boolean {
-    val mic = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     val phone = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+    if (ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB) {
+        return phone && ExperimentalCaptureDaemon.ready.value &&
+            AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING
+    }
+    val mic = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     val accessibility = com.vrec.app.calls.VrecAccessibilityService.isEnabled(context)
     return mic && phone && accessibility
 }
 
-/** Build the runtime permission set VREC asks for, by SDK level. */
-fun corePermissions(): Array<String> = buildList {
-    add(Manifest.permission.RECORD_AUDIO)
+/** Only prompt for microphone with Standard mode; enhanced ADB may request it for fallback separately. */
+fun corePermissions(context: Context): Array<String> = buildList {
+    if (ExperimentalRecording.method(context) == ExperimentalRecording.Method.STANDARD)
+        add(Manifest.permission.RECORD_AUDIO)
     add(Manifest.permission.READ_PHONE_STATE)
     add(Manifest.permission.READ_CALL_LOG)
     add(Manifest.permission.READ_CONTACTS)
