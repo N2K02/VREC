@@ -36,6 +36,32 @@ object ExperimentalRecording {
     private const val PREFERENCES = "vrec_experimental_recorder"
     private const val METHOD_KEY = "recorder_method"
     private const val TRANSPORT_KEY = "last_adb_transport"
+    private const val AUTO_RECOVERY_KEY = "auto_reconnect_after_verified_adb"
+    private const val VERIFIED_WIRELESS_KEY = "verified_wireless_adb"
+    private const val VERIFIED_TCP_KEY = "verified_tcp_adb"
+
+    data class RecoveryAuthorization(
+        val allowed: Boolean,
+        val wirelessVerified: Boolean,
+        val tcpVerified: Boolean,
+    )
+
+    fun recoveryAuthorization(context: Context): RecoveryAuthorization {
+        val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        return RecoveryAuthorization(
+            allowed = prefs.getBoolean(AUTO_RECOVERY_KEY, false),
+            wirelessVerified = prefs.getBoolean(VERIFIED_WIRELESS_KEY, false),
+            tcpVerified = prefs.getBoolean(VERIFIED_TCP_KEY, false),
+        )
+    }
+
+    private fun rememberVerifiedTransport(context: Context, transport: Transport) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putBoolean(AUTO_RECOVERY_KEY, true)
+            .putBoolean(if (transport == Transport.WIRELESS) VERIFIED_WIRELESS_KEY else VERIFIED_TCP_KEY, true)
+            .putString(TRANSPORT_KEY, transport.name)
+            .apply()
+    }
 
     fun preferredTransport(context: Context): Transport {
         val value = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -74,7 +100,10 @@ object ExperimentalRecording {
 
     fun select(context: Context, method: Method) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .edit().putString(METHOD_KEY, method.name).apply()
+            .edit().putString(METHOD_KEY, method.name)
+            .apply {
+                if (method == Method.STANDARD) putBoolean(AUTO_RECOVERY_KEY, false)
+            }.apply()
     }
 
     fun pairedLocally(context: Context): Boolean = AdbIdentity.exists(context)
@@ -83,6 +112,13 @@ object ExperimentalRecording {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) null
         else Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
     }.getOrNull()
+
+    fun usbDebuggingFlag(context: Context): Boolean? = runCatching {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+    }.getOrNull()
+
+    /** For endpoint discovery only, never as evidence of ADB authorization. */
+    fun tcpPortListening(): Boolean = tcpPresent()
 
     private fun tcpPresent(): Boolean = runCatching {
         Socket().use {
@@ -141,11 +177,16 @@ object ExperimentalRecording {
                 ?: IllegalStateException("Android did not confirm advanced detection permission."))
     }
 
-    suspend fun connect(context: Context, manualPort: Int? = null, wirelessOnly: Boolean = false): Result<Int> {
+    suspend fun connect(context: Context, manualPort: Int? = null,
+                        wirelessOnly: Boolean = false, automatic: Boolean = false): Result<Int> {
         val requested = if (wirelessOnly) Transport.WIRELESS else Transport.TCP
-        selectTransport(context, requested)
+        if (automatic) {
+            if (status.value.busy) return Result.failure(IllegalStateException("ADB setup is in progress."))
+        } else {
+            selectTransport(context, requested)
+        }
         status.value = status.value.copy(busy = true, connected = false,
-            connectedTransport = null, shellUid = null,
+            connectedTransport = null, requestedTransport = requested, shellUid = null,
             message = if (wirelessOnly) "Connecting via Wireless debugging…"
                 else "Connecting to TCP/5555. Approve VREC's Android ADB authorization prompt if it appears.")
         val result = withContext(Dispatchers.IO) {
@@ -178,6 +219,11 @@ object ExperimentalRecording {
             )
             return result
         }
+        // Shell UID 2000 was verified. An explicit connection enables future
+        // retries to this transport; background recovery cannot authorize a new one.
+        if (method(context) == Method.BUILT_IN_ADB) {
+            rememberVerifiedTransport(context, requested)
+        }
         // A user explicitly selected Built-in ADB and successfully verified
         // shell UID 2000. Start or reattach the privileged Java helper now,
         // without another button or an unattended ADB bootstrap.
@@ -191,7 +237,9 @@ object ExperimentalRecording {
         else Result.success(Unit)
         // The ADB selection includes consent to configure advanced Telecom
         // detection. Only issue the AppOp command on this verified shell link.
-        val telecom = if (method(context) == Method.BUILT_IN_ADB)
+        // Automated recovery only restores a helper the user had authorized.
+        // Do not silently re-grant an AppOp the user may have revoked.
+        val telecom = if (!automatic && method(context) == Method.BUILT_IN_ADB)
             grantAdvancedDetection(context)
         else Result.success(Unit)
         status.value = status.value.copy(
@@ -201,6 +249,8 @@ object ExperimentalRecording {
                     (helper.exceptionOrNull()?.message ?: "unknown error")
                 telecom.isFailure -> "ADB and helper ready; advanced call detection still needs access: " +
                     (telecom.exceptionOrNull()?.message ?: "permission not confirmed")
+                automatic && method(context) == Method.BUILT_IN_ADB ->
+                    "ADB verified (shell UID 2000). Enhanced helper automatically restored."
                 method(context) == Method.BUILT_IN_ADB ->
                     "ADB verified (shell UID 2000). Helper ready; advanced call detection enabled."
                 else -> "ADB verified (shell UID 2000)."
@@ -212,7 +262,10 @@ object ExperimentalRecording {
     }
 
     /** Ends only VRec's ADB session. The detached shell recorder is not stopped. */
-    suspend fun disconnect() {
+    suspend fun disconnect(context: Context) {
+        // A deliberate Disconnect must not be undone by the foreground retry loop.
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putBoolean(AUTO_RECOVERY_KEY, false).apply()
         status.value = status.value.copy(busy = true, message = "Disconnecting ADB…")
         AdbTransport.close()
         status.value = status.value.copy(
@@ -279,6 +332,7 @@ object ExperimentalRecording {
         val open = withContext(Dispatchers.IO) { tcpPresent() }
         val ok = result.isSuccess && open
         if (ok) {
+            rememberVerifiedTransport(context, Transport.TCP)
             status.value = status.value.copy(
                 busy = true, connected = true, shellUid = 2000,
                 connectedTransport = Transport.TCP, tcpPortOpen = true,
@@ -339,7 +393,7 @@ object ExperimentalRecording {
         return Result.failure(result.exceptionOrNull() ?: IllegalStateException("TCP unavailable"))
     }
 
-    suspend fun disableTcp(): Result<Unit> {
+    suspend fun disableTcp(context: Context): Result<Unit> {
         val authorized = status.value.connected && status.value.shellUid == 2000 &&
             withContext(Dispatchers.IO) { AdbTransport.isConnected }
         if (!authorized) return Result.failure(IllegalStateException(
@@ -366,6 +420,10 @@ object ExperimentalRecording {
                 else -> "TCP/5555 stopped. You may disable USB debugging in Android Settings."
             },
         )
+        if (result.isSuccess && !listening) {
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                .putBoolean(VERIFIED_TCP_KEY, false).apply()
+        }
         return if (result.isFailure) result
             else if (listening) Result.failure(IllegalStateException(
                 "TCP/5555 is still listening; verify debugging settings."

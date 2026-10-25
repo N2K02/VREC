@@ -28,8 +28,12 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
 - `AdbPrivilegedApiHelper.kt` provides authenticated `reconnect()`,
   privileged `startWithAdb()`, and `checkHealth()` states. VRec uses it on
   app-process startup and in the Experimental recording screen.
-  Full background monitoring and privileged automatic restart are **not**
-  implemented; a lost shell process requires renewed authorized ADB access.
+  VRec now also attempts recovery at process startup and periodically while
+  the app is in the foreground. Only an endpoint previously verified as
+  Android shell UID 2000 may bootstrap a missing helper; reconnect retries
+  are rate limited. A missing Android ADB authorization still requires the
+  system prompt and user approval. Android may stop the app process in the
+  background, so this is not an always-on watchdog.
 - Neither the APK nor its helper can start a new shell-UID process without
   already-authorized ADB access. If Android kills the daemon or the phone
   reboots, a fresh privileged start may be necessary.
@@ -98,6 +102,13 @@ changes when enabled by the user, but it is **not** an ADB authorization method,
 cannot summon an RSA prompt without a real ADB request, and must not auto-approve
 security prompts. VRec instead instructs users to watch for Android's prompt
 while the ADB connection is pending.
+
+After a manually verified ADB connection, VRec remembers the verified transport
+and can automatically reconnect/restart a missing helper while running. It
+never enables Wireless/USB debugging or TCP itself. The user may tap Disconnect
+to disable automatic ADB retries until their next explicit Connect. USB
+debugging alone is not an ADB transport: TCP recovery also requires an
+already-listening TCP/5555 endpoint with VRec's ADB key still authorized.
 
 ADB over TCP may listen on LAN interfaces and exposes debugging access to other
 authorized clients. Android may disable legacy TCP mode on reboot, debugging
@@ -172,7 +183,8 @@ compatibility, not a device-specific protected audio entitlement.
 
 Future improvements requested but **not yet implemented** include a stronger
 source-quality selector, validated per-recording audio-source diagnostics,
-metadata-consistency fixes, and fully integrated helper lifecycle recovery.
+metadata-consistency fixes, and OS-scheduled background recovery when the app
+process has been stopped.
 
 ## Attribution
 

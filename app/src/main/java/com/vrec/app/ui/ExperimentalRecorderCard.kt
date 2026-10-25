@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -96,7 +97,7 @@ fun ExperimentalRecorderCard() {
     val resumeTick = rememberOnResumeTick()
     LaunchedEffect(Unit) {
         // The helper's authenticated loopback channel is independent of ADB.
-        AdbPrivilegedApiHelper.reconnect(context)
+        AdbHelperAutoRecovery.check(context)
     }
     LaunchedEffect(resumeTick) {
         // Re-read listener and transport after a Developer options / USB setup visit.
@@ -295,7 +296,7 @@ fun ExperimentalRecorderCard() {
                         onClick = {
                             scope.launch {
                                 localError = null
-                                ExperimentalRecording.disconnect()
+                                ExperimentalRecording.disconnect(context)
                             }
                         },
                     ) { Text("Disconnect ADB") }
@@ -331,6 +332,13 @@ fun ExperimentalRecorderCard() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    if (ExperimentalRecording.recoveryAuthorization(context).allowed)
+                        "Auto recovery is enabled for previously verified ADB connections while VRec is running."
+                    else "Connect once to enable automatic helper recovery. Disconnect disables automatic retries.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 TextButton(onClick = { showAdvanced = !showAdvanced }) {
                     Text(if (showAdvanced) "Hide TCP/5555 settings" else "Advanced TCP/5555 settings")
                 }
@@ -360,7 +368,7 @@ fun ExperimentalRecorderCard() {
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 scope.launch {
-                                    ExperimentalRecording.disableTcp().onFailure {
+                                    ExperimentalRecording.disableTcp(context).onFailure {
                                         localError = it.message
                                     }
                                 }

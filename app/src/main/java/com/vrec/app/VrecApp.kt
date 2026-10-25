@@ -2,8 +2,7 @@ package com.vrec.app
 
 import android.app.Application
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
-import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,16 +12,11 @@ class VrecApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppUpdater.init(this, repo = "N2K02/VREC", appName = "VREC")
-        // Recheck the local shell daemon after process restart without ADB.
+        // Reattach an existing helper at process start. If it was killed,
+        // retry only a connection the user previously authorized.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            runCatching {
-                // Reconnect to an already-running shell Java service over the
-                // authenticated loopback channel; no active ADB session needed.
-                // If it is gone, do not silently reopen debugging or re-arm calls.
-                if (AdbPrivilegedApiHelper.reconnect(applicationContext)) {
-                    ExperimentalCaptureDaemon.collect(applicationContext)
-                }
-            }
+            runCatching { AdbHelperAutoRecovery.check(applicationContext) }
+                .onFailure { Log.w("ADB helper recovery failed", it) }
         }
     }
 }
