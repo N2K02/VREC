@@ -500,7 +500,7 @@ private fun RecordingRow(
         }
     }
     val displayedContact = RecordingListLabels.contact(
-        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber,
+        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
     )
     val callDirection = RecordingListLabels.direction(rec.direction, rec.callFlowDirection)
     val callSource = RecordingListLabels.source(
