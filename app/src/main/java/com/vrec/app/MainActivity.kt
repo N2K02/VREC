@@ -61,6 +61,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -71,6 +72,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -84,6 +86,9 @@ import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -260,7 +265,14 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(onOpenSetup = { navigateTo(Screen.SETUP) }, onNavigate = { navigateTo(it) })
+                Screen.HOME -> HomeScreen(
+                    onOpenSetup = { navigateTo(Screen.SETUP) },
+                    onNavigate = { navigateTo(it) },
+                    onOpenExperimental = {
+                        navigateTo(Screen.SETTINGS)
+                        settingsSection = "Experimental"
+                    },
+                )
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
@@ -368,7 +380,11 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 }
 
 @Composable
-private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
+private fun HomeScreen(
+    onOpenSetup: () -> Unit,
+    onNavigate: (Screen) -> Unit,
+    onOpenExperimental: () -> Unit,
+) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
@@ -376,6 +392,24 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
     val recording = recState !is RecordingService.State.Idle || enhancedActive
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
+    val adbSelected = ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB
+    val adbConnection by ExperimentalRecording.status.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperMessage by ExperimentalCaptureDaemon.message.collectAsState()
+    val connectionScope = rememberCoroutineScope()
+
+    // Observe connection changes while Home is visible. This does not pair, connect,
+    // enable TCP debugging, or start the privileged helper without user consent.
+    LaunchedEffect(adbSelected) {
+        if (adbSelected) {
+            while (true) {
+                ExperimentalRecording.refreshConnectionStatus()
+                AdbPrivilegedApiHelper.checkHealth(context)
+                delay(8_000L)
+            }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -434,6 +468,71 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                         Text("Finish setup")
                     }
                 } else if (recordingEnabled && !enhancedActive) ManualRecordButton(recState)
+            }
+        }
+        if (adbSelected) {
+            val verifiedTcp = adbConnection.connected &&
+                adbConnection.connectedTransport == ExperimentalRecording.Transport.TCP &&
+                adbConnection.shellUid == 2000
+            val helperHealthy = helperReady &&
+                helperState == AdbPrivilegedApiHelper.State.RUNNING
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("ADB helper status", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(
+                        when {
+                            helperHealthy -> "Helper connected and healthy"
+                            helperState == AdbPrivilegedApiHelper.State.STARTING -> "Helper starting"
+                            helperState == AdbPrivilegedApiHelper.State.ERROR -> "Helper needs attention"
+                            helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB -> "Helper needs authorized ADB"
+                            else -> "Helper not connected"
+                        },
+                        color = if (helperHealthy) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        when {
+                            verifiedTcp -> "TCP/5555: connected and verified (shell UID 2000)"
+                            adbConnection.connected && adbConnection.shellUid == 2000 ->
+                                "ADB authorized via Wireless; TCP not connected"
+                            adbConnection.tcpPortOpen ->
+                                "TCP/5555 listening; ADB authorization not verified"
+                            else -> "TCP/5555 not connected"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!helperHealthy && helperMessage.isNotBlank()) {
+                        Text(helperMessage, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Button(
+                            onClick = {
+                                connectionScope.launch {
+                                    ExperimentalRecording.connect(context, 5555, wirelessOnly = false)
+                                }
+                            },
+                            enabled = !adbConnection.busy && !verifiedTcp,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(if (adbConnection.busy) "Connecting…" else if (verifiedTcp) "TCP connected" else "Connect TCP/5555")
+                        }
+                        OutlinedButton(onClick = onOpenExperimental, modifier = Modifier.weight(1f)) {
+                            Text("Experimental setup")
+                        }
+                    }
+                    if (adbConnection.message.isNotBlank() && (!verifiedTcp || !helperHealthy)) {
+                        Text(adbConnection.message, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
         Text("Explore", style = MaterialTheme.typography.titleMedium,
