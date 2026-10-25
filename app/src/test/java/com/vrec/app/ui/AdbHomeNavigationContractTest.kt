@@ -37,18 +37,18 @@ class AdbHomeNavigationContractTest {
         assertTrue(source.contains("settingsSection = \"Experimental\""))
     }
 
-    @Test fun independentHealthAndUsbWirelessGuidance() {
+    @Test fun independentHealthAndUsbOnlyGuidance() {
         val home = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         assertTrue(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
         val quick = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(quick.contains("helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING"))
         assertTrue(quick.contains("adbState.shellUid == 2000"))
         assertTrue(quick.contains("Text(\"USB debugging\""))
-        assertTrue(quick.contains("Text(\"Wireless debugging\""))
+        assertTrue(!quick.contains("Wireless debugging"))
         assertTrue(quick.contains("LocalAdbMiddleware.setup(context)"))
         val experimental = read("app/src/main/java/com/vrec/app/ui/ExperimentalRecorderCard.kt")
         assertTrue(experimental.contains("Text(\"ADB connection\""))
-        assertTrue(experimental.contains("Enable TCP"))
+        assertTrue(experimental.contains("USB-bootstrapped ADB"))
         assertTrue(experimental.contains("One-time USB setup"))
     }
 

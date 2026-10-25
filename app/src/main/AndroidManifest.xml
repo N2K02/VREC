@@ -25,9 +25,7 @@
 
     <!-- In-app updater (same pipeline as the other apps) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Discover local ADB endpoints and support Android 16/17 local-network checks. -->
-    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
-    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <!-- Internet is used for updates; ADB only connects to localhost TCP/5555. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 

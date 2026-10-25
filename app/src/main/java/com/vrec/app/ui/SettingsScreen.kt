@@ -126,7 +126,7 @@ fun SettingsScreen(
         permissionCheckTick++
         scope.launch {
             // A verified existing ADB session can finish setup immediately,
-            // without another pairing step or a manually entered shell command.
+            // without another manual shell command.
             if (method == ExperimentalRecording.Method.BUILT_IN_ADB &&
                 connection.connected && connection.shellUid == 2000) {
                 AdbPrivilegedApiHelper.startWithAdb(context)
@@ -499,7 +499,7 @@ private fun AdbSetupProgressCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             AdbSetupStep("ADB authorization", adbAuthorized,
-                if (adbAuthorized) "Verified" else "Connect using Wireless or TCP/5555")
+                if (adbAuthorized) "Verified" else "Connect USB-bootstrapped localhost TCP/5555")
             AdbSetupStep("Recording helper", helperReady,
                 if (helperReady) "Ready" else "Connect ADB to start or restore")
             AdbSetupStep(

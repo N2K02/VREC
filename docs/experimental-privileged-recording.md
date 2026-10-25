@@ -1,7 +1,7 @@
-# VRec experimental call recording — unified PR #32
+# VRec experimental call recording — PR #40
 
 This document describes the actual experimental implementation and its limitations.
-**PR #32 is the only open experimental PR, targeting `main`.** PRs #19, #23, #26, and #31 are closed as superseded. Stable is unchanged until review and testing.
+**PR #40** targets `main`. Stable is unchanged until review and testing.
 
 ## Recording methods
 
@@ -11,9 +11,7 @@ mic/loudspeaker fallback depends on user settings. Auto mode selects the first
 source that starts and produces measurable sound. A non-silent recording does
 **not** prove that both participants were captured.
 
-**Built-in ADB (opt-in):** VRec pairs with the device's own Android Wireless
-debugging using a bundled ADB client, or connects to an already enabled TCP/5555
-endpoint. After verifying shell UID 2000 it can install and start the bundled
+**Built-in ADB (opt-in):** A trusted USB ADB host first enables TCP/5555. VRec's bundled ADB client then connects only to the phone's localhost TCP/5555 endpoint. After verifying shell UID 2000 it can install and start the bundled
 Apache-2.0 scrcpy/JemRec-derived Java `app_process` recording daemon. The
 daemon captures into a shell-side file, uses a local nonce/HMAC-authenticated
 loopback channel, and imports completed Opus/Ogg audio into VRec's library.
@@ -24,7 +22,7 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
 ### Persistence and `AdbPrivilegedApiHelper`
 
 - A successfully started shell Java process may continue running after the ADB
-  session or Wi-Fi disconnects; it is **not** a permanent system service.
+  session disconnects; it is **not** a permanent system service.
 - `AdbPrivilegedApiHelper.kt` provides authenticated `reconnect()`,
   privileged `startWithAdb()`, and `checkHealth()` states. VRec uses it on
   app-process startup and in the Experimental recording screen.
@@ -51,70 +49,41 @@ integration were removed. A previously saved Shizuku choice migrates to Standard
   Regular recording (default) or ADB privileged helper.
 - **Settings → VoIP** owns the VoIP enable switch and Notification access
   permission, keeping internet-call options out of everyday setup.
-- **Settings → Experimental** owns ADB pairing, Wireless/TCP connection, helper
-  status and optional advanced Telecom AppOp permission. Merely choosing the
+- **Settings → Experimental** owns USB-bootstrapped localhost ADB connection,
+  helper status and optional advanced Telecom AppOp permission. Merely choosing the
   ADB option does not establish elevated access or enable Home recording.
 
-## Built-in ADB setup
+## Built-in USB ADB setup
 
-1. On the main Settings page, choose **ADB privileged helper** under **Recording method**. Then tap **Configure ADB access**, or open Settings → Experimental.
-2. For first-time phone-local authorization, use Android Developer options →
-   Wireless debugging → Pair device with pairing code, preferably in split screen.
-   Enter its temporary pairing code/port in VRec and pair.
-3. Choose **Wireless** or **TCP/5555** in the single-choice connection
-   selector, then tap **Connect**. Wireless uses discovery or an explicitly
-   entered paired port; it does not silently fall back to TCP/5555. TCP requires
-   an already enabled and authorized listener (e.g. `adb tcpip 5555` over USB).
-4. After shell UID 2000 is verified, VRec **automatically starts or reconnects**
-   the enhanced Java helper. The button then changes to **Disconnect ADB**:
-   this closes VRec's ADB session **without stopping the shell helper or an
-   active recording**. Home's Recording switch independently controls capture.
-   Completed shell calls are automatically imported into VRec's recording library
-   by the authenticated call-ended import service, so the extra Import calls
-   button is unnecessary. Complete a consented test call and listen to both
-   participants before relying on this mode.
+1. Select **ADB privileged helper** under Settings → Recording method.
+2. Enable USB debugging in Android Developer options. USB debugging by itself
+   does **not** grant VRec shell permissions.
+3. Use a trusted USB ADB host once, accept Android's authorization prompt for
+   that host, and run `adb tcpip 5555` from it. On a stock USB-only Huawei
+   with no separate host, VRec, Termux and a local container cannot bootstrap
+   this step or emulate a physically connected USB host.
+4. Open VRec Home → **Set up automatically**, or Settings → Experimental →
+   **Connect USB-bootstrapped ADB**. VRec connects only to localhost TCP/5555
+   and verifies Android shell UID 2000, then starts the independent helper.
+   Approve any separate system authorization request for VRec's ADB identity.
+5. After launch, the helper can continue independently of ADB. Disconnecting
+   the embedded ADB client doesn't necessarily stop the shell recorder; the
+   Home master switch controls recording. Saved calls are imported via the
+   authenticated loopback service. Verify both voices on a consented test call.
 
-Switching an existing authorized connection into TCP/5555 restarts `adbd` and
-naturally drops the previous ADB session. VRec sends `tcpip:5555` only after
-explicit confirmation, retries the localhost connection, and requires shell
-UID 2000 before declaring TCP authorized. It remembers TCP as the requested
-transport even if Android restarts but verification fails. TCP socket presence
-alone is **never** proof of ADB authorization or a running recorder helper.
+VRec **does not** provide a wireless connection option, pairing UI, mDNS
+discovery or automatic transport switching. An open TCP socket alone does not
+prove authorization. Recovery requires a previously verified UID-2000
+connection, the expected identity, enabled USB debugging, and a listening
+localhost TCP/5555 endpoint. Manual Disconnect suppresses future reconnect
+attempts. Once the device reboots, a trusted host may be needed again.
 
-#### Phones without Wireless debugging (one-time USB bootstrap)
-
-On devices that do not offer Wireless debugging, Android does not offer an
-ordinary app permission popup that grants a third-party app shell-level ADB.
-Use a trusted computer/USB ADB host and:
-
-1. Enable USB debugging from Developer options and connect the phone to the host.
-2. Approve the system's RSA debugging authorization prompt for that USB host.
-3. Run `adb tcpip 5555` on the host. This is a one-time setup attempt, not
-   something the VRec app can execute before it has its own authorized shell link.
-4. In VRec, select TCP/5555 and tap **Connect TCP/5555**. Android may separately
-   ask for confirmation of **VRec's own ADB key**, which differs from the host key;
-   unlock the device and approve explicitly if shown. Retry after a timeout.
-5. Confirm the screen says **Connected via TCP/5555 · shell UID 2000** before
-   relying on this access for helper startup.
-
-The existing VRec Accessibility service may assist with recognizing UI window
-changes when enabled by the user, but it is **not** an ADB authorization method,
-cannot summon an RSA prompt without a real ADB request, and must not auto-approve
-security prompts. VRec instead instructs users to watch for Android's prompt
-while the ADB connection is pending.
-
-After a manually verified ADB connection, VRec remembers the verified transport
-and can automatically reconnect/restart a missing helper while running. It
-never enables Wireless/USB debugging or TCP itself. The user may tap Disconnect
-to disable automatic ADB retries until their next explicit Connect. USB
-debugging alone is not an ADB transport: TCP recovery also requires an
-already-listening TCP/5555 endpoint with VRec's ADB key still authorized.
-
-ADB over TCP may listen on LAN interfaces and exposes debugging access to other
-authorized clients. Android may disable legacy TCP mode on reboot, debugging
-changes, or OEM policy. **Never enable it without explicit approval**. Turn it
-off after setup when it is no longer needed; disconnecting VRec's ADB session
-alone does not disable the TCP listener.
+ADB-over-TCP may be accessible to devices on the local network, even though
+VRec connects only to localhost. Use trusted networks and disable TCP
+debugging when it is no longer needed. The in-app Disable TCP/5555 action
+can request a return to USB mode only while an authorized shell is connected.
+The Accessibility service named **Vrec call recording helper** is unrelated
+to ADB authorization and cannot bypass Android's security confirmation.
 
 ## Runtime fallback when the ADB helper is unavailable
 
@@ -130,7 +99,7 @@ alone does not disable the TCP listener.
   settings page) actions. Android 13+ requires notification permission for
   this reminder. Home also displays the fallback state while it is recording.
 - No reminder is posted merely because the Home master switch is turned on,
-  or while the enhanced helper remains healthy despite Wi-Fi/ADB transport
+  or while the enhanced helper remains healthy despite the ADB transport
   disconnecting.
 - If ADB is restored during a standard fallback on an ongoing **cellular**
   call, VRec now checks that both the app's call monitor and the shell daemon's
@@ -176,8 +145,8 @@ for every SIM or third-party VoIP app.
 
 Acceptance testing should check: no duplicate recordings; correct caller and
 direction metadata; silent-source fallback; the Home Off guard; in-card player,
-sort/action sheets and existing recordings; privileged ADB pairing, launch,
-loopback reconnect, Wi-Fi loss and TCP security; import and two-sided listening;
+sort/action sheets and existing recordings; USB-bootstrap ADB launch,
+loopback reconnect and TCP security; import and two-sided listening;
 and overlay/master toggle integration. Passing GitHub CI establishes build
 compatibility, not a device-specific protected audio entitlement.
 

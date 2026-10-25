@@ -402,7 +402,7 @@ private fun HomeScreen(
     val helperMessage by ExperimentalCaptureDaemon.message.collectAsState()
     val connectionScope = rememberCoroutineScope()
 
-    // Observe connection changes while Home is visible. This does not pair, connect,
+    // Observe connection changes while Home is visible. This does not connect,
     // enable TCP debugging, or start the privileged helper without user consent.
     LaunchedEffect(adbSelected) {
         if (adbSelected) {

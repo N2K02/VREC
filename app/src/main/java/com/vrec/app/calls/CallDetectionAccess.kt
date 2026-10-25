@@ -22,7 +22,7 @@ object CallDetectionAccess {
         val status = ExperimentalRecording.status.value
         if (!status.connected || status.shellUid != 2000) {
             return Result.failure(IllegalStateException(
-                "Connect Wireless debugging or TCP/5555 first to authorize the special access."))
+                "Connect USB-bootstrapped localhost TCP/5555 first to authorize the special access."))
         }
         return runCatching {
             val command = "appops set ${context.packageName} android:manage_ongoing_calls allow"

@@ -1,49 +1,33 @@
-# VRec in-app ADB quick setup
+# VRec embedded local command runner and USB-bootstrapped ADB
 
-This is part of experimental PR #40; main is unchanged until review.
+VRec has a built-in Android app-shell diagnostic runner and a separate
+embedded ADB client. Neither requires a Termux installation, Windows
+emulator, container or Shizuku. The local diagnostic runner has VRec's
+normal app UID and cannot grant shell UID 2000, root, or protected
+two-way call recording.
 
-## One-tap behavior
+## Home setup
 
-When the user selects Enhanced ADB and taps **Set up automatically** on
-Home, VRec's internal LocalAdbMiddleware first tries to reattach to its own
-authenticated shell recording helper. If it has stopped, the middleware uses
-the already-bundled libadb client to connect to a detectable, user-authorized
-localhost adbd endpoint (TCP/5555 or previously paired Wireless debugging),
-verifies Android shell UID **2000**, then launches the bundled independent
-Java recording daemon. The Home Recording master switch invokes the same
-readiness check when Enhanced ADB is selected.
+In **Enhanced ADB** mode, the Home page shows **ADB quick setup** and
+**USB debugging**. Tap **Set up automatically** or enable the Home
+recording master switch to reattach a running, authorized helper or
+attempt localhost TCP/5555. A successful ADB handshake must return
+Android shell UID 2000 before the independent recording helper starts.
 
-VRec includes a small Termux-style **local diagnostic runner** using the
-phone's own Android command executables. Its commands run under the ordinary
-VRec app UID; it is not root, not shell UID 2000, and cannot start adbd,
-authorize USB, change protected system properties, or capture protected audio.
-No Windows emulator, Termux installation, root, or Shizuku is required for
-these local diagnostics. Privileged shell commands use the existing embedded
-authenticated ADB transport instead of the local diagnostic runner.
+## First-time USB authorization
 
-## First-time authorization
+1. Enable USB debugging in Developer options.
+2. Connect a **trusted external USB ADB host** and authorize it.
+3. On that host, run `adb tcpip 5555` once.
+4. Return to VRec and connect to localhost TCP/5555. Approve any
+   Android authorization prompt for VRec's separate ADB identity.
+5. Test the helper and both audio channels before relying on recording.
 
-* If Wireless debugging is available: enable it in Developer options,
-  pair once with Android's six-digit pairing dialog under
-  Settings → Experimental, then return to Home and use one tap.
-* If TCP/5555 was previously enabled from a trusted ADB host: tap the one-tap
-  action; VRec will try localhost and require shell UID 2000.
-* If a Huawei phone has **USB debugging only** and no TCP listener: no
-  computerless authorization workaround is provided. A local shell,
-  container, adb client binary, or running adb server cannot transform
-  ordinary app access into shell privilege. A separate authorized ADB host
-  is needed once to issue `adb tcpip 5555`, or supported pairing must be
-  made available by the firmware. This is not a one-tap solvable case.
+On an unrooted Huawei with only USB debugging, no separate host and no
+pre-existing TCP listener, an ordinary local Android process cannot
+perform step 3. VRec reports this limitation rather than promising
+that one tap will unlock shell permissions.
 
-USB and Wireless setup cards are deliberately separate and show device
-capabilities without claiming that a debug toggle equals authorization.
-An open TCP socket by itself does not mean the helper is ready. Real-device
-capture reliability and audio HAL support still require testing.
-
-## Consent and safety
-
-The app does not enable Android Developer options, switch debugging
-transports, pair on behalf of the user, or approve ADB prompts. Automatic
-recovery only touches an available locally authorized endpoint; Android's
-prompts and original one-time pairing remain the user's responsibility.
-The detached helper remains independent of Termux/Shizuku.
+No wireless pairing, discovery, network selection, or Wi-Fi-specific
+permissions are used for the ADB connection. TCP/5555 may still expose
+Android debugging beyond localhost; disable it when not needed.

@@ -1,71 +1,34 @@
 package com.vrec.app.experimental.adb
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AdbRecoveryPolicyTest {
-    private fun allowed() = AdbRecoveryPolicy.Conditions(
-        adbMethodSelected = true,
-        recordingEnabled = true,
-        autoRecoveryAllowed = true,
-        connectionBusy = false,
-        pairedIdentityPresent = true,
-        wirelessVerifiedBefore = true,
-        tcpVerifiedBefore = true,
-        wirelessDebuggingEnabled = true,
-        usbDebuggingEnabled = true,
-        tcpPortListening = true,
-        preferred = AdbRecoveryPolicy.Endpoint.WIRELESS,
+    private fun eligible() = AdbRecoveryPolicy.Conditions(
+        adbMethodSelected = true, recordingEnabled = true,
+        autoRecoveryAllowed = true, connectionBusy = false,
+        adbIdentityPresent = true, tcpVerifiedBefore = true,
+        usbDebuggingEnabled = true, tcpPortListening = true,
     )
 
-    @Test fun prefersVerifiedWireless() {
-        assertEquals(listOf(AdbRecoveryPolicy.Endpoint.WIRELESS, AdbRecoveryPolicy.Endpoint.TCP),
-            AdbRecoveryPolicy.availableEndpoints(allowed()))
+    @Test fun restoresOnlyAlreadyAuthorizedUsbBootstrappedTcp() {
+        assertTrue(AdbRecoveryPolicy.shouldRetry(eligible()))
     }
 
-    @Test fun recoversUsingTcpIfWirelessUnavailable() {
-        assertEquals(listOf(AdbRecoveryPolicy.Endpoint.TCP),
-            AdbRecoveryPolicy.availableEndpoints(allowed().copy(wirelessDebuggingEnabled = false)))
+    @Test fun usbDebuggingAndOpenPortAloneAreNeverEnough() {
+        assertFalse(AdbRecoveryPolicy.shouldRetry(eligible().copy(tcpVerifiedBefore = false)))
+        assertFalse(AdbRecoveryPolicy.shouldRetry(eligible().copy(adbIdentityPresent = false)))
     }
 
-    @Test fun neverBootstrapsFromTcpSocketAlone() {
-        assertEquals(emptyList<AdbRecoveryPolicy.Endpoint>(),
-            AdbRecoveryPolicy.availableEndpoints(allowed().copy(
-                tcpVerifiedBefore = false, wirelessDebuggingEnabled = false)))
-    }
-
-    @Test fun usbSwitchAloneIsNotEnoughWithoutListener() {
-        assertEquals(emptyList<AdbRecoveryPolicy.Endpoint>(),
-            AdbRecoveryPolicy.availableEndpoints(allowed().copy(
-                wirelessDebuggingEnabled = false, tcpPortListening = false)))
-    }
-
-    @Test fun requiresSavedPairedIdentity() {
-        assertEquals(emptyList<AdbRecoveryPolicy.Endpoint>(),
-            AdbRecoveryPolicy.availableEndpoints(allowed().copy(pairedIdentityPresent = false)))
-    }
-
-    @Test fun honorsDisconnectAndStandardModeAndHomeOff() {
-        for (conditions in listOf(
-            allowed().copy(autoRecoveryAllowed = false),
-            allowed().copy(adbMethodSelected = false),
-            allowed().copy(recordingEnabled = false),
-            allowed().copy(connectionBusy = true),
-        )) {
-            assertEquals(emptyList<AdbRecoveryPolicy.Endpoint>(),
-                AdbRecoveryPolicy.availableEndpoints(conditions))
-        }
-    }
-
-    @Test fun onlyPreviouslyVerifiedWirelessMayBeUsed() {
-        assertEquals(emptyList<AdbRecoveryPolicy.Endpoint>(),
-            AdbRecoveryPolicy.availableEndpoints(allowed().copy(
-                wirelessVerifiedBefore = false, tcpVerifiedBefore = false)))
-    }
-
-    @Test fun prefersTcpWhenLastVerifiedAndFallsBackToWireless() {
-        assertEquals(listOf(AdbRecoveryPolicy.Endpoint.TCP, AdbRecoveryPolicy.Endpoint.WIRELESS),
-            AdbRecoveryPolicy.availableEndpoints(allowed().copy(
-                preferred = AdbRecoveryPolicy.Endpoint.TCP)))
+    @Test fun disconnectStandardModeHomeOffAndBusyAlwaysBlockRecovery() {
+        listOf(
+            eligible().copy(autoRecoveryAllowed = false),
+            eligible().copy(adbMethodSelected = false),
+            eligible().copy(recordingEnabled = false),
+            eligible().copy(connectionBusy = true),
+            eligible().copy(usbDebuggingEnabled = false),
+            eligible().copy(tcpPortListening = false),
+        ).forEach { assertFalse(AdbRecoveryPolicy.shouldRetry(it)) }
     }
 }

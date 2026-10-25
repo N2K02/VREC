@@ -56,7 +56,7 @@ object LocalAdbMiddleware {
         return AdbTransport.exec(command)
     }
 
-    /** Attempt only available, user-authorized transports; never enable adbd or self-pair. */
+    /** Attempt USB-bootstrapped localhost ADB only; never enable adbd. */
     suspend fun setup(context: Context): Boolean = mutex.withLock {
         val app = context.applicationContext
         busy.value = true
@@ -79,8 +79,6 @@ object LocalAdbMiddleware {
                 verifiedAdbSession = session.connected && session.shellUid == 2000 &&
                     AdbTransport.isConnected,
                 usbDebugging = ExperimentalRecording.usbDebuggingFlag(app) == true,
-                wirelessDebugging = ExperimentalRecording.wirelessDebuggingFlag(app) == true,
-                pairedIdentity = ExperimentalRecording.pairedLocally(app),
                 tcpPortListening = ExperimentalRecording.tcpPortListening(),
             ))
             when (next) {
@@ -94,29 +92,19 @@ object LocalAdbMiddleware {
                         else "Could not start helper: ${result.exceptionOrNull()?.message}"
                     result.isSuccess
                 }
-                LocalAdbSetupPolicy.Next.CONNECT_TCP,
-                LocalAdbSetupPolicy.Next.CONNECT_WIRELESS -> {
-                    val tcp = next == LocalAdbSetupPolicy.Next.CONNECT_TCP
-                    message.value = if (tcp) "Checking authorized TCP/5555…"
-                        else "Connecting to paired Wireless debugging…"
-                    // automatic=true never silently grants the Telecom AppOp.
-                    val result = ExperimentalRecording.connect(
-                        app, manualPort = if (tcp) 5555 else null,
-                        wirelessOnly = !tcp, automatic = true)
+                LocalAdbSetupPolicy.Next.CONNECT_TCP -> {
+                    message.value = "Checking USB-bootstrapped localhost TCP/5555…"
+                    val result = ExperimentalRecording.connect(app, automatic = true)
                     message.value = if (result.isSuccess) "Authorized ADB connected; helper started."
-                        else "ADB could not connect: ${result.exceptionOrNull()?.message}. Open ADB setup."
+                        else "ADB could not connect: ${result.exceptionOrNull()?.message}. Open USB setup."
                     result.isSuccess
-                }
-                LocalAdbSetupPolicy.Next.PAIR_WIRELESS -> {
-                    message.value = "One-time approval needed: open ADB setup and pair with Android's six-digit Wireless debugging code."
-                    false
                 }
                 LocalAdbSetupPolicy.Next.NEED_USB_HOST -> {
                     message.value = "USB debugging is ON, but Android has no local authorized ADB endpoint. A trusted USB ADB host is required once to enable TCP/5555; VRec, Termux and a container cannot do this alone."
                     false
                 }
-                LocalAdbSetupPolicy.Next.ENABLE_DEBUGGING -> {
-                    message.value = "Enable Wireless debugging (if supported) or USB debugging in Developer options, then retry."
+                LocalAdbSetupPolicy.Next.ENABLE_USB_DEBUGGING -> {
+                    message.value = "Enable USB debugging in Developer options and retry."
                     false
                 }
                 LocalAdbSetupPolicy.Next.SELECT_ADB_MODE -> {

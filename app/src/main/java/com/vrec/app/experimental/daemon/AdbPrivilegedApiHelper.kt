@@ -44,7 +44,7 @@ object AdbPrivilegedApiHelper {
         if (!connection.connected || connection.shellUid != 2000) {
             state.value = State.NEEDS_ADB
             return@withLock Result.failure(IllegalStateException(
-                "Connect with Wireless debugging or TCP/5555 first (shell UID 2000)."
+                "Connect to USB-bootstrapped localhost TCP/5555 first (shell UID 2000)."
             ))
         }
         state.value = State.STARTING
