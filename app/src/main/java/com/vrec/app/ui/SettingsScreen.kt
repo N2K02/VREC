@@ -175,16 +175,6 @@ fun SettingsScreen(
                     onSelect = { selectRecordingMethod(ExperimentalRecording.Method.BUILT_IN_ADB) },
                 )
             }
-            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
-                AdbSetupProgressCard(
-                    adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
-                        (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
-                    helperReady = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING,
-                    advancedGranted = advancedPermissionGranted,
-                    advancedEnabled = advancedDetectionEnabled,
-                    onConfigure = { onSectionChange("Experimental") },
-                )
-            }
             listOf(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
@@ -293,6 +283,7 @@ fun SettingsScreen(
 
         if (section == "Experimental") {
             if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                // Full setup checklist lives only here, not on the Settings overview.
                 AdbSetupProgressCard(
                     adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
                         (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
@@ -301,19 +292,17 @@ fun SettingsScreen(
                     advancedEnabled = advancedDetectionEnabled,
                 )
                 ExperimentalRecorderCard()
-                // Advanced AppOp is a separate explicit user action.
+                // The advanced Telecom AppOp requires its own explicit consent.
                 TelecomAdbInstructionCard(onAccessChanged = { permissionCheckTick++ })
             } else {
-                SettingCard("ADB privileged helper") {
-                    Text(
-                        "The ADB helper is off. Select it under Recording method in the main Settings page to configure connection and special access.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(onClick = { onSectionChange(null) }) {
-                        Text("Go to recording method")
-                    }
-                }
+                // A single actionable row replaces a second instructional card.
+                ListItem(
+                    headlineContent = { Text("ADB mode is off") },
+                    supportingContent = { Text("Select ADB privileged helper under Recording method to configure the connection.") },
+                    leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable { onSectionChange(null) },
+                )
             }
         }
 
