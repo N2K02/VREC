@@ -79,6 +79,8 @@ fun SettingsScreen(
     onSectionChange: (String?) -> Unit,
     onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
+    onOpenRecordings: () -> Unit = {},
+    onOpenSetup: () -> Unit = {},
 ) {
     val updateStatus by LiveUpdater.controller.status.collectAsState()
     val context = LocalContext.current
@@ -177,6 +179,20 @@ fun SettingsScreen(
                     onConfigure = { onSectionChange("Experimental") },
                 )
             }
+            ListItem(
+                headlineContent = { Text("Recordings") },
+                supportingContent = { Text("Browse, play and share recorded calls") },
+                leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenRecordings),
+            )
+            ListItem(
+                headlineContent = { Text("Permissions & setup") },
+                supportingContent = { Text("Recorder permissions and accessibility requirements") },
+                leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenSetup),
+            )
             Text("Make recording your own",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
