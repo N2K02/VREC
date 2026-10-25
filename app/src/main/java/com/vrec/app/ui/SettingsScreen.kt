@@ -175,13 +175,16 @@ fun SettingsScreen(
                     onSelect = { selectRecordingMethod(ExperimentalRecording.Method.BUILT_IN_ADB) },
                 )
             }
-            listOf(
+            listOfNotNull(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
-                Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
-                Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
+                if (recordingMethod == ExperimentalRecording.Method.STANDARD)
+                    Triple("Microphone source", "Choose the standard audio input", Icons.Rounded.Tune) else null,
+                if (recordingMethod == ExperimentalRecording.Method.STANDARD)
+                    Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call) else null,
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Experimental", "ADB connection, helper and advanced access", Icons.Rounded.Tune),
+                if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB)
+                    Triple("Experimental", "ADB connection, helper and advanced access", Icons.Rounded.Tune) else null,
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -235,7 +238,8 @@ fun SettingsScreen(
             ) { discardSilent = it; putBool(Prefs.DISCARD_SILENT, it) }
         }
 
-        if (section == "Microphone source") SettingCard("Microphone source") {
+        if (section == "Microphone source" &&
+            recordingMethod == ExperimentalRecording.Method.STANDARD) SettingCard("Microphone source") {
             Text(
                 "Automatic tries each source and keeps the first with sound. Pick one yourself only if you know what works on your phone.",
                 style = MaterialTheme.typography.bodySmall,
@@ -251,7 +255,8 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "Capturing the other side") SettingCard("Capturing the other side") {
+        if (section == "Capturing the other side" &&
+            recordingMethod == ExperimentalRecording.Method.STANDARD) SettingCard("Capturing the other side") {
             ToggleRow(
                 "Put call on loudspeaker",
                 "Last-resort way to catch both sides: the mic records the room. Turns the speaker on while recording and restores it after.",
@@ -281,8 +286,8 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "Experimental") {
-            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+        if (section == "Experimental" &&
+            recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
                 // Full setup checklist lives only here, not on the Settings overview.
                 AdbSetupProgressCard(
                     adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
@@ -294,16 +299,6 @@ fun SettingsScreen(
                 ExperimentalRecorderCard()
                 // The advanced Telecom AppOp requires its own explicit consent.
                 TelecomAdbInstructionCard(onAccessChanged = { permissionCheckTick++ })
-            } else {
-                // A single actionable row replaces a second instructional card.
-                ListItem(
-                    headlineContent = { Text("ADB mode is off") },
-                    supportingContent = { Text("Select ADB privileged helper under Recording method to configure the connection.") },
-                    leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    modifier = Modifier.clickable { onSectionChange(null) },
-                )
-            }
         }
 
         if (section == "VoIP") SettingCard("VoIP") {
