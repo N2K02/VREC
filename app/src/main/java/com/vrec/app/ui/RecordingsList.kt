@@ -96,6 +96,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import com.vrec.app.calls.CallHistoryResolver
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.Recording
 import com.vrec.app.recording.RecordingStore
@@ -116,11 +117,51 @@ fun RecordingsList() {
     val contactsAllowed = remember(tick, contactsPermissionTick) {
         context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
     }
+    val callLogAllowed = remember(tick, contactsPermissionTick) {
+        context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    }
     val contactsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         contactsPermissionTick++
         refresh++
     }
     val recordings = remember(tick, refresh) { RecordingStore.list(context) }
+    // Revisit existing SIM files once the user's call-log grant is available.
+    // The Android call log may be populated after an audio recording is finalized.
+    LaunchedEffect(tick, refresh, callLogAllowed, contactsAllowed) {
+        if (callLogAllowed) {
+            val candidates = recordings.filter {
+                (it.direction == CallDirection.INCOMING || it.direction == CallDirection.OUTGOING) &&
+                    (it.phoneNumber.isNullOrBlank() || it.contactName.isNullOrBlank())
+            }
+            val changed = withContext(Dispatchers.IO) {
+                var updates = 0
+                candidates.forEach { rec ->
+                    val identity = CallHistoryResolver.recover(context.applicationContext, rec)
+                        ?: return@forEach
+                    val previousNumber = rec.phoneNumber
+                    // Never silently replace an explicitly captured or manually edited number.
+                    if (!previousNumber.isNullOrBlank() &&
+                        previousNumber.filter(Char::isDigit) != identity.number.orEmpty().filter(Char::isDigit)) {
+                        return@forEach
+                    }
+                    val resolvedName = rec.contactName?.takeIf { it.isNotBlank() }
+                        ?: identity.name?.takeIf { it.isNotBlank() }
+                    val resolvedNumber = previousNumber?.takeIf { it.isNotBlank() }
+                        ?: identity.number?.takeIf { it.isNotBlank() }
+                    if (resolvedNumber != rec.phoneNumber || resolvedName != rec.contactName) {
+                        RecordingStore.updateDetails(
+                            rec, rec.notes, rec.favorite,
+                            contactName = resolvedName,
+                            phoneNumber = resolvedNumber,
+                        )
+                        updates++
+                    }
+                }
+                updates
+            }
+            if (changed > 0) refresh++
+        }
+    }
     var playingPath by remember { mutableStateOf<String?>(null) }
     var playbackPaused by remember { mutableStateOf(false) }
     var playbackError by remember { mutableStateOf<String?>(null) }
@@ -293,8 +334,9 @@ fun RecordingsList() {
                 Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
             }
         }
-        if (!contactsAllowed && recordings.any { it.direction == CallDirection.INCOMING ||
-                    it.direction == CallDirection.OUTGOING }) {
+        if ((!contactsAllowed || !callLogAllowed) && recordings.any {
+                it.direction == CallDirection.INCOMING || it.direction == CallDirection.OUTGOING
+            }) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 modifier = Modifier.fillMaxWidth(),
@@ -304,9 +346,19 @@ fun RecordingsList() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Allow Contacts to show saved caller names when their numbers are available.",
-                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) }) {
+                    Text(
+                        if (!callLogAllowed)
+                            "Call history access helps recover missing SIM caller numbers."
+                        else
+                            "Allow Contacts to show saved names for recovered numbers.",
+                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = {
+                        contactsLauncher.launch(
+                            if (!callLogAllowed) Manifest.permission.READ_CALL_LOG
+                            else Manifest.permission.READ_CONTACTS,
+                        )
+                    }) {
                         Text("Allow")
                     }
                 }
