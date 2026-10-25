@@ -475,69 +475,8 @@ private fun HomeScreen(
             }
         }
         if (adbSelected) {
-            val verifiedTcp = adbConnection.connected &&
-                adbConnection.connectedTransport == ExperimentalRecording.Transport.TCP &&
-                adbConnection.shellUid == 2000
-            val helperHealthy = helperReady &&
-                helperState == AdbPrivilegedApiHelper.State.RUNNING
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("ADB helper status", style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold)
-                    Text(
-                        when {
-                            helperHealthy -> "Helper connected and healthy"
-                            helperState == AdbPrivilegedApiHelper.State.STARTING -> "Helper starting"
-                            helperState == AdbPrivilegedApiHelper.State.ERROR -> "Helper needs attention"
-                            helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB -> "Helper needs authorized ADB"
-                            else -> "Helper not connected"
-                        },
-                        color = if (helperHealthy) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        when {
-                            verifiedTcp -> "TCP/5555: connected and verified (shell UID 2000)"
-                            adbConnection.connected && adbConnection.shellUid == 2000 ->
-                                "ADB authorized via Wireless; TCP not connected"
-                            adbConnection.tcpPortOpen ->
-                                "TCP/5555 listening; ADB authorization not verified"
-                            else -> "TCP/5555 not connected"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!helperHealthy && helperMessage.isNotBlank()) {
-                        Text(helperMessage, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Button(
-                            onClick = {
-                                connectionScope.launch {
-                                    ExperimentalRecording.connect(context, 5555, wirelessOnly = false)
-                                }
-                            },
-                            enabled = !adbConnection.busy && !verifiedTcp,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(if (adbConnection.busy) "Connecting…" else if (verifiedTcp) "TCP connected" else "Connect TCP/5555")
-                        }
-                        OutlinedButton(onClick = onOpenExperimental, modifier = Modifier.weight(1f)) {
-                            Text("Experimental setup")
-                        }
-                    }
-                    if (adbConnection.message.isNotBlank() && (!verifiedTcp || !helperHealthy)) {
-                        Text(adbConnection.message, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
+            // One-tap, app-integrated command/ADB setup. Advanced options stay in Settings.
+            com.vrec.app.ui.LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)
         }
     }
 }

@@ -26,30 +26,37 @@ class AdbHomeNavigationContractTest {
         assertEquals(2, Regex("AdbSetupProgressCard\\(").findAll(settings).count())
     }
 
-    @Test fun homeConnectsToTcpOnlyWhenAdbMethodSelected() {
+    @Test fun homeUsesSimpleSetupOnlyInAdbMode() {
         val source = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val home = source.substringAfter("private fun HomeScreen(")
             .substringBefore("private fun RecordingMasterCard(")
         assertTrue(home.contains("ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB"))
         assertTrue(home.contains("if (adbSelected) {"))
-        assertTrue(home.contains("ExperimentalRecording.connect(context, 5555, wirelessOnly = false)"))
-        assertTrue(home.contains("enabled = !adbConnection.busy && !verifiedTcp"))
-        assertTrue(home.contains("settingsSection = \"Experimental\"").not()) // Navigation is owned by App.
+        assertTrue(home.contains("LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)"))
         assertTrue(source.contains("onOpenExperimental = {"))
         assertTrue(source.contains("settingsSection = \"Experimental\""))
     }
 
-    @Test fun helperHealthIsIndependentOfAdbAuthorization() {
+    @Test fun independentHealthAndUsbWirelessGuidance() {
         val home = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         assertTrue(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
-        assertTrue(home.contains("helperReady &&"))
-        assertTrue(home.contains("helperState == AdbPrivilegedApiHelper.State.RUNNING"))
-        assertTrue(home.contains("adbConnection.shellUid == 2000"))
-        assertTrue(home.contains("TCP/5555 listening; ADB authorization not verified"))
+        val quick = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        assertTrue(quick.contains("helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING"))
+        assertTrue(quick.contains("adbState.shellUid == 2000"))
+        assertTrue(quick.contains("Text(\"USB debugging\""))
+        assertTrue(quick.contains("Text(\"Wireless debugging\""))
+        assertTrue(quick.contains("LocalAdbMiddleware.setup(context)"))
         val experimental = read("app/src/main/java/com/vrec/app/ui/ExperimentalRecorderCard.kt")
-        assertFalse(experimental.contains("Text(\"Enhanced recording helper\""))
         assertTrue(experimental.contains("Text(\"ADB connection\""))
         assertTrue(experimental.contains("Enable TCP"))
         assertTrue(experimental.contains("One-time USB setup"))
     }
+
+    @Test fun masterSwitchAttemptsLocalSetupBeforeArmingShell() {
+        val monitor = read("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        assertTrue(monitor.contains("LocalAdbMiddleware.setup(appContext)"))
+        assertTrue(monitor.indexOf("LocalAdbMiddleware.setup(appContext)") <
+            monitor.indexOf("applied = ExperimentalCaptureDaemon.setMode("))
+    }
+
 }
