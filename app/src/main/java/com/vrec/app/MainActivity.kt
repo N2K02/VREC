@@ -35,8 +35,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -76,7 +74,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
@@ -229,10 +226,15 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                     ) {
                         listOf(
                             Triple(Screen.HOME, "Home", Icons.Rounded.Home),
+                            Triple(Screen.RECORDINGS, "Recordings", Icons.Rounded.Folder),
                             Triple(Screen.SETTINGS, "Settings", Icons.Rounded.Settings),
                         ).forEach { (destination, label, icon) ->
                             NavigationBarItem(
-                                selected = if (destination == Screen.HOME) screen == Screen.HOME else screen != Screen.HOME,
+                                selected = when (destination) {
+                                    Screen.HOME -> screen == Screen.HOME
+                                    Screen.RECORDINGS -> screen == Screen.RECORDINGS
+                                    else -> screen != Screen.HOME && screen != Screen.RECORDINGS
+                                },
                                 onClick = { navigateTo(destination) },
                                 icon = {
                                     if (destination == Screen.SETTINGS) {
@@ -267,7 +269,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
             when (screen) {
                 Screen.HOME -> HomeScreen(
                     onOpenSetup = { navigateTo(Screen.SETUP) },
-                    onNavigate = { navigateTo(it) },
                     onOpenExperimental = {
                         navigateTo(Screen.SETTINGS)
                         settingsSection = "Experimental"
@@ -382,7 +383,6 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 @Composable
 private fun HomeScreen(
     onOpenSetup: () -> Unit,
-    onNavigate: (Screen) -> Unit,
     onOpenExperimental: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -535,27 +535,6 @@ private fun HomeScreen(
                 }
             }
         }
-        Text("Explore", style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp, top = 4.dp))
-        NavigationCard(
-            title = "Recordings",
-            subtitle = "Browse, play and manage saved recordings",
-            icon = Icons.Rounded.Folder,
-            onClick = { onNavigate(Screen.RECORDINGS) },
-        )
-        if (!ready) NavigationCard(
-            title = "Setup",
-            subtitle = "Permissions and recording accessibility",
-            icon = Icons.Rounded.Tune,
-            onClick = { onNavigate(Screen.SETUP) },
-        )
-        NavigationCard(
-            title = "Settings",
-            subtitle = "Configure recording behavior",
-            icon = Icons.Rounded.Settings,
-            onClick = { onNavigate(Screen.SETTINGS) },
-        )
     }
 }
 
@@ -590,43 +569,6 @@ private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> 
                 )
             }
             Switch(checked = enabled, onCheckedChange = onEnabledChange)
-        }
-    }
-}
-
-@Composable
-private fun NavigationCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(22.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(26.dp),
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = "Open $title",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
