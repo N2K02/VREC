@@ -69,6 +69,15 @@ object CallMonitor {
     private const val CONTROL_ID = 84
     private var sawRinging = false
     private var pendingIncomingNumber: String? = null
+    // Dialer notifications can precede SIM OFFHOOK. Keep only a short-lived,
+    // call-scoped identity; never attribute an old notification to another call.
+    private data class PendingDialerIdentity(
+        val metadata: CallerMetadata,
+        val status: String,
+        val observedAt: Long,
+    )
+    private var pendingDialerIdentity: PendingDialerIdentity? = null
+    private const val DIALER_IDENTITY_MAX_AGE_MS = 120_000L
 
     @Volatile var telecomBound = false
         private set
@@ -173,6 +182,7 @@ object CallMonitor {
             if (state == "IDLE") {
                 sawRinging = false
                 pendingIncomingNumber = null
+                pendingDialerIdentity = null
             }
             return
         }
@@ -202,6 +212,15 @@ object CallMonitor {
                 if (session.number != null) session.numberSource = "phone-state"
                 if (session.name == null) session.name = CallInfo.describe(context, session.number)
                     ?.takeIf { it != session.number }
+                // An incoming call notification may have been posted before OFFHOOK.
+                // Only associate it with the same incoming ringing call, or a
+                // just-active dialer call; never reuse it after IDLE.
+                val cached = pendingDialerIdentity
+                if (cached != null && SystemClock.elapsedRealtime() - cached.observedAt in 0..DIALER_IDENTITY_MAX_AGE_MS &&
+                    (sawRinging || cached.status == "ACTIVE")) {
+                    applyMetadata(session, cached.metadata)
+                }
+                pendingDialerIdentity = null
                 session.active = true
                 if (session.connectedAt == null) session.connectedAt = System.currentTimeMillis()
                 reconcile(context)
@@ -209,6 +228,7 @@ object CallMonitor {
             "IDLE" -> {
                 sawRinging = false
                 pendingIncomingNumber = null
+                pendingDialerIdentity = null
                 remove(context, "sim-legacy")
             }
         }
@@ -237,7 +257,16 @@ object CallMonitor {
             if (target.id == recordingId) updateRecording(context, target)
             return
         }
-        if (isPhoneDialer || !Prefs.recordVoip(context)) return
+        if (isPhoneDialer) {
+            if (status == "IDLE") pendingDialerIdentity = null
+            else if ((status == "RINGING" || status == "ACTIVE") && metadata != null) {
+                pendingDialerIdentity = PendingDialerIdentity(
+                    metadata, status, SystemClock.elapsedRealtime(),
+                )
+            }
+            return
+        }
+        if (!Prefs.recordVoip(context)) return
 
         val id = "notif:" + packageName
         if (status == "IDLE") recentlyEndedVoip.remove(packageName)
