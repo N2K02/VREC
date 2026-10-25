@@ -2,6 +2,7 @@ package com.vrec.app.ui
 
 import androidx.compose.foundation.clickable
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import androidx.compose.material3.OutlinedButton
 import com.vrec.app.calls.VoipNotifListener
@@ -138,7 +139,10 @@ fun SettingsScreen(
     var inComm by remember { mutableStateOf(prefs.getBoolean(Prefs.IN_COMM_MODE, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
-    var showOverlay by remember { mutableStateOf(prefs.getBoolean(Prefs.SHOW_OVERLAY, false)) }
+    var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
+    val overlayPermissionGranted = remember(resumeTick) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || AndroidSettings.canDrawOverlays(context)
+    }
     var sourceMode by remember { mutableStateOf(Prefs.sourceMode(context)) }
 
     fun putBool(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
@@ -270,8 +274,19 @@ fun SettingsScreen(
         }
 
         if (section == "Floating controls") SettingCard("Floating controls") {
-            ToggleRow("Show compact overlay", "Drag the dot; Pause/Resume, Stop or Record again, and Close. Stop saves audio; Close only hides the overlay. Requires Display over other apps permission.", showOverlay) {
+            ToggleRow("Show compact overlay", "Enabled by default. Drag the three-dot handle on the right to move the controls. Stop saves audio; Close only hides the overlay.", showOverlay) {
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
+            }
+            if (showOverlay && !overlayPermissionGranted) {
+                Text("Allow Display over other apps so VRec can show floating controls during calls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")))
+                    }
+                }) { Text("Allow floating controls") }
             }
         }
 

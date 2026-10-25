@@ -23,6 +23,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import com.vrec.app.recording.OverlayDragPosition
 import com.vrec.app.R
 import com.vrec.app.Log
 import com.vrec.app.Prefs
@@ -49,6 +50,10 @@ class OverlayControlService : Service() {
     private var pauseButton: ImageButton? = null
     private var stopButton: ImageButton? = null
     private var closeButton: ImageButton? = null
+    private var dragHandle: OverlayDragHandle? = null
+    private val overlayPreferences by lazy {
+        getSharedPreferences("vrec_overlay_position", Context.MODE_PRIVATE)
+    }
     private var blinkAnimator: ObjectAnimator? = null
     private var stoppingSince: Long? = null
     private var slowStopReported = false
@@ -186,10 +191,16 @@ class OverlayControlService : Service() {
             }
         }
 
+        // The dedicated three-dot grip is last, like ShizuCallRecorder. The
+        // status dot also remains draggable for users accustomed to the old UI.
+        val handle = OverlayDragHandle(this).apply {
+            contentDescription = "Move floating recording controls"
+        }
         panel.addView(status, LinearLayout.LayoutParams(dp(44), dp(44)))
         panel.addView(pause, LinearLayout.LayoutParams(dp(44), dp(44)))
         panel.addView(stop, LinearLayout.LayoutParams(dp(44), dp(44)))
         panel.addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
+        panel.addView(handle, LinearLayout.LayoutParams(dp(44), dp(44)))
 
         val layout = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -200,11 +211,11 @@ class OverlayControlService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dp(12)
-            y = dp(160)
+            x = overlayPreferences.getInt("x", dp(12))
+            y = overlayPreferences.getInt("y", dp(160))
         }
 
-        status.setOnTouchListener(object : View.OnTouchListener {
+        val dragTouchListener = object : View.OnTouchListener {
             private var downX = 0f
             private var downY = 0f
             private var initialX = 0
@@ -221,33 +232,48 @@ class OverlayControlService : Service() {
                     }
                     MotionEvent.ACTION_MOVE -> {
                         val (screenWidth, screenHeight) = screenSize()
-                        val maxX = (screenWidth - panel.width).coerceAtLeast(0)
-                        val maxY = (screenHeight - panel.height).coerceAtLeast(0)
-                        layout.x = (initialX + (event.rawX - downX).toInt()).coerceIn(0, maxX)
-                        layout.y = (initialY + (event.rawY - downY).toInt()).coerceIn(0, maxY)
+                        val position = OverlayDragPosition.clamp(
+                            initialX + (event.rawX - downX).toInt(),
+                            initialY + (event.rawY - downY).toInt(),
+                            screenWidth, screenHeight, panel.width, panel.height)
+                        layout.x = position.x
+                        layout.y = position.y
                         runCatching { windowManager.updateViewLayout(panel, layout) }
                         return true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        view.performClick()
+                        overlayPreferences.edit().putInt("x", layout.x)
+                            .putInt("y", layout.y).apply()
+                        if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
                         return true
                     }
                 }
                 return false
             }
-        })
+        }
+        status.setOnTouchListener(dragTouchListener)
+        handle.setOnTouchListener(dragTouchListener)
+        // Persisted coordinates may be outside today's display after rotation.
+        val (width, height) = screenSize()
+        OverlayDragPosition.clamp(layout.x, layout.y, width, height,
+            dp(44) * 5 + dp(10), dp(44) + dp(8)).let {
+            layout.x = it.x
+            layout.y = it.y
+        }
 
         root = panel
         statusDot = status
         pauseButton = pause
         stopButton = stop
         closeButton = close
+        dragHandle = handle
         runCatching { windowManager.addView(panel, layout) }.onFailure {
             root = null
             statusDot = null
             pauseButton = null
             stopButton = null
             closeButton = null
+            dragHandle = null
             stopSelf()
         }
     }
@@ -391,6 +417,7 @@ class OverlayControlService : Service() {
         pauseButton = null
         stopButton = null
         closeButton = null
+        dragHandle = null
         stoppingSince = null
         slowStopReported = false
     }
@@ -426,6 +453,30 @@ private class RecordingStatusDot(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawCircle(width / 2f, height / 2f, radius, paint)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+}
+
+/** Drawn circles rather than a font character, for an aligned 3-dot drag grip. */
+private class OverlayDragHandle(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFCCCCCC.toInt()
+        style = Paint.Style.FILL
+    }
+    private val radius = 2.2f * resources.displayMetrics.density
+    private val spacing = 7f * resources.displayMetrics.density
+
+    init { isClickable = true }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        for (index in -1..1) {
+            canvas.drawCircle(width / 2f, height / 2f + index * spacing, radius, paint)
+        }
     }
 
     override fun performClick(): Boolean {

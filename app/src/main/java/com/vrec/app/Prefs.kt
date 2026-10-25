@@ -36,6 +36,8 @@ object Prefs {
     const val DISCARD_SILENT = "discard_silent"
 
     const val SHOW_OVERLAY = "show_overlay"
+    /** Default enabled for new installs; an explicit user choice remains authoritative. */
+    const val SHOW_OVERLAY_DEFAULT = true
 
     /** Advanced Telecom detection is only active in the explicitly selected ADB mode. */
     const val EXPERIMENTAL_CALL_DETECTION = "experimental_call_detection"
@@ -43,7 +45,7 @@ object Prefs {
         ExperimentalRecording.method(c) == ExperimentalRecording.Method.BUILT_IN_ADB &&
             of(c).getBoolean(EXPERIMENTAL_CALL_DETECTION, false)
 
-    fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, false)
+    fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, SHOW_OVERLAY_DEFAULT)
 
     fun of(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
