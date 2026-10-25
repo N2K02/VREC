@@ -126,6 +126,7 @@ public final class AudioEncoder implements AsyncProcessor {
                 // Some HALs briefly return no PCM. Avoid a busy loop; do not
                 // enqueue a zero-byte frame or fabricate silence.
                 Thread.sleep(AudioReadGuard.BACKOFF_MILLIS);
+                buffer.position(0);
                 r = capture.read(buffer, bufferInfo);
             }
             if (r <= 0) {
@@ -275,6 +276,11 @@ public final class AudioEncoder implements AsyncProcessor {
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                } catch (Throwable t) {
+                    if (!stopRequested) {
+                        workerFailed.set(true);
+                        Ln.e("Unexpected audio input failure", t);
+                    }
                 } finally {
                     end();
                 }
@@ -291,6 +297,11 @@ public final class AudioEncoder implements AsyncProcessor {
                         if (!IO.isBrokenPipe(e)) {
                             Ln.e("Audio output failed unexpectedly", e);
                         }
+                    }
+                } catch (Throwable t) {
+                    if (!stopRequested) {
+                        workerFailed.set(true);
+                        Ln.e("Unexpected audio output failure", t);
                     }
                 } finally {
                     end();
