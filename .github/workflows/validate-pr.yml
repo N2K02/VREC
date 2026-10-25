@@ -26,6 +26,13 @@ jobs:
             shellserver/src/com/vrec/app/shell/AnsweredCallGate.java \
             shellserver/tests/AnsweredCallGateTest.java
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.AnsweredCallGateTest
+          javac -d "$RUNNER_TEMP/vrec-shell-regression" \
+            shellserver/src/com/vrec/app/shell/PcmChannelHealth.java \
+            shellserver/tests/PcmChannelHealthTest.java \
+            shellserver/src/com/genymobile/scrcpy/audio/AudioReadGuard.java \
+            shellserver/tests/AudioReadGuardTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.PcmChannelHealthTest
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.genymobile.scrcpy.audio.AudioReadGuardTest
       - name: Compile and test without publishing
         run: |
           if [ -f ./gradlew ]; then
