@@ -15,14 +15,14 @@ class AdbHomeNavigationContractTest {
     @Test fun fullAdbChecklistAppearsOnlyInsideExperimentalSubmenu() {
         val settings = read("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
         val overview = settings.substringAfter("if (section == null) {")
-            .substringBefore("} else {\n        if (section == \"Recording\")")
+            .substringBefore("} else {")
         assertFalse("Settings overview must not duplicate the ADB setup card",
             overview.contains("AdbSetupProgressCard("))
         val experimental = settings.substringAfter("if (section == \"Experimental\") {")
             .substringBefore("if (section == \"VoIP\")")
         assertTrue(experimental.contains("AdbSetupProgressCard("))
         assertTrue(experimental.contains("ExperimentalRecorderCard()"))
-        assertTrue(experimental.contains("TelecomAdbInstructionCard("))
+        assertFalse(experimental.contains("TelecomAdbInstructionCard("))
         assertEquals(2, Regex("AdbSetupProgressCard\\(").findAll(settings).count())
     }
 
@@ -30,8 +30,8 @@ class AdbHomeNavigationContractTest {
         val source = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val home = source.substringAfter("private fun HomeScreen(")
             .substringBefore("private fun RecordingMasterCard(")
-        assertTrue(home.contains("ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB"))
-        assertTrue(home.contains("if (adbSelected) {"))
+        assertTrue(home.contains("Recording dashboard"))
+        assertTrue(home.contains("Text(\"Recording dashboard\""))
         assertTrue(home.contains("LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)"))
         assertTrue(source.contains("onOpenExperimental = {"))
         assertTrue(source.contains("settingsSection = \"Experimental\""))
@@ -46,6 +46,7 @@ class AdbHomeNavigationContractTest {
         assertTrue(quick.contains("Text(\"USB debugging\""))
         assertTrue(!quick.contains("Wireless debugging"))
         assertTrue(quick.contains("LocalAdbMiddleware.setup(context)"))
+        assertTrue(quick.contains("AdbUidBadge(badge)"))
         val experimental = read("app/src/main/java/com/vrec/app/ui/ExperimentalRecorderCard.kt")
         assertTrue(experimental.contains("Text(\"ADB connection\""))
         assertTrue(experimental.contains("USB-bootstrapped ADB"))

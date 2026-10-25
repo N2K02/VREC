@@ -65,22 +65,8 @@ object ExperimentalRecording {
         } else current.copy(tcpPortOpen = tcpListening)
     }
 
-    fun method(context: Context): Method {
-        val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val stored = prefs.getString(METHOD_KEY, Method.STANDARD.name)
-        val resolved = Method.entries.firstOrNull { it.name == stored } ?: Method.STANDARD
-        // Migrate unsupported legacy settings to Standard safely.
-        if (stored != resolved.name) prefs.edit().putString(METHOD_KEY, resolved.name).apply()
-        return resolved
-    }
-
-    fun select(context: Context, method: Method) {
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .edit().putString(METHOD_KEY, method.name)
-            .apply {
-                if (method == Method.STANDARD) putBoolean(AUTO_RECOVERY_KEY, false)
-            }.apply()
-    }
+    /** ADB is the single recording mode. Legacy STANDARD choices are ignored. */
+    fun method(context: Context): Method = Method.BUILT_IN_ADB
 
     fun adbIdentityPresent(context: Context): Boolean = AdbIdentity.exists(context)
 
@@ -154,18 +140,22 @@ object ExperimentalRecording {
             )
             return result
         }
-        if (method(context) == Method.BUILT_IN_ADB) rememberVerifiedTcp(context)
+        rememberVerifiedTcp(context)
         status.value = status.value.copy(busy = true, connected = true,
             shellUid = 2000, tcpPortOpen = true,
-            message = "ADB shell UID 2000 verified. Starting helper…")
-        val helper = if (method(context) == Method.BUILT_IN_ADB)
-            AdbPrivilegedApiHelper.startWithAdb(context) else Result.success(Unit)
-        val telecom = if (!automatic && method(context) == Method.BUILT_IN_ADB)
-            grantAdvancedDetection(context) else Result.success(Unit)
+            message = "Android shell UID 2000 verified. Configuring supported permissions…")
+        val permissionResult = runCatching {
+            AdbPermissionBootstrap.grantEligible(context)
+        }.getOrElse { AdbPermissionBootstrap.ResultSummary(
+            unavailable = listOf("Permission setup failed: ${it.message}"), finished = true)
+        }
+        val helper = AdbPrivilegedApiHelper.startWithAdb(context)
         status.value = status.value.copy(busy = false, message = when {
-            helper.isFailure -> "ADB verified, but helper failed: ${helper.exceptionOrNull()?.message}"
-            telecom.isFailure -> "Helper ready; advanced call detection still needs access: ${telecom.exceptionOrNull()?.message}"
-            else -> "ADB verified (shell UID 2000). Enhanced helper ready."
+            helper.isFailure -> "Shell UID 2000 verified, but recorder helper failed: ${helper.exceptionOrNull()?.message}"
+            permissionResult.unavailable.isNotEmpty() ->
+                "Shell UID 2000 verified; helper ready. Some optional access remains: " +
+                    permissionResult.unavailable.joinToString().take(180)
+            else -> "Shell UID 2000 verified · Recording helper ready · Permissions configured"
         })
         return if (helper.isSuccess) result else Result.failure(
             helper.exceptionOrNull() ?: IllegalStateException("Enhanced helper failed"))

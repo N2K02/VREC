@@ -61,11 +61,6 @@ object LocalAdbMiddleware {
         val app = context.applicationContext
         busy.value = true
         try {
-            if (ExperimentalRecording.method(app) != ExperimentalRecording.Method.BUILT_IN_ADB) {
-                message.value = "Select Enhanced ADB under Settings → Recording method first."
-                return@withLock false
-            }
-
             // Detached helper can survive ADB disconnect and needs no new bootstrap.
             if (AdbPrivilegedApiHelper.reconnect(app)) {
                 message.value = "Enhanced recording helper is connected and ready."
@@ -87,8 +82,10 @@ object LocalAdbMiddleware {
                     true
                 }
                 LocalAdbSetupPolicy.Next.USE_VERIFIED_SESSION -> {
+                    val permissions = AdbPermissionBootstrap.grantEligible(app)
                     val result = AdbPrivilegedApiHelper.startWithAdb(app)
-                    message.value = if (result.isSuccess) "Enhanced helper started."
+                    message.value = if (result.isSuccess)
+                        "Enhanced helper started. Permissions needing attention: ${permissions.unavailable.size}"
                         else "Could not start helper: ${result.exceptionOrNull()?.message}"
                     result.isSuccess
                 }
@@ -107,10 +104,7 @@ object LocalAdbMiddleware {
                     message.value = "Enable USB debugging in Developer options and retry."
                     false
                 }
-                LocalAdbSetupPolicy.Next.SELECT_ADB_MODE -> {
-                    message.value = "Select Enhanced ADB in Recording method first."
-                    false
-                }
+                LocalAdbSetupPolicy.Next.SELECT_ADB_MODE -> false
             }
         } catch (t: Throwable) {
             message.value = "ADB setup failed: ${t.message ?: "unknown error"}. Open ADB setup."

@@ -136,7 +136,7 @@ fun ExperimentalRecorderCard() {
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("1. In Developer options enable USB debugging.")
+                    Text("1. In Developer options enable USB debugging. This is required once before connection.")
                     Text("2. Connect to a trusted USB ADB host and approve Android's RSA authorization dialog.")
                     Text("3. On that host run adb tcpip 5555.")
                     Text("4. Return to VRec and tap Connect USB-bootstrapped ADB. Approve this ADB key if Android asks.")

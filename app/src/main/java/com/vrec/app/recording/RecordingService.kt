@@ -111,8 +111,13 @@ class RecordingService : Service() {
                 // second microphone capture that could silence the call app.
                 return
             }
-            val standardFallback = adbSelected && (!helperReady || forceStandardFallback)
-            if (standardFallback) AdbFallbackNotice.reserve()
+            if (adbSelected) {
+                // ADB-only mode: never silently fall back to capturing the microphone.
+                // A missing or unsupported shell source must stay unavailable.
+                Log.w("ADB-only capture not available for this call; no standard microphone fallback")
+                return
+            }
+            val standardFallback = false
             val intent = Intent(context, RecordingService::class.java)
                 .putExtra(EXTRA_ADB_FALLBACK, standardFallback)
                 .setAction(ACTION_START)

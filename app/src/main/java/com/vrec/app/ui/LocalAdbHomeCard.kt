@@ -99,6 +99,9 @@ fun LocalAdbHomeCard(onOpenDetailedSetup: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text("First time: enable USB debugging → authorize a trusted USB ADB host → " +
+                "run adb tcpip 5555 on that host → return here and connect.",
+                style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = ::openDeveloperOptions) { Text("Developer options") }
         }
     }

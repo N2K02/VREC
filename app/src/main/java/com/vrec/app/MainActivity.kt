@@ -98,7 +98,7 @@ import com.vrec.app.ui.theme.VrecTheme
 import com.vrec.app.update.AppUpdater
 import com.vrec.app.update.UpdateScreen
 
-private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
+private enum class Screen { HOME, RECORDINGS, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
     private var adbRecoveryJob: kotlinx.coroutines.Job? = null
@@ -191,7 +191,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     val title = when (screen) {
         Screen.HOME -> "Home"
         Screen.RECORDINGS -> "Recordings"
-        Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
         Screen.LOG -> "Activity log"
         Screen.UPDATE -> "About & updates"
@@ -268,7 +267,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.HOME -> HomeScreen(
-                    onOpenSetup = { navigateTo(Screen.SETUP) },
                     onOpenExperimental = {
                         navigateTo(Screen.SETTINGS)
                         settingsSection = "Experimental"
@@ -277,17 +275,12 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
-                Screen.SETUP -> SetupScreen(onOpenAdbSetup = {
-                    navigateTo(Screen.SETTINGS)
-                    settingsSection = "Experimental"
-                })
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,
                     onSectionChange = { settingsSection = it },
                     onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
                     onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
-                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                 )
                 Screen.LOG -> LogScreen()
                 Screen.UPDATE -> UpdateScreen()
@@ -302,7 +295,6 @@ private fun VrecBrandHeader(title: String, screen: Screen) {
     val icon = when (screen) {
         Screen.HOME -> Icons.Rounded.Home
         Screen.RECORDINGS -> Icons.Rounded.Folder
-        Screen.SETUP -> Icons.Rounded.Tune
         Screen.SETTINGS -> Icons.Rounded.Settings
         Screen.LOG -> Icons.Rounded.Article
         Screen.UPDATE -> Icons.Rounded.Info
@@ -384,40 +376,34 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 }
 
 @Composable
-private fun HomeScreen(
-    onOpenSetup: () -> Unit,
-    onOpenExperimental: () -> Unit,
-) {
+private fun HomeScreen(onOpenExperimental: () -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
-    val standardFallback by AdbFallbackNotice.active.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
     val recording = recState !is RecordingService.State.Idle || enhancedActive
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
-    val adbSelected = ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB
-    val adbConnection by ExperimentalRecording.status.collectAsState()
-    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
-    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    val helperMessage by ExperimentalCaptureDaemon.message.collectAsState()
-    val connectionScope = rememberCoroutineScope()
 
     // Observe connection changes while Home is visible. This does not connect,
     // enable TCP debugging, or start the privileged helper without user consent.
-    LaunchedEffect(adbSelected) {
-        if (adbSelected) {
-            while (true) {
-                ExperimentalRecording.refreshConnectionStatus()
-                AdbPrivilegedApiHelper.checkHealth(context)
-                delay(8_000L)
-            }
+    LaunchedEffect(Unit) {
+        while (true) {
+            ExperimentalRecording.refreshConnectionStatus()
+            AdbPrivilegedApiHelper.checkHealth(context)
+            delay(8_000L)
         }
     }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        Text("Recording dashboard", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold)
+        Text("Connect the verified Android shell, then enable automatic call recording.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.vrec.app.ui.LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)
         RecordingMasterCard(enabled = recordingEnabled, onEnabledChange = { enabled ->
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
@@ -443,7 +429,6 @@ private fun HomeScreen(
                             if (!recordingEnabled) "Recording is off"
                             else if (recState is RecordingService.State.Stopping) "Saving recording"
                             else if (enhancedActive) "Enhanced ADB recording"
-                            else if (recording && standardFallback) "Standard recording fallback"
                             else if (recording) "Recording in progress"
                             else if (ready) "Ready to record"
                             else "Complete setup",
@@ -453,12 +438,9 @@ private fun HomeScreen(
                         Text(
                             if (!recordingEnabled) "Enable recording above to capture calls"
                             else if (enhancedActive)
-                                "Standard segment saved · enhanced recorder is active"
-                            else if (recording && standardFallback)
-                                "ADB helper unavailable · recording with the microphone"
+                                "Independent ADB helper is recording"
                             else if (ready) "Keep your calls saved privately on this device"
-                            else if (adbSelected) "Authorize the enhanced ADB shell helper to begin"
-                            else "Enable microphone and call access to begin",
+                            else "Authorize Android shell UID 2000 to begin",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -468,15 +450,11 @@ private fun HomeScreen(
                     (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
                 }
                 if (!ready) {
-                    Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
-                        Text("Finish setup")
+                    OutlinedButton(onClick = onOpenExperimental, modifier = Modifier.fillMaxWidth()) {
+                        Text("ADB is not ready · Review USB setup")
                     }
-                } else if (recordingEnabled && !enhancedActive) ManualRecordButton(recState)
+                }
             }
-        }
-        if (adbSelected) {
-            // One-tap, app-integrated command/ADB setup. Advanced options stay in Settings.
-            com.vrec.app.ui.LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)
         }
     }
 }
@@ -576,8 +554,7 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
             )
             if (state.silentSoFar && silentLongEnough) {
                 Text(
-                    "No sound yet — this phone may be blocking call capture. Try turning on " +
-                        "\"Put call on loudspeaker\" in Settings, or pick another source.",
+                    "No sound detected. Check the enhanced shell source and diagnostics in ADB settings.",
                     color = MaterialTheme.colorScheme.onTertiary,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -586,43 +563,16 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
     }
 }
 
-@Composable
-private fun SetupPromptCard(onOpenSetup: () -> Unit) {
-    Card(
-        
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Finish setup", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (ExperimentalRecording.method(LocalContext.current) ==
-                    ExperimentalRecording.Method.BUILT_IN_ADB)
-                    "Enhanced ADB mode needs call detection and an authorized shell helper. " +
-                        "Microphone access is optional for standard fallback."
-                else "Standard recording needs microphone, phone-state and Accessibility access.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Button(onClick = onOpenSetup) { Text("Open setup") }
-        }
-    }
-}
-
 /** Readiness depends on the capture method; ADB shell capture does not need app microphone access. */
 fun isReady(context: Context): Boolean {
-    val phone = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-    if (ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB) {
-        return phone && ExperimentalCaptureDaemon.ready.value &&
-            AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING
-    }
-    val mic = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    val accessibility = com.vrec.app.calls.VrecAccessibilityService.isEnabled(context)
-    return mic && phone && accessibility
+    val phone = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+        PackageManager.PERMISSION_GRANTED
+    return phone && ExperimentalCaptureDaemon.ready.value &&
+        AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING
 }
 
-/** Only prompt for microphone with Standard mode; enhanced ADB may request it for fallback separately. */
+/** Requested runtime grants are applied and checked after an authorized ADB connection. */
 fun corePermissions(context: Context): Array<String> = buildList {
-    if (ExperimentalRecording.method(context) == ExperimentalRecording.Method.STANDARD)
-        add(Manifest.permission.RECORD_AUDIO)
     add(Manifest.permission.READ_PHONE_STATE)
     add(Manifest.permission.READ_CALL_LOG)
     add(Manifest.permission.READ_CONTACTS)
