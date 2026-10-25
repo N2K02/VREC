@@ -155,6 +155,12 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (section == null) {
+            Text(
+                "Make recording your own",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 12.dp),
+            )
             SettingCard("Recording method") {
                 RecordingMethodOption(
                     label = "Regular recording",
@@ -179,6 +185,22 @@ fun SettingsScreen(
                     onConfigure = { onSectionChange("Experimental") },
                 )
             }
+            listOf(
+                Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
+                Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
+                Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
+                Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
+                Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
+                Triple("Experimental", "ADB connection, helper and advanced access", Icons.Rounded.Tune),
+            ).forEach { (name, detail, icon) ->
+                ListItem(
+                    headlineContent = { Text(name) },
+                    supportingContent = { Text(detail) },
+                    leadingContent = { Icon(icon, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable { onSectionChange(name) },
+                )
+            }
             ListItem(
                 headlineContent = { Text("Recordings") },
                 supportingContent = { Text("Browse, play and share recorded calls") },
@@ -193,61 +215,24 @@ fun SettingsScreen(
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                 modifier = Modifier.clickable(onClick = onOpenSetup),
             )
-            Text("Make recording your own",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
-            Card(shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(6.dp)) {
-            listOf(
-                Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
-                Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
-                Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
-                Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
-                Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Experimental", "ADB connection, helper and advanced access", Icons.Rounded.Tune),
-            ).forEach { (name, detail, icon) ->
-                ListItem(
-                    headlineContent = { Text(name) },
-                    supportingContent = { Text(detail) },
-                    leadingContent = { Icon(icon, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
-                        .clickable { onSectionChange(name) },
-                )
-            }
-            }
-            }
-            Text("More", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 6.dp))
-            Card(shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(6.dp)) {
-            listOf(
-                Triple("Activity log", "Recording events and diagnostics", Icons.Rounded.Article),
-                Triple("About & updates", "Version and update checks", Icons.Rounded.SystemUpdate),
-            ).forEachIndexed { index, (name, detail, icon) ->
-                ListItem(
-                    headlineContent = { Text(name) },
-                    supportingContent = { Text(if (index == 1 && updateStatus.hasPendingUpdate()) "A new update is available" else detail) },
-                    leadingContent = { Icon(icon, contentDescription = null) },
-                    trailingContent = { if (index == 1) dev.n2k02.updater.N2K02UpdateBadge(updateStatus) else Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable {
-                        when (index) {
-                            0 -> onOpenLog()
-                            else -> onOpenUpdates()
-                        }
-                    },
-                )
-            }
-            }
-            }
+            HorizontalDivider()
+            // Diagnostics and updates remain together at the bottom like mRadio.
+            ListItem(
+                headlineContent = { Text("Activity log") },
+                supportingContent = { Text("Recording events and diagnostics") },
+                leadingContent = { Icon(Icons.Rounded.Article, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenLog),
+            )
+            ListItem(
+                headlineContent = { Text("About & updates") },
+                supportingContent = {
+                    Text(if (updateStatus.hasPendingUpdate()) "A new update is available" else "Version and update checks")
+                },
+                leadingContent = { Icon(Icons.Rounded.SystemUpdate, contentDescription = null) },
+                trailingContent = { dev.n2k02.updater.N2K02UpdateBadge(updateStatus) },
+                modifier = Modifier.clickable(onClick = onOpenUpdates),
+            )
         } else {
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
