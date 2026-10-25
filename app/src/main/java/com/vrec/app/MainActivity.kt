@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.Info
@@ -154,6 +155,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     // Back and the app-bar arrow can return to the Settings overview.
     var settingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     var returnToSettings by rememberSaveable { mutableStateOf(false) }
+    val quitContext = LocalContext.current
 
     LaunchedEffect(openAdbSetup) {
         if (openAdbSetup) {
@@ -238,6 +240,19 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 alwaysShowLabel = true,
                             )
                         }
+                        NavigationBarItem(
+                            selected = false,
+                            onClick = {
+                                // Disable all recording modes, stop and save any active segment,
+                                // dismiss floating controls, and disable ADB capture.
+                                CallMonitor.setRecordingEnabled(quitContext, false)
+                                LiveUpdater.controller.cancel()
+                                (quitContext as? ComponentActivity)?.finishAndRemoveTask()
+                            },
+                            icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Quit") },
+                            label = { Text("Quit") },
+                            alwaysShowLabel = true,
+                        )
                     }
                 }
             }
