@@ -673,6 +673,7 @@ fun isReady(context: Context): Boolean {
 fun corePermissions(): Array<String> = buildList {
     add(Manifest.permission.RECORD_AUDIO)
     add(Manifest.permission.READ_PHONE_STATE)
+    add(Manifest.permission.READ_CALL_LOG)
     add(Manifest.permission.READ_CONTACTS)
     if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()
