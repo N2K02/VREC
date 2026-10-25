@@ -37,7 +37,7 @@ class RecordingsBottomNavigationContractTest {
         assertFalse(source.contains("private fun NavigationCard("))
         assertTrue(home.contains("RecordingMasterCard("))
         assertTrue(home.contains("Text(\"Finish setup\")"))
-        assertTrue(home.contains("Text(\"ADB helper status\")"))
+        assertTrue(home.contains("Text(\"ADB helper status\""))
         assertTrue(home.contains("ExperimentalRecording.connect(context, 5555, wirelessOnly = false)"))
     }
 }
