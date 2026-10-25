@@ -186,6 +186,53 @@ source-quality selector, validated per-recording audio-source diagnostics,
 metadata-consistency fixes, and OS-scheduled background recovery when the app
 process has been stopped.
 
+
+## 2026-10-25 — one-batch ADB/PCM reliability review (ShizuCallRecorder 2.x ideas)
+
+VREC retains its existing **built-in ADB, UID 2000, authenticated loopback,
+Apache-2.0 scrcpy** implementation; it does **not** install Shizuku or copy
+GPL-3.0 ShizuCallRecorder source code. This batch independently implements
+the applicable safety properties from upstream's October native-audio rework:
+
+- **Stereo PCM diagnostics:** every enhanced capture is passively sampled
+  before Opus encoding. The shell logs bounded per-channel RMS, silence share,
+  clipping share, and frame count, without storing or logging audio samples.
+  Left/right energy is **not proof of both callers**, nor a guarantee of audio
+  routing on every Android/OEM version. The established AudioRecord source,
+  Opus 48 kHz stereo output, and caller privacy are unchanged.
+- **No infinite zero-read spin:** the audio encoder retries transient empty
+  AudioRecord reads with 10 ms backoff, up to 20 consecutive returns, before
+  treating the source as stalled. Negative reads immediately report failure.
+  Input/output worker crashes and unexpected I/O errors now propagate a
+  fatal flag to the recording owner instead of leaving an apparently running
+  but silent session. Normal stop does not generate false failure.
+- **Recoverable recording shutdown:** a separate recovery thread (never the
+  encoder's own callback thread) stops/finalizes a failed recording, then
+  notifies the app to import existing audio packets. Compatibility check
+  occurs before the output file is created; failed setup cleans it up.
+- **Incomplete packet protection:** Opus import distinguishes a clean frame
+  boundary from truncated PTS/header/payload, preserves the original shell
+  recording on incomplete data, removes the temporary Ogg, and reports a
+  failure rather than publishing a misleading successful file. A lost tail at
+  an exact frame boundary is not detectable by the existing scrcpy framing;
+  full physical-device validation remains essential.
+- **Privileged helper health:** authenticated PONG alone cannot return the
+  helper to RUNNING. The current Home-mode / Telecom-answer handshake must
+  succeed first, including after a stale ERROR state; failure stays ERROR and
+  never silently activates legacy, incompatible helpers.
+- **Regression coverage:** pure Java shell tests cover PCM energy/silence/clips,
+  empty/negative buffer handling, audio zero-read retry bounds, and the
+  existing outgoing answer gate. JVM tests cover truncated encoded packets,
+  impossible lengths, clean EOF and helper handshake state.
+
+**Deliberately not integrated:** a second native capture stack, dual
+AudioPolicy/AudioRecord sources, automatic AGC/ducking, codec replacement or
+hidden-system-permission changes. Those depend on OEM audio routing and
+carry substantial regression and GPL compatibility risk. The benefits here
+come from reliability and diagnostics, not from bypassing Android capture
+restrictions. Test with consented SIM/VoLTE, Wi-Fi calling and Bluetooth calls
+on Android 13–17 before promoting out of experimental.
+
 ## Attribution
 
 Embedded ADB and audio capture follow the Apache-2.0 compatible JemRec/scrcpy
