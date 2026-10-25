@@ -46,6 +46,10 @@ object ExperimentalCaptureDaemon {
     private val random = SecureRandom()
     val message = MutableStateFlow("Recorder not started.")
     val ready = MutableStateFlow(false)
+    /** Whether shell AudioPolicy accepted the selected messenger apps. */
+    val voipArmed = MutableStateFlow(false)
+    val voipMessage = MutableStateFlow("Enhanced VoIP capture is off.")
+    val simSourceMessage = MutableStateFlow("VOICE_CALL")
     private val importMutex = Mutex()
     private val modeMutex = Mutex()
     // Lifecycle entry point for the app's ADB-bootstrapped privileged Java service.
@@ -198,7 +202,9 @@ object ExperimentalCaptureDaemon {
             val launch = "VREC_TOKEN=" + token(context) +
                 " VREC_MODE=" + (if (shouldArmForNextCall(context)) "1" else "0") +
                 " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
-                " VREC_TRACK=0 VREC_VOIP='' VREC_ANSWER='' " +
+                " VREC_TRACK=0 VREC_VOIP='" +
+                    EnhancedCapturePreferences.voipPackages(context).joinToString(",") +
+                    "' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
                 " < /dev/null > " + LOG_PATH + " 2>&1 &"
@@ -248,18 +254,59 @@ object ExperimentalCaptureDaemon {
                         (!waitForAnswer && confirmed == (if (allowed) "1" else "0"))
                 }
             }.getOrDefault(false)
-            if (!verified) {
-                ready.value = false
-                message.value = "Enhanced helper mode not verified. Reconnect authorized ADB to update it."
+            val configuredSource = if (verified) {
+                runCatching {
+                    val selected = EnhancedCapturePreferences.simSource(context)
+                    open(context, 'Y', byteArrayOf(selected.wireValue.toByte())).use {
+                        it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
+                    }
+                }.getOrDefault("")
+            } else ""
+            simSourceMessage.value = when {
+                configuredSource.startsWith("SOURCE ") -> configuredSource
+                else -> "SIM source unavailable: reconnect ADB to upgrade the helper."
             }
-            verified
+            // A source change requested during a live call applies on the next idle sync.
+            val sourceOk = configuredSource.startsWith("SOURCE ") &&
+                configuredSource != "SOURCE INVALID"
+            val requestedApps = if (allowed) EnhancedCapturePreferences.voipPackages(context)
+                else emptySet()
+            val voipResult = if (verified) runCatching {
+                val payload = requestedApps.joinToString(",").toByteArray(Charsets.UTF_8)
+                require(payload.size <= 512)
+                val packet = byteArrayOf((payload.size shr 8).toByte(), payload.size.toByte()) + payload
+                open(context, 'V', packet).use {
+                    it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
+                }
+            }.getOrDefault("") else ""
+            voipArmed.value = requestedApps.isNotEmpty() &&
+                voipResult == "VOIP ${requestedApps.size} armed"
+            voipMessage.value = when {
+                requestedApps.isEmpty() -> "Enhanced VoIP capture off (or requires Android 14+)."
+                voipArmed.value -> "Enhanced VoIP capture armed for ${requestedApps.size} apps."
+                else -> "Enhanced VoIP audio policy not available on this phone."
+            }
+            if (!verified || !sourceOk) {
+                ready.value = false
+                message.value = "Enhanced helper source configuration not verified. Reconnect authorized ADB to update it."
+            }
+            verified && sourceOk
         }
     }
 
     suspend fun stopRecording(context: Context) {
+        voipArmed.value = false
         setMode(context, false)
         message.value = "Enhanced capture paused. Standard recording remains available."
     }
+
+    /** Read a short, authenticated quality summary written by the shell after a call. */
+    private fun recordingHealth(context: Context, name: String): String? = runCatching {
+        open(context, 'H', nameBytes(name)).use { sock ->
+            sock.getInputStream().bufferedReader().readLine()?.trim()
+                ?.takeIf { it.isNotBlank() && it != "UNAVAILABLE" }?.take(600)
+        }
+    }.getOrNull()
 
     /** Daemon protocol returns complete, finished call files one filename per line. */
     suspend fun pending(context: Context): List<String> = withContext(Dispatchers.IO) {
@@ -344,10 +391,13 @@ object ExperimentalCaptureDaemon {
             var failures = 0
             var firstFailure: String? = null
             for (name in pending(context)) {
-                val started = Regex("^vrec_rec_([0-9]{12,15})")
-                    .find(name)?.groupValues?.get(1)?.toLongOrNull() ?: System.currentTimeMillis()
-                val incoming = name.contains("_in.")
-                val direction = if (incoming) CallDirection.INCOMING else CallDirection.OUTGOING
+                val identity = ShellRecordingIdentity.fromName(name)
+                if (identity == null) {
+                    Log.w(TAG, "Skipping unknown shell recording identity: " + name)
+                    continue
+                }
+                val started = identity.startedAt
+                val direction = identity.direction
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
                 if (dest.exists() && dest.length() > 100L) {
                     delete(context, name)
@@ -384,9 +434,17 @@ object ExperimentalCaptureDaemon {
                     }
                     check(temp.renameTo(dest)) { "Cannot finalize recording" }
                     val durationMs = packets * 20L
+                    val voip = direction == CallDirection.VOIP
+                    val health = recordingHealth(context, name)
+                    val label = if (voip) "Enhanced VoIP playback + microphone"
+                        else health?.substringBefore(" | ")?.let { "Shell " + it }
+                            ?: "Shell VOICE_CALL"
                     RecordingStore.writeMeta(
-                        dest, direction, null, "Shell VOICE_CALL",
-                        silent = false, durationMs = durationMs,
+                        dest, direction, ShellVoipLabels.forPackage(identity.appPackage), label,
+                        silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
+                            health?.contains("NO_AUDIO") == true,
+                        durationMs = durationMs,
+                        appPackage = identity.appPackage,
                         recordingType = RecordingType.ADB,
                     )
                     val sidecar = File(dest.parentFile, dest.name + ".json")
@@ -394,7 +452,12 @@ object ExperimentalCaptureDaemon {
                         val json = JSONObject(sidecar.readText())
                         json.put("startedAt", started)
                         json.put("endedAt", started + durationMs)
-                        json.put("source", "Enhanced shell capture")
+                        json.put("source", label)
+                        if (health != null) {
+                            json.put("audioHealth", health)
+                            json.put("audioHealthWarning", health.contains("QUIET") ||
+                                health.contains("CLIPPING") || health.contains("NO_AUDIO"))
+                        }
                         sidecar.writeText(json.toString())
                     }
                     delete(context, name)
