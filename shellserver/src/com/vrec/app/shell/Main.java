@@ -1892,13 +1892,16 @@ public final class Main {
                     }
                 }
             }
-            if (started != null) {
-                wake(ACTION_CALL_STARTED, false, started, null);
-                Ln.i("recording: confirmed outgoing answer -> " + started);
-            }
+            // Acknowledge the confirmed start BEFORE issuing the app wake-up:
+            // waking a foreground service can block for seconds and exceed the
+            // authenticated client's timeout even though capture succeeded.
             client.getOutputStream().write(
                 ("ANSWER " + (started != null ? "STARTED" : "WAIT") + "\n").getBytes("UTF-8"));
             client.getOutputStream().flush();
+            if (started != null) {
+                Ln.i("recording: confirmed outgoing answer -> " + started);
+                wake(ACTION_CALL_STARTED, false, started, null);
+            }
             return;
         }
         if (command == COMMAND_START) {
