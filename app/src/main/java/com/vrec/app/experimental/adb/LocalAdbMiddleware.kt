@@ -27,6 +27,7 @@ object LocalAdbMiddleware {
 
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow("Tap Set up automatically to check ADB access on this phone.")
+    val lastSetupFailed = MutableStateFlow(false)
     private val mutex = Mutex()
 
     /** Termux-style local commands, executed without a companion app. Not privileged. */
@@ -60,6 +61,7 @@ object LocalAdbMiddleware {
     suspend fun setup(context: Context): Boolean = mutex.withLock {
         val app = context.applicationContext
         busy.value = true
+        lastSetupFailed.value = false
         try {
             // Detached helper can survive ADB disconnect and needs no new bootstrap.
             if (AdbPrivilegedApiHelper.reconnect(app)) {
@@ -76,7 +78,7 @@ object LocalAdbMiddleware {
                 usbDebugging = ExperimentalRecording.usbDebuggingFlag(app) == true,
                 tcpPortListening = ExperimentalRecording.tcpPortListening(),
             ))
-            when (next) {
+            val success = when (next) {
                 LocalAdbSetupPolicy.Next.READY -> {
                     message.value = "Enhanced recording helper is ready."
                     true
@@ -106,7 +108,10 @@ object LocalAdbMiddleware {
                 }
                 LocalAdbSetupPolicy.Next.SELECT_ADB_MODE -> false
             }
+            lastSetupFailed.value = !success
+            success
         } catch (t: Throwable) {
+            lastSetupFailed.value = true
             message.value = "ADB setup failed: ${t.message ?: "unknown error"}. Open ADB setup."
             false
         } finally {
