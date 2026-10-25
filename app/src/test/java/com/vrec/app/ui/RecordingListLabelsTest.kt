@@ -1,0 +1,39 @@
+package com.vrec.app.ui
+
+import com.vrec.app.recording.CallDirection
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class RecordingListLabelsTest {
+    @Test fun prefersSavedOrResolvedContactBeforeUnverifiedPeerOrNumber() {
+        assertEquals("Saved name", RecordingListLabels.contact("Saved name", "Phonebook", "Caller", "+2301234567"))
+        assertEquals("Phonebook", RecordingListLabels.contact(null, "Phonebook", "Caller", "+2301234567"))
+        assertEquals("Caller", RecordingListLabels.contact(null, "+2301234567", "Caller", "+2301234567"))
+        assertEquals("+2301234567", RecordingListLabels.contact(null, null, null, "+2301234567"))
+        assertEquals("Unknown contact", RecordingListLabels.contact(" ", "", null, null))
+    }
+
+    @Test fun determinesDirectionWithoutGuessingForLegacyVoip() {
+        assertEquals("Incoming", RecordingListLabels.direction(CallDirection.INCOMING, null))
+        assertEquals("Outgoing", RecordingListLabels.direction(CallDirection.OUTGOING, null))
+        assertEquals("Incoming", RecordingListLabels.direction(CallDirection.VOIP, "incoming"))
+        assertEquals("Outgoing", RecordingListLabels.direction(CallDirection.VOIP, "OUTGOING"))
+        assertEquals("VoIP", RecordingListLabels.direction(CallDirection.VOIP, null))
+        assertEquals("VoIP", RecordingListLabels.direction(CallDirection.VOIP, "UNKNOWN"))
+        assertEquals("Unknown direction", RecordingListLabels.direction(CallDirection.UNKNOWN, null))
+    }
+
+    @Test fun cellularSourcesPrioritizeVerifiedSimMetadata() {
+        assertEquals("SIM 1 (Orange)", RecordingListLabels.source(CallDirection.INCOMING, "Phone", 1, "My SIM", "Orange"))
+        assertEquals("SIM 2 (Orange)", RecordingListLabels.source(CallDirection.OUTGOING, null, 2, "Orange", null))
+        assertEquals("SIM", RecordingListLabels.source(CallDirection.INCOMING, null, null, null, null))
+        assertEquals("SIM 1", RecordingListLabels.source(CallDirection.INCOMING, null, 1, "SIM 1", null))
+    }
+
+    @Test fun voipAndUnknownSourcesUseAppWithoutClaimingCellularSim() {
+        assertEquals("WhatsApp", RecordingListLabels.source(CallDirection.VOIP, "WhatsApp", null, null, null))
+        assertEquals("VoIP app", RecordingListLabels.source(CallDirection.VOIP, null, null, null, null))
+        assertEquals("Signal", RecordingListLabels.source(CallDirection.UNKNOWN, "Signal", null, null, null))
+        assertEquals("Unknown source", RecordingListLabels.source(CallDirection.UNKNOWN, null, null, null, null))
+    }
+}
