@@ -56,7 +56,10 @@ import com.vrec.app.isReady
 fun rememberReadiness(): Boolean {
     val context = LocalContext.current
     val tick = rememberOnResumeTick()
-    return remember(tick) { isReady(context) }
+    val shellReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    // Update the Home readiness indicator as ADB helper state changes, not just on resume.
+    return remember(tick, shellReady, helperState) { isReady(context) }
 }
 
 /** Recording setup is separate from the Contacts permission used for caller name matching. */
