@@ -58,6 +58,18 @@ final class PcmChannelHealth {
             this.rightClipRatio = rightClipRatio;
         }
 
+        /** Conservative quality indication, never a claim about whose voice was captured. */
+        String verdict() {
+            if (frames == 0) return "NO_AUDIO";
+            // Quiet speech varies by device. Avoid declaring an entire call silent
+            // unless the sampled PCM energy is very low on both channels.
+            if (leftRms < 90 && rightRms < 90) return "BOTH_CHANNELS_QUIET";
+            if (leftRms < 90) return "LEFT_CHANNEL_QUIET";
+            if (rightRms < 90) return "RIGHT_CHANNEL_QUIET";
+            if (leftClipRatio > 0.02 || rightClipRatio > 0.02) return "CLIPPING";
+            return "AUDIO_DETECTED";
+        }
+
         // Human-readable metadata, never raw audio. Avoid calling a channel
         // "the remote party": device routing and HAL vary considerably.
         String summary() {
