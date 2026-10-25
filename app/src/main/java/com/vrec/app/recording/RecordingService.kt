@@ -95,8 +95,20 @@ class RecordingService : Service() {
             val adbSelected = ExperimentalRecording.method(context) ==
                 ExperimentalRecording.Method.BUILT_IN_ADB
             val helperReady = ExperimentalCaptureDaemon.ready.value
+            val shellOwnsCellular = direction == CallDirection.INCOMING ||
+                direction == CallDirection.OUTGOING
+            val shellOwnsVoip = direction == CallDirection.VOIP &&
+                ExperimentalCaptureDaemon.voipArmed.value &&
+                com.vrec.app.experimental.daemon.EnhancedVoipPolicy.isShellVoipCall(
+                    enabled = Prefs.recordVoip(context),
+                    adbSelected = adbSelected,
+                    sdk = Build.VERSION.SDK_INT,
+                    appPackage = appPackage,
+                )
             if (adbSelected && helperReady && !forceStandardFallback &&
-                (direction == CallDirection.INCOMING || direction == CallDirection.OUTGOING)) {
+                (shellOwnsCellular || shellOwnsVoip)) {
+                // The independent shell recorder owns this call. Do not start a
+                // second microphone capture that could silence the call app.
                 return
             }
             val standardFallback = adbSelected && (!helperReady || forceStandardFallback)
