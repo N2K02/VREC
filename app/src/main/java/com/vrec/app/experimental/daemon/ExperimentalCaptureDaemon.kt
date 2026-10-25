@@ -340,6 +340,8 @@ object ExperimentalCaptureDaemon {
         importMutex.withLock {
         runCatching {
             var collected = 0
+            var failures = 0
+            var firstFailure: String? = null
             for (name in pending(context)) {
                 val started = Regex("^vrec_rec_([0-9]{12,15})")
                     .find(name)?.groupValues?.get(1)?.toLongOrNull() ?: System.currentTimeMillis()
@@ -396,12 +398,20 @@ object ExperimentalCaptureDaemon {
                     delete(context, name)
                     collected++
                 } catch (t: Throwable) {
+                    // One bad or truncated shell file must not block later
+                    // recordings in the list. Preserve the shell original;
+                    // only temporary app-side output is discarded.
                     Log.w(TAG, "Import failed for " + name, t)
                     temp.delete()
-                    throw t
+                    failures++
+                    if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
+                    continue
                 }
             }
-            if (collected > 0) message.value = "Imported " + collected + " enhanced recordings."
+            message.value = ImportBatchPolicy.message(collected, failures)
+            if (ImportBatchPolicy.shouldFailBatch(collected, failures)) {
+                throw IOException("$failures recordings could not be imported: $firstFailure")
+            }
             collected
         }.onFailure {
             message.value = "Import failed: " + it.message
