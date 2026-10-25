@@ -1296,9 +1296,10 @@ public final class Main {
         private final File file;
         private final FileOutputStream out;
         private final AsyncProcessor recorder;
+        private final PcmChannelHealth channelHealth;
 
         private RecordingSession(String name, boolean incoming, long startedAt, String app, File file,
-                                 FileOutputStream out, AsyncProcessor recorder) {
+                                 FileOutputStream out, AsyncProcessor recorder, PcmChannelHealth channelHealth) {
             this.name = name;
             this.incoming = incoming;
             this.app = app;
@@ -1306,6 +1307,7 @@ public final class Main {
             this.file = file;
             this.out = out;
             this.recorder = recorder;
+            this.channelHealth = channelHealth;
         }
 
         static RecordingSession start(boolean incoming, String app) throws Exception {
@@ -1322,26 +1324,49 @@ public final class Main {
             // this, so it is known now; any other call is not looked at.
             AnswerMachine machine = answerMachine;
             AudioCapture capture = app != null ? Voip.newCapture()
-                    : machine != null && machine.answeredThisCall()
-                    ? new LevelTap(new AudioDirectCapture(AUDIO_SOURCE), Main::onChunk)
                     : new AudioDirectCapture(AUDIO_SOURCE);
             if (capture == null) {
                 throw new IllegalStateException("messenger calls are not armed");
             }
-            File file = new File(REC_DIR, name);
-            FileOutputStream out = new FileOutputStream(file);
-            // Fails fast and loudly on a device whose HAL will not give us this
-            // source, rather than writing a silent or one-sided file.
-            capture.checkCompatibility();
-            Streamer streamer = new Streamer(out.getFD(), AUDIO_CODEC, SEND_CODEC_META, SEND_FRAME_META);
-            AsyncProcessor recorder = new AudioEncoder(capture, streamer, BIT_RATE, null, null);
-            recorder.start(fatalError -> {
-                if (fatalError) {
-                    Ln.e("recording: encoder terminated with an error");
+            // Observe PCM16 stereo without changing the sample data. The metrics
+            // are diagnostic only: a non-silent channel is NOT proof that the
+            // far end of a phone call was recorded on that channel.
+            PcmChannelHealth channelHealth = new PcmChannelHealth();
+            capture = new LevelTap(capture, (pcm, frames, atMs) -> {
+                channelHealth.accept(pcm, frames);
+                if (machine != null && machine.answeredThisCall()) {
+                    onChunk(pcm, frames, atMs);
                 }
             });
-            Ln.i("recording: started -> " + name);
-            return new RecordingSession(name, incoming, startedAt, app, file, out, recorder);
+            // Check compatibility BEFORE creating the file, so failed HAL
+            // checks do not leave a zero-byte recording to import.
+            capture.checkCompatibility();
+            File file = new File(REC_DIR, name);
+            FileOutputStream out = new FileOutputStream(file);
+            try {
+                Streamer streamer = new Streamer(out.getFD(), AUDIO_CODEC, SEND_CODEC_META, SEND_FRAME_META);
+                AsyncProcessor recorder = new AudioEncoder(capture, streamer, BIT_RATE, null, null);
+                recorder.start(fatalError -> {
+                    if (fatalError) {
+                        Ln.e("recording: encoder terminated unexpectedly; finalizing session");
+                        // Never stop/join the encoder on its own callback thread.
+                        // The recording session is published under Main.class,
+                        // so a new worker synchronizes with creation and stop.
+                        Thread worker = new Thread(() -> onEncoderFailure(name), "vrec-capture-recovery");
+                        worker.setDaemon(true);
+                        worker.start();
+                    }
+                });
+                Ln.i("recording: started -> " + name);
+                return new RecordingSession(name, incoming, startedAt, app, file, out, recorder,
+                        channelHealth);
+            } catch (Throwable failure) {
+                closeQuietly(out);
+                if (!file.delete()) {
+                    Ln.w("recording: could not remove failed startup file " + name);
+                }
+                throw failure;
+            }
         }
 
         void stop() {
@@ -1355,6 +1380,19 @@ public final class Main {
             }
             closeQuietly(out);
             Ln.i("recording: stopped -> " + name + " (" + file.length() + " bytes)");
+            Ln.i(channelHealth.snapshot().summary());
+        }
+    }
+
+    /** Terminated capture must not leave an apparently active phantom call. */
+    private static void onEncoderFailure(String name) {
+        synchronized (Main.class) {
+            RecordingSession current = activeRecording;
+            if (current == null || !current.name.equals(name)) return;
+            Ln.w("recording: capture failed; saving whatever packets are usable");
+            // stopRecording closes the packet file and notifies the app only
+            // after the stream is at rest. The import validates framing.
+            stopRecording(null);
         }
     }
 
