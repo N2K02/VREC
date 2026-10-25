@@ -1,6 +1,7 @@
 package com.vrec.app.ui
 
 import android.content.Intent
+import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -80,6 +81,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -481,6 +483,30 @@ private fun RecordingRow(
     onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit,
     onSeek: (Float) -> Unit, onStop: () -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val callApp = remember(rec.sourcePackage) {
+        resolveCallAppName(context, rec.sourcePackage)
+    }
+    // Older recordings may have a phone number but no saved contact name.
+    // Resolve in the background so scrolling never blocks on ContactsProvider.
+    val contactFromPhone by produceState<String?>(
+        initialValue = null, rec.phoneNumber, rec.contactName,
+    ) {
+        val number = rec.phoneNumber
+        if (rec.contactName.isNullOrBlank() && !number.isNullOrBlank()) {
+            value = withContext(Dispatchers.IO) {
+                com.vrec.app.calls.CallInfo.describe(context.applicationContext, number)
+            }
+        }
+    }
+    val displayedContact = RecordingListLabels.contact(
+        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber,
+    )
+    val callDirection = RecordingListLabels.direction(rec.direction, rec.callFlowDirection)
+    val callSource = RecordingListLabels.source(
+        rec.direction, callApp, rec.simSlot, rec.simLabel, rec.carrier,
+    )
+
     Card(shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor =
             if (active) MaterialTheme.colorScheme.secondaryContainer
@@ -503,15 +529,23 @@ private fun RecordingRow(
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(dateFmt.format(Date(rec.startedAt)), style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(rec.displayName, style = MaterialTheme.typography.titleSmall,
+                    Text(displayedContact, style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    rec.phoneNumber?.takeIf { it.isNotBlank() && it != rec.displayName }?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("$callDirection · $callSource",
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(formatSize(rec.sizeBytes),
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("${directionLabel(rec.direction)} · ${formatDuration(rec.durationMs)} · ${formatSize(rec.sizeBytes)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (!selectionMode) {
                     IconButton(onClick = onShare) {
@@ -582,12 +616,7 @@ private fun RecordingDetailsDialog(
     var measuredDurationMs by remember(rec.file.absolutePath) { mutableStateOf(0L) }
     val context = LocalContext.current
     val callApp = remember(rec.sourcePackage) {
-        rec.sourcePackage?.takeIf { it.isNotBlank() }?.let { pkg ->
-            runCatching {
-                val info = context.packageManager.getApplicationInfo(pkg, 0)
-                context.packageManager.getApplicationLabel(info).toString()
-            }.getOrDefault(pkg)
-        }
+        resolveCallAppName(context, rec.sourcePackage)
     }
     val number = rec.phoneNumber?.takeIf { it.isNotBlank() }
         ?: rec.peer?.takeIf { com.vrec.app.calls.CallMetadataResolver.directNumber(it) != null }
@@ -851,6 +880,24 @@ private fun DetailLine(label: String, value: String?) {
                 it.equals("unavailable", true) || it.equals("null", true)
         } ?: "-", style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(0.57f))
+    }
+}
+
+private fun resolveCallAppName(context: Context, packageName: String?): String? {
+    val pkg = packageName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching {
+        val info = context.packageManager.getApplicationInfo(pkg, 0)
+        context.packageManager.getApplicationLabel(info).toString()
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: when (pkg) {
+        "com.whatsapp" -> "WhatsApp"
+        "com.whatsapp.w4b" -> "WhatsApp Business"
+        "org.telegram.messenger" -> "Telegram"
+        "org.thoughtcrime.securesms" -> "Signal"
+        "com.facebook.orca" -> "Messenger"
+        "com.viber.voip" -> "Viber"
+        "com.skype.raider" -> "Skype"
+        "com.google.android.apps.tachyon" -> "Google Meet"
+        else -> pkg
     }
 }
 
