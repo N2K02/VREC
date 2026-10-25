@@ -10,6 +10,7 @@ import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingStore
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.calls.CallDetectionAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,6 +134,16 @@ object ExperimentalCaptureDaemon {
             else -> error("Standard mode does not need the shell daemon")
         }
 
+    /**
+     * With authorized advanced Telecom detection, outgoing OFFHOOK is only
+     * dialing. The shell must wait for InCallService STATE_ACTIVE.
+     * Without the observer, the existing OFFHOOK fallback remains in place.
+     */
+    private fun requireOutgoingAnswer(context: Context): Boolean =
+        Prefs.experimentalCallDetection(context) &&
+            CallDetectionAccess.isGranted(context) &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+
     private fun shouldArmForNextCall(context: Context): Boolean =
         Prefs.recordingEnabled(context) &&
             !AdbFallbackNotice.active.value &&
@@ -146,13 +157,34 @@ object ExperimentalCaptureDaemon {
                 "Select Built-in ADB first."
             }
             if (probe(context)) {
-                check(setMode(context, Prefs.recordingEnabled(context))) {
-                    "Could not confirm the helper's recording mode."
+                if (setMode(context, Prefs.recordingEnabled(context))) {
+                    message.value = if (Prefs.recordingEnabled(context))
+                        "Recorder running. It can capture without a current ADB connection."
+                    else "Recorder running; Home recording switch is off."
+                    return@runCatching
                 }
-                message.value = if (Prefs.recordingEnabled(context))
-                    "Recorder running. It can capture without a current ADB connection."
-                else "Recorder running; Home recording switch is off."
-                return@runCatching
+                // The previous APK may have left an old shell daemon running.
+                // A new app must not pretend an old binary supports answered-call
+                // gating. Only a verified ADB shell may replace it, and never
+                // while it is recording or handling a call (Q responds BUSY).
+                val link = ExperimentalRecording.status.value
+                check(link.connected && link.shellUid == 2000) {
+                    "Reauthorize ADB to update the older helper."
+                }
+                val exit = open(context, 'Q').use {
+                    it.getInputStream().bufferedReader().readLine()?.trim()
+                }
+                check(exit == "BYE") {
+                    "The existing helper is busy or cannot be upgraded during a call."
+                }
+                var exited = false
+                repeat(15) {
+                    if (!exited) {
+                        delay(250)
+                        exited = !probe(context)
+                    }
+                }
+                check(exited) { "Old helper did not release its authenticated socket." }
             }
             val staged = stage(context)
             // External files are used only to move the executable into shell-private
@@ -164,6 +196,7 @@ object ExperimentalCaptureDaemon {
             check("STAGED" in copy) { "Could not stage capture jar: " + copy }
             val launch = "VREC_TOKEN=" + token(context) +
                 " VREC_MODE=" + (if (shouldArmForNextCall(context)) "1" else "0") +
+                " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
                 " VREC_TRACK=0 VREC_VOIP='' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
@@ -201,12 +234,24 @@ object ExperimentalCaptureDaemon {
                     AdbFallbackNotice.handoffInProgress.value &&
                         RecordingService.state.value is RecordingService.State.Idle
                 else shouldArmForNextCall(context)
-            runCatching {
-                open(context, 'E', byteArrayOf(if (allowed) 1 else 0)).use {
-                    val confirmedMode = it.getInputStream().bufferedReader().readLine()?.trim()
-                    confirmedMode == if (allowed) "1" else "0"
+            val verified = runCatching {
+                val waitForAnswer = allowed && requireOutgoingAnswer(context)
+                open(context, 'E', byteArrayOf(
+                        if (allowed) 1 else 0,
+                        if (waitForAnswer) 1 else 0,
+                    )).use {
+                    val confirmed = it.getInputStream().bufferedReader().readLine()?.trim()
+                    // Never consider an old one-byte daemon compatible with
+                    // the authorized answered-call timing requirement.
+                    confirmed == "${if (allowed) 1 else 0} WAIT ${if (waitForAnswer) 1 else 0}" ||
+                        (!waitForAnswer && confirmed == (if (allowed) "1" else "0"))
                 }
             }.getOrDefault(false)
+            if (!verified) {
+                ready.value = false
+                message.value = "Enhanced helper mode not verified. Reconnect authorized ADB to update it."
+            }
+            verified
         }
     }
 
@@ -259,6 +304,19 @@ object ExperimentalCaptureDaemon {
             }.getOrDefault(false)
         }
 
+    /** Confirm an outgoing cellular call really connected, not merely went OFFHOOK. */
+    suspend fun confirmOutgoingAnswered(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!Prefs.recordingEnabled(context) ||
+                ExperimentalRecording.method(context) != ExperimentalRecording.Method.BUILT_IN_ADB ||
+                !requireOutgoingAnswer(context)) return@withContext false
+            runCatching {
+                open(context, 'C').use { socket ->
+                    socket.getInputStream().bufferedReader().readLine()?.trim() == "ANSWER STARTED"
+                }
+            }.getOrDefault(false)
+        }
+
     /** Start a new enhanced segment during an already-observed phone call. */
     suspend fun startCurrentCellularCall(context: Context): Result<String> =
         withContext(Dispatchers.IO) {
@@ -282,6 +340,8 @@ object ExperimentalCaptureDaemon {
         importMutex.withLock {
         runCatching {
             var collected = 0
+            var failures = 0
+            var firstFailure: String? = null
             for (name in pending(context)) {
                 val started = Regex("^vrec_rec_([0-9]{12,15})")
                     .find(name)?.groupValues?.get(1)?.toLongOrNull() ?: System.currentTimeMillis()
@@ -338,12 +398,20 @@ object ExperimentalCaptureDaemon {
                     delete(context, name)
                     collected++
                 } catch (t: Throwable) {
+                    // One bad or truncated shell file must not block later
+                    // recordings in the list. Preserve the shell original;
+                    // only temporary app-side output is discarded.
                     Log.w(TAG, "Import failed for " + name, t)
                     temp.delete()
-                    throw t
+                    failures++
+                    if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
+                    continue
                 }
             }
-            if (collected > 0) message.value = "Imported " + collected + " enhanced recordings."
+            message.value = ImportBatchPolicy.message(collected, failures)
+            if (ImportBatchPolicy.shouldFailBatch(collected, failures)) {
+                throw IOException("$failures recordings could not be imported: $firstFailure")
+            }
             collected
         }.onFailure {
             message.value = "Import failed: " + it.message

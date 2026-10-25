@@ -65,9 +65,17 @@ object AdbPrivilegedApiHelper {
     }
 
     suspend fun checkHealth(context: Context): State = lock.withLock {
-        val available = ExperimentalCaptureDaemon.probe(context.applicationContext)
-        state.value = if (available) State.RUNNING else State.NEEDS_ADB
-        if (available) RecordingService.requestAdbHandoff(context.applicationContext)
+        val app = context.applicationContext
+        val available = ExperimentalCaptureDaemon.probe(app)
+        // A process-level ERROR may be stale (permission or Telecom mode was
+        // fixed since the last probe). Re-verify the authenticated mode handshake
+        // before declaring RUNNING. A plain PONG must NEVER reset ERROR.
+        val armed = available && Prefs.recordingEnabled(app) &&
+            ExperimentalRecording.method(app) == ExperimentalRecording.Method.BUILT_IN_ADB
+        val verified = available && ExperimentalCaptureDaemon.setMode(app, armed)
+        state.value = HelperHealthPolicy.nextState(available, verified)
+        ExperimentalCaptureDaemon.ready.value = verified
+        if (verified) RecordingService.requestAdbHandoff(app)
         state.value
     }
 }

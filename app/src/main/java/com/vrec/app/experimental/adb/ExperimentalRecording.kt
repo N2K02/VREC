@@ -172,6 +172,13 @@ object ExperimentalRecording {
         Prefs.of(context).edit().putBoolean(
             Prefs.EXPERIMENTAL_CALL_DETECTION, confirmed
         ).apply()
+        // The permission may have been granted AFTER the Java helper was
+        // launched. Reconfigure that running daemon now, so the first outgoing
+        // call waits for Telecom ACTIVE rather than recording the dial tone.
+        if (confirmed && com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.ready.value) {
+            com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.setMode(
+                context.applicationContext, Prefs.recordingEnabled(context))
+        }
         return if (confirmed) Result.success(Unit)
             else Result.failure(result.exceptionOrNull()
                 ?: IllegalStateException("Android did not confirm advanced detection permission."))

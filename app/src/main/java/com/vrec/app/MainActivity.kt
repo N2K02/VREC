@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Article
 import androidx.compose.material.icons.rounded.Info
@@ -34,8 +35,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -60,6 +59,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -70,10 +70,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
@@ -83,6 +83,9 @@ import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -154,6 +157,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     // Back and the app-bar arrow can return to the Settings overview.
     var settingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     var returnToSettings by rememberSaveable { mutableStateOf(false) }
+    val quitContext = LocalContext.current
 
     LaunchedEffect(openAdbSetup) {
         if (openAdbSetup) {
@@ -198,7 +202,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
             VrecBrandHeader(
                 title = if (screen == Screen.SETTINGS) settingsSection ?: "Settings" else title,
                 screen = screen,
-                onBack = if (screen == Screen.HOME) null else { { navigateBack() } },
             )
         },
         bottomBar = {
@@ -224,16 +227,13 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                         listOf(
                             Triple(Screen.HOME, "Home", Icons.Rounded.Home),
                             Triple(Screen.RECORDINGS, "Recordings", Icons.Rounded.Folder),
-                            Triple(Screen.SETUP, "Setup", Icons.Rounded.Tune),
                             Triple(Screen.SETTINGS, "Settings", Icons.Rounded.Settings),
                         ).forEach { (destination, label, icon) ->
                             NavigationBarItem(
-                                selected = when {
-                                    screen == Screen.SETUP && returnToSettings ->
-                                        destination == Screen.SETTINGS
-                                    screen == Screen.LOG || screen == Screen.UPDATE ->
-                                        destination == Screen.SETTINGS
-                                    else -> screen == destination
+                                selected = when (destination) {
+                                    Screen.HOME -> screen == Screen.HOME
+                                    Screen.RECORDINGS -> screen == Screen.RECORDINGS
+                                    else -> screen != Screen.HOME && screen != Screen.RECORDINGS
                                 },
                                 onClick = { navigateTo(destination) },
                                 icon = {
@@ -247,6 +247,19 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 alwaysShowLabel = true,
                             )
                         }
+                        NavigationBarItem(
+                            selected = false,
+                            onClick = {
+                                // Disable all recording modes, stop and save any active segment,
+                                // dismiss floating controls, and disable ADB capture.
+                                CallMonitor.setRecordingEnabled(quitContext, false)
+                                LiveUpdater.controller.cancel()
+                                (quitContext as? ComponentActivity)?.finishAndRemoveTask()
+                            },
+                            icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Quit") },
+                            label = { Text("Quit") },
+                            alwaysShowLabel = true,
+                        )
                     }
                 }
             }
@@ -254,7 +267,13 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(onOpenSetup = { navigateTo(Screen.SETUP) }, onNavigate = { navigateTo(it) })
+                Screen.HOME -> HomeScreen(
+                    onOpenSetup = { navigateTo(Screen.SETUP) },
+                    onOpenExperimental = {
+                        navigateTo(Screen.SETTINGS)
+                        settingsSection = "Experimental"
+                    },
+                )
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
@@ -264,6 +283,8 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                     onSectionChange = { settingsSection = it },
                     onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
+                    onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
+                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                 )
                 Screen.LOG -> LogScreen()
                 Screen.UPDATE -> UpdateScreen()
@@ -274,7 +295,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
 
 /** MRadio-style header: screen icon/title on the left, app logo on the right. */
 @Composable
-private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?) {
+private fun VrecBrandHeader(title: String, screen: Screen) {
     val icon = when (screen) {
         Screen.HOME -> Icons.Rounded.Home
         Screen.RECORDINGS -> Icons.Rounded.Folder
@@ -293,21 +314,8 @@ private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?
             Row(Modifier.weight(1f),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (onBack != null) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                    if (screen == Screen.UPDATE) {
-                        dev.n2k02.updater.N2K02AppIcon(modifier = Modifier.size(24.dp))
-                    } else {
-                        Icon(icon, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp))
-                    }
-                } else {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp))
-                }
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -373,7 +381,10 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 }
 
 @Composable
-private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
+private fun HomeScreen(
+    onOpenSetup: () -> Unit,
+    onOpenExperimental: () -> Unit,
+) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
@@ -381,6 +392,24 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
     val recording = recState !is RecordingService.State.Idle || enhancedActive
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
+    val adbSelected = ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB
+    val adbConnection by ExperimentalRecording.status.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperMessage by ExperimentalCaptureDaemon.message.collectAsState()
+    val connectionScope = rememberCoroutineScope()
+
+    // Observe connection changes while Home is visible. This does not pair, connect,
+    // enable TCP debugging, or start the privileged helper without user consent.
+    LaunchedEffect(adbSelected) {
+        if (adbSelected) {
+            while (true) {
+                ExperimentalRecording.refreshConnectionStatus()
+                AdbPrivilegedApiHelper.checkHealth(context)
+                delay(8_000L)
+            }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -441,33 +470,71 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
                 } else if (recordingEnabled && !enhancedActive) ManualRecordButton(recState)
             }
         }
-        Text("Explore", style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp, top = 4.dp))
-        NavigationCard(
-            title = "Recordings",
-            subtitle = "Browse, play and manage saved recordings",
-            icon = Icons.Rounded.Folder,
-            onClick = { onNavigate(Screen.RECORDINGS) },
-        )
-        if (!ready) NavigationCard(
-            title = "Setup",
-            subtitle = "Permissions and recording accessibility",
-            icon = Icons.Rounded.Tune,
-            onClick = { onNavigate(Screen.SETUP) },
-        )
-        NavigationCard(
-            title = "Settings",
-            subtitle = "Configure recording behavior",
-            icon = Icons.Rounded.Settings,
-            onClick = { onNavigate(Screen.SETTINGS) },
-        )
-        NavigationCard(
-            title = "Activity log",
-            subtitle = "Review app events and diagnostics",
-            icon = Icons.Rounded.Article,
-            onClick = { onNavigate(Screen.LOG) },
-        )
+        if (adbSelected) {
+            val verifiedTcp = adbConnection.connected &&
+                adbConnection.connectedTransport == ExperimentalRecording.Transport.TCP &&
+                adbConnection.shellUid == 2000
+            val helperHealthy = helperReady &&
+                helperState == AdbPrivilegedApiHelper.State.RUNNING
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("ADB helper status", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(
+                        when {
+                            helperHealthy -> "Helper connected and healthy"
+                            helperState == AdbPrivilegedApiHelper.State.STARTING -> "Helper starting"
+                            helperState == AdbPrivilegedApiHelper.State.ERROR -> "Helper needs attention"
+                            helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB -> "Helper needs authorized ADB"
+                            else -> "Helper not connected"
+                        },
+                        color = if (helperHealthy) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        when {
+                            verifiedTcp -> "TCP/5555: connected and verified (shell UID 2000)"
+                            adbConnection.connected && adbConnection.shellUid == 2000 ->
+                                "ADB authorized via Wireless; TCP not connected"
+                            adbConnection.tcpPortOpen ->
+                                "TCP/5555 listening; ADB authorization not verified"
+                            else -> "TCP/5555 not connected"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!helperHealthy && helperMessage.isNotBlank()) {
+                        Text(helperMessage, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Button(
+                            onClick = {
+                                connectionScope.launch {
+                                    ExperimentalRecording.connect(context, 5555, wirelessOnly = false)
+                                }
+                            },
+                            enabled = !adbConnection.busy && !verifiedTcp,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(if (adbConnection.busy) "Connecting…" else if (verifiedTcp) "TCP connected" else "Connect TCP/5555")
+                        }
+                        OutlinedButton(onClick = onOpenExperimental, modifier = Modifier.weight(1f)) {
+                            Text("Experimental setup")
+                        }
+                    }
+                    if (adbConnection.message.isNotBlank() && (!verifiedTcp || !helperHealthy)) {
+                        Text(adbConnection.message, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -502,43 +569,6 @@ private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> 
                 )
             }
             Switch(checked = enabled, onCheckedChange = onEnabledChange)
-        }
-    }
-}
-
-@Composable
-private fun NavigationCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(22.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(26.dp),
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = "Open $title",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

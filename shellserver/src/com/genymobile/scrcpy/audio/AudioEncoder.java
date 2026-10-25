@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class AudioEncoder implements AsyncProcessor {
 
@@ -68,6 +69,8 @@ public final class AudioEncoder implements AsyncProcessor {
     private Thread outputThread;
 
     private boolean ended;
+    private volatile boolean stopRequested;
+    private final AtomicBoolean workerFailed = new AtomicBoolean(false);
 
     /**
      * PATCHED: takes its three settings directly instead of an Options object.
@@ -118,8 +121,17 @@ public final class AudioEncoder implements AsyncProcessor {
             InputTask task = inputTasks.take();
             ByteBuffer buffer = mediaCodec.getInputBuffer(task.index);
             int r = capture.read(buffer, bufferInfo);
+            int consecutiveZeros = 0;
+            while (r == 0 && AudioReadGuard.retryEmptyRead(++consecutiveZeros)) {
+                // Some HALs briefly return no PCM. Avoid a busy loop; do not
+                // enqueue a zero-byte frame or fabricate silence.
+                Thread.sleep(AudioReadGuard.BACKOFF_MILLIS);
+                buffer.position(0);
+                r = capture.read(buffer, bufferInfo);
+            }
             if (r <= 0) {
-                throw new IOException("Could not read audio: " + r);
+                throw new IOException("Audio source stalled or failed: " + r
+                        + " (consecutive zero reads=" + consecutiveZeros + ")");
             }
 
             mediaCodec.queueInputBuffer(task.index, bufferInfo.offset, bufferInfo.size, bufferInfo.presentationTimeUs, bufferInfo.flags);
@@ -172,13 +184,18 @@ public final class AudioEncoder implements AsyncProcessor {
                 // Do not print stack trace, a user-friendly error-message has already been logged
                 fatalError = true;
             } catch (AudioCaptureException e) {
-                // Do not print stack trace, a user-friendly error-message has already been logged
+                // Failure to start a privileged source is a failed recording,
+                // not a normal stop; report it to the shell session owner.
+                fatalError = true;
             } catch (IOException e) {
                 Ln.e("Audio encoding error", e);
                 fatalError = true;
+            } catch (Throwable t) {
+                Ln.e("Unexpected audio encoder failure", t);
+                fatalError = true;
             } finally {
                 Ln.d("Audio encoder stopped");
-                listener.onTerminated(fatalError);
+                listener.onTerminated(fatalError || workerFailed.get());
             }
         }, "audio-encoder");
         thread.start();
@@ -187,7 +204,9 @@ public final class AudioEncoder implements AsyncProcessor {
     @Override
     public void stop() {
         if (thread != null) {
-            // Just wake up the blocking wait from the thread, so that it properly releases all its resources and terminates
+            stopRequested = true;
+            // Wake the encoder for bounded cleanup instead of interrupting
+            // MediaCodec in the middle of an output write.
             end();
         }
     }
@@ -250,8 +269,18 @@ public final class AudioEncoder implements AsyncProcessor {
             inputThread = new Thread(() -> {
                 try {
                     inputThread(mediaCodecRef, capture);
-                } catch (IOException | InterruptedException e) {
-                    Ln.e("Audio capture error", e);
+                } catch (IOException e) {
+                    if (!stopRequested) {
+                        workerFailed.set(true);
+                        Ln.e("Audio capture failed unexpectedly", e);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (Throwable t) {
+                    if (!stopRequested) {
+                        workerFailed.set(true);
+                        Ln.e("Unexpected audio input failure", t);
+                    }
                 } finally {
                     end();
                 }
@@ -263,9 +292,16 @@ public final class AudioEncoder implements AsyncProcessor {
                 } catch (InterruptedException e) {
                     // this is expected on close
                 } catch (IOException e) {
-                    // Broken pipe is expected on close, because the socket is closed by the client
-                    if (!IO.isBrokenPipe(e)) {
-                        Ln.e("Audio encoding error", e);
+                    if (!stopRequested) {
+                        workerFailed.set(true);
+                        if (!IO.isBrokenPipe(e)) {
+                            Ln.e("Audio output failed unexpectedly", e);
+                        }
+                    }
+                } catch (Throwable t) {
+                    if (!stopRequested) {
+                        workerFailed.set(true);
+                        Ln.e("Unexpected audio output failure", t);
                     }
                 } finally {
                     end();

@@ -2,6 +2,7 @@ package com.vrec.app.ui
 
 import androidx.compose.foundation.clickable
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import androidx.compose.material3.OutlinedButton
 import com.vrec.app.calls.VoipNotifListener
@@ -78,6 +79,8 @@ fun SettingsScreen(
     onSectionChange: (String?) -> Unit,
     onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
+    onOpenRecordings: () -> Unit = {},
+    onOpenSetup: () -> Unit = {},
 ) {
     val updateStatus by LiveUpdater.controller.status.collectAsState()
     val context = LocalContext.current
@@ -138,7 +141,10 @@ fun SettingsScreen(
     var inComm by remember { mutableStateOf(prefs.getBoolean(Prefs.IN_COMM_MODE, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
-    var showOverlay by remember { mutableStateOf(prefs.getBoolean(Prefs.SHOW_OVERLAY, false)) }
+    var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
+    val overlayPermissionGranted = remember(resumeTick) {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || AndroidSettings.canDrawOverlays(context)
+    }
     var sourceMode by remember { mutableStateOf(Prefs.sourceMode(context)) }
 
     fun putBool(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
@@ -149,6 +155,12 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (section == null) {
+            Text(
+                "Make recording your own",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 12.dp),
+            )
             SettingCard("Recording method") {
                 RecordingMethodOption(
                     label = "Regular recording",
@@ -163,24 +175,6 @@ fun SettingsScreen(
                     onSelect = { selectRecordingMethod(ExperimentalRecording.Method.BUILT_IN_ADB) },
                 )
             }
-            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
-                AdbSetupProgressCard(
-                    adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
-                        (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
-                    helperReady = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING,
-                    advancedGranted = advancedPermissionGranted,
-                    advancedEnabled = advancedDetectionEnabled,
-                    onConfigure = { onSectionChange("Experimental") },
-                )
-            }
-            Text("Make recording your own",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp))
-            Card(shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(6.dp)) {
             listOf(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
@@ -194,40 +188,41 @@ fun SettingsScreen(
                     supportingContent = { Text(detail) },
                     leadingContent = { Icon(icon, contentDescription = null) },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
-                        .clickable { onSectionChange(name) },
+                    modifier = Modifier.clickable { onSectionChange(name) },
                 )
             }
-            }
-            }
-            Text("More", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 6.dp))
-            Card(shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(6.dp)) {
-            listOf(
-                Triple("Activity log", "Recording events and diagnostics", Icons.Rounded.Article),
-                Triple("About & updates", "Version and update checks", Icons.Rounded.SystemUpdate),
-            ).forEachIndexed { index, (name, detail, icon) ->
-                ListItem(
-                    headlineContent = { Text(name) },
-                    supportingContent = { Text(if (index == 1 && updateStatus.hasPendingUpdate()) "A new update is available" else detail) },
-                    leadingContent = { Icon(icon, contentDescription = null) },
-                    trailingContent = { if (index == 1) dev.n2k02.updater.N2K02UpdateBadge(updateStatus) else Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable {
-                        when (index) {
-                            0 -> onOpenLog()
-                            else -> onOpenUpdates()
-                        }
-                    },
-                )
-            }
-            }
-            }
+            ListItem(
+                headlineContent = { Text("Recordings") },
+                supportingContent = { Text("Browse, play and share recorded calls") },
+                leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenRecordings),
+            )
+            ListItem(
+                headlineContent = { Text("Permissions & setup") },
+                supportingContent = { Text("Recorder permissions and accessibility requirements") },
+                leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenSetup),
+            )
+            HorizontalDivider()
+            // Diagnostics and updates remain together at the bottom like mRadio.
+            ListItem(
+                headlineContent = { Text("Activity log") },
+                supportingContent = { Text("Recording events and diagnostics") },
+                leadingContent = { Icon(Icons.Rounded.Article, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenLog),
+            )
+            ListItem(
+                headlineContent = { Text("About & updates") },
+                supportingContent = {
+                    Text(if (updateStatus.hasPendingUpdate()) "A new update is available" else "Version and update checks")
+                },
+                leadingContent = { Icon(Icons.Rounded.SystemUpdate, contentDescription = null) },
+                trailingContent = { dev.n2k02.updater.N2K02UpdateBadge(updateStatus) },
+                modifier = Modifier.clickable(onClick = onOpenUpdates),
+            )
         } else {
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
@@ -270,13 +265,25 @@ fun SettingsScreen(
         }
 
         if (section == "Floating controls") SettingCard("Floating controls") {
-            ToggleRow("Show compact overlay", "Drag the dot; Pause/Resume, Stop or Record again, and Close. Stop saves audio; Close only hides the overlay. Requires Display over other apps permission.", showOverlay) {
+            ToggleRow("Show compact overlay", "Enabled by default. Drag the three-dot handle on the right to move the controls. Stop saves audio; Close only hides the overlay.", showOverlay) {
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
+            }
+            if (showOverlay && !overlayPermissionGranted) {
+                Text("Allow Display over other apps so VRec can show floating controls during calls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")))
+                    }
+                }) { Text("Allow floating controls") }
             }
         }
 
         if (section == "Experimental") {
             if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                // Full setup checklist lives only here, not on the Settings overview.
                 AdbSetupProgressCard(
                     adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
                         (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
@@ -285,19 +292,17 @@ fun SettingsScreen(
                     advancedEnabled = advancedDetectionEnabled,
                 )
                 ExperimentalRecorderCard()
-                // Advanced AppOp is a separate explicit user action.
+                // The advanced Telecom AppOp requires its own explicit consent.
                 TelecomAdbInstructionCard(onAccessChanged = { permissionCheckTick++ })
             } else {
-                SettingCard("ADB privileged helper") {
-                    Text(
-                        "The ADB helper is off. Select it under Recording method in the main Settings page to configure connection and special access.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(onClick = { onSectionChange(null) }) {
-                        Text("Go to recording method")
-                    }
-                }
+                // A single actionable row replaces a second instructional card.
+                ListItem(
+                    headlineContent = { Text("ADB mode is off") },
+                    supportingContent = { Text("Select ADB privileged helper under Recording method to configure the connection.") },
+                    leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                    modifier = Modifier.clickable { onSectionChange(null) },
+                )
             }
         }
 
