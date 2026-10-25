@@ -13,7 +13,7 @@ class SettingsConsistencyContractTest {
         val menu = source.substringAfter("if (section == null) {", "")
         assertTrue("Settings section missing", menu.isNotBlank())
         assertTrue("Settings group title is missing", menu.contains("Make recording your own"))
-        assertTrue("Settings menu item is missing", menu.contains("headlineContent = { Text(\"Recording\") }"))
+        assertTrue("Settings menu item is missing", menu.contains("Triple(\"Recording\", \"Automatic recording and silent files\""))
         assertTrue("Updates or diagnostic footer missing", menu.contains("headlineContent = { Text(\"About & updates\") }"))
         val divider = menu.indexOf("HorizontalDivider()")
         val update = menu.indexOf("headlineContent = { Text(\"About & updates\") }")
