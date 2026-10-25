@@ -181,10 +181,9 @@ loopback reconnect, Wi-Fi loss and TCP security; import and two-sided listening;
 and overlay/master toggle integration. Passing GitHub CI establishes build
 compatibility, not a device-specific protected audio entitlement.
 
-Future improvements requested but **not yet implemented** include a stronger
-source-quality selector, validated per-recording audio-source diagnostics,
-metadata-consistency fixes, and OS-scheduled background recovery when the app
-process has been stopped.
+Previous gaps in source selection and recorded-file diagnostics have now
+been addressed in the later enhanced SIM/VoIP batch below. Device-specific
+capture compatibility and OS-scheduled recovery still need testing.
 
 
 ## 2026-10-25 — one-batch ADB/PCM reliability review (ShizuCallRecorder 2.x ideas)
@@ -225,13 +224,56 @@ the applicable safety properties from upstream's October native-audio rework:
   existing outgoing answer gate. JVM tests cover truncated encoded packets,
   impossible lengths, clean EOF and helper handshake state.
 
-**Deliberately not integrated:** a second native capture stack, dual
-AudioPolicy/AudioRecord sources, automatic AGC/ducking, codec replacement or
+**Deliberately not integrated in this earlier reliability batch:** a second native capture
+stack, dual AudioPolicy/AudioRecord sources, automatic AGC/ducking, codec replacement or
 hidden-system-permission changes. Those depend on OEM audio routing and
 carry substantial regression and GPL compatibility risk. The benefits here
 come from reliability and diagnostics, not from bypassing Android capture
 restrictions. Test with consented SIM/VoLTE, Wi-Fi calling and Bluetooth calls
 on Android 13–17 before promoting out of experimental.
+
+## 2026-10-25 — independently implemented enhanced VoIP and SIM-source selection
+
+- **Shell VoIP is opt-in.** When Enhanced ADB is selected and `Record VoIP calls`
+  is enabled on Android 14+, VRec sends its supported-app allowlist to the
+  authenticated shell helper. The shell registers its existing AudioPolicy
+  voice-communication playback capture and, where supported, captures its own
+  microphone source for the user's voice. Supported packages include
+  WhatsApp/Business, Telegram, Signal, Messenger, Viber, Skype and Google
+  Meet. A real call may still fail to record if the device or app forbids
+  audio capture; not every app implements the same call-state semantics.
+- **Avoid duplicate recording.** The standard recorder is not started for a
+  recognized supported VoIP app when the authenticated helper has confirmed
+  its VoIP policy is armed; non-supported/unavailable cases keep the existing
+  standard fallback where permitted. Disabling the master switch disarms
+  shell recording and VoIP monitoring.
+- **Correct saved identity.** Shell filenames are parsed with a strict
+  allowlisted `_voip-<package>` suffix rather than being incorrectly labeled
+  outgoing SIM calls. App package and friendly name are written to the normal
+  recording sidecar; VoIP direction remains `VOIP`, not an invented incoming
+  or outgoing direction.
+- **SIM capture modes.** The existing independent shell helper now supports
+  `VOICE_CALL` (default), `VOICE_UPLINK`, `VOICE_DOWNLINK`, or experimental
+  dual-uplink/downlink stereo using two native `AudioRecord` sources. The latter
+  can fail on some OEMs, and sequential PCM reads cannot establish perfect
+  clock synchronization on every device. Source changes made during a call
+  are deferred until the next idle synchronization.
+- **Per-recording diagnostics.** Before encoding, each PCM channel is sampled
+  for RMS, silence and clipping. The daemon stores a short independent metric
+  sidecar, served only over the authenticated local connection and imported
+  into VRec's normal recording metadata. The recording details page flags
+  low-energy channels or clipping but cannot claim either caller was captured
+  without a listening test. Raw diagnostic PCM is not stored.
+- **No Shizuku dependency.** No Shizuku server, user service or GPL source was
+  included. Capturing enhanced SIM calls does not require RECORD_AUDIO to be
+  granted to the VRec app; the shell process has its own audio privileges.
+  Standard microphone capture/fallback still requires the app's permission.
+
+Required device acceptance: test both sides of SIM and VoIP audio on the
+target Android version and OEM, check concurrent notification-vs-shell call
+starts, unavailable dual sources, route changes, audio silence warnings,
+imported app names, call end, and automatic helper recovery. CI alone cannot
+prove platform audio compatibility.
 
 ## Attribution
 
