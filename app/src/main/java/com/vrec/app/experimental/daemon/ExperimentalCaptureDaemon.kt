@@ -8,6 +8,7 @@ import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingStore
+import com.vrec.app.recording.RecordingType
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.calls.CallDetectionAccess
@@ -386,6 +387,7 @@ object ExperimentalCaptureDaemon {
                     RecordingStore.writeMeta(
                         dest, direction, null, "Shell VOICE_CALL",
                         silent = false, durationMs = durationMs,
+                        recordingType = RecordingType.ADB,
                     )
                     val sidecar = File(dest.parentFile, dest.name + ".json")
                     runCatching {
