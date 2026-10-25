@@ -277,9 +277,13 @@ private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?
                     IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                    Icon(icon, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp))
+                    if (screen == Screen.UPDATE) {
+                        dev.n2k02.updater.N2K02AppIcon(modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(icon, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp))
+                    }
                 } else {
                     Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp))
