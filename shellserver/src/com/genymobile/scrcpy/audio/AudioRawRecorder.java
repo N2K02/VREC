@@ -44,14 +44,27 @@ public final class AudioRawRecorder implements AsyncProcessor {
             }
 
             streamer.writeAudioHeader();
+            int consecutiveZeros = 0;
             while (!Thread.currentThread().isInterrupted()) {
                 buffer.position(0);
                 int r = capture.read(buffer, bufferInfo);
                 if (r < 0) {
                     throw new IOException("Could not read audio: " + r);
                 }
+                if (r == 0) {
+                    if (!AudioReadGuard.retryEmptyRead(++consecutiveZeros)) {
+                        throw new IOException("Raw PCM source stalled after " + consecutiveZeros + " empty reads");
+                    }
+                    try {
+                        Thread.sleep(AudioReadGuard.BACKOFF_MILLIS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    continue; // Do not stream or encode fabricated empty packets.
+                }
+                consecutiveZeros = 0;
                 buffer.limit(r);
-
                 streamer.writePacket(buffer, bufferInfo);
             }
         } catch (IOException e) {
