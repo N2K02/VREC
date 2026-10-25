@@ -71,6 +71,9 @@ fun SetupScreen() {
     val contactsOn = remember(tick) {
         context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
     }
+    val callLogOn = remember(tick) {
+        context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    }
     val appAlertsOn = remember(tick) {
         Build.VERSION.SDK_INT < 33 ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -83,7 +86,7 @@ fun SetupScreen() {
     val optionalCount = (if (floatingOn) 1 else 0) +
         if (Build.VERSION.SDK_INT >= 33 && appAlertsOn) 1 else 0
     val optionalTotal = if (Build.VERSION.SDK_INT >= 33) 2 else 1
-    val completed = listOf(basicsReady, accessibilityOn).count { it }
+    val completed = listOf(basicsReady, accessibilityOn, callLogOn).count { it }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissionTick++ }
@@ -100,17 +103,17 @@ fun SetupScreen() {
     ) {
         Text("Set up VREC", style = MaterialTheme.typography.headlineMedium)
         Text(
-            if (completed == 2) "You're ready to record calls."
-            else "Just two steps to get started.",
+            if (completed == 3) "VREC is ready to record and identify SIM calls."
+            else "Complete setup for recording and automatic SIM caller identification.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$completed of 2 complete", style = MaterialTheme.typography.labelLarge,
+            Text("$completed of 3 complete", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
         }
         LinearProgressIndicator(
-            progress = { completed / 2f },
+            progress = { completed / 3f },
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -146,12 +149,30 @@ fun SetupScreen() {
             },
         )
 
-        // Caller names are a prominent, permission-controlled feature, not a recording prerequisite.
         SetupStepCard(
             number = "3",
-            title = "Show SIM caller names (recommended)",
-            detail = "Allow Contacts so VREC can match captured phone numbers to saved names. " +
-                "If Android hides the number, you can still choose a contact for the recording.",
+            title = "Allow call history (required for SIM identification)",
+            detail = "Matches finished SIM recordings to their caller numbers. " +
+                "Android may restrict this permission depending on how VREC was installed.",
+            done = callLogOn,
+            actionLabel = "Allow Call log",
+            onAction = { request(Manifest.permission.READ_CALL_LOG) },
+            footer = {
+                if (!callLogOn) Text(
+                    "If permission cannot be granted, recording still works. " +
+                        "Android sometimes requires installer allowlisting for Call log access.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+        )
+
+        // Contacts are recommended; call-log names also work when the dialer cached a name.
+        SetupStepCard(
+            number = "4",
+            title = "Show saved contact names (recommended)",
+            detail = "Allow Contacts so VREC can match numbers recovered from call history " +
+                "to your saved contacts.",
             done = contactsOn,
             actionLabel = "Allow Contacts",
             onAction = { request(Manifest.permission.READ_CONTACTS) },
