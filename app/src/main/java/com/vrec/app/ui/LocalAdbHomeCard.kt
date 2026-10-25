@@ -2,6 +2,7 @@ package com.vrec.app.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.vrec.app.experimental.adb.AdbBadgePolicy
+import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalAdbMiddleware
@@ -52,6 +54,9 @@ fun LocalAdbHomeCard(onOpenDetailedSetup: () -> Unit) {
     val tick = rememberOnResumeTick()
     val usbDebugging = androidx.compose.runtime.remember(tick, adbState) {
         ExperimentalRecording.usbDebuggingFlag(context)
+    }
+    val accessibilityOn = androidx.compose.runtime.remember(tick) {
+        VrecAccessibilityService.isEnabled(context)
     }
     val healthy = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
     val verified = adbState.connected && adbState.shellUid == 2000
@@ -107,6 +112,27 @@ fun LocalAdbHomeCard(onOpenDetailedSetup: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (permissions.unavailable.isNotEmpty()) {
+                    OutlinedButton(onClick = {
+                        runCatching {
+                            context.startActivity(Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:${context.packageName}")))
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Review Android app permissions") }
+                }
+            }
+            if (!accessibilityOn) {
+                Text(
+                    "Optional caller detection helper: enable 'Vrec call recording helper' " +
+                        "in Android Accessibility settings if you use this feature. " +
+                        "ADB authorization does not activate Accessibility.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = {
+                    runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Accessibility settings") }
             }
             Button(onClick = { scope.launch { LocalAdbMiddleware.setup(context) } },
                 enabled = !busy && !adbState.busy, modifier = Modifier.fillMaxWidth()) {

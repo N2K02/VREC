@@ -168,7 +168,14 @@ fun SettingsScreen(
             )
             // Supported runtime permissions are configured after UID 2000 verification.
             HorizontalDivider()
-            // Diagnostics and updates remain together at the bottom like mRadio.
+            // Diagnostics, logs and updates remain together at the bottom like mRadio.
+            ListItem(
+                headlineContent = { Text("ADB diagnostics") },
+                supportingContent = { Text("Connection checks, shell helper and audio source health") },
+                leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
+                modifier = Modifier.clickable { onSectionChange("Experimental") },
+            )
             ListItem(
                 headlineContent = { Text("Activity log") },
                 supportingContent = { Text("Recording events and diagnostics") },

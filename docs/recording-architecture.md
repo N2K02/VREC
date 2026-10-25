@@ -1,34 +1,62 @@
-# VRec recording architecture (consolidated experimental)
+# VRec recording architecture — current experimental PR #40
 
-## Two recording methods
+## Capture path
 
-1. **Standard** — Android foreground microphone service managed by `RecordingService` and `RecordingEngine`. Does not require ADB. The Home **Recording** master switch and automatic-recording setting control whether new recordings may start.
-2. **Built-in ADB** — VRec's own Java shell process (`shellserver/src/com/vrec/app/shell/Main.java`) started through authenticated ADB, only after a trusted USB ADB host enables localhost TCP/5555. `AdbPrivilegedApiHelper` connects to and checks the health of `ExperimentalCaptureDaemon` via an authenticated loopback socket. It needs ADB to *bootstrap a missing process*, but may continue after that ADB connection is lost while Android keeps the shell process alive.
+Home Recording → CallMonitor → ExperimentalCaptureDaemon →
+independent Java shell recorder → authenticated loopback import →
+RecordingStore → Recordings UI.
 
-No Shizuku app, provider or user service is required. The old SHIZUKU setting migrates to Standard.
+The app has a separate ordinary-UID local diagnostic command runner and an
+embedded authenticated ADB client. The former cannot elevate privileges.
+The ADB client only connects to the **fixed 127.0.0.1:5555** endpoint after
+a trusted USB ADB host has enabled `adb tcpip 5555`; it verifies `id -u`
+returns `2000` before launching the bundled Java app_process helper.
+Wireless pairing, discovery, and mode selection are removed.
 
-## Source-of-truth boundaries
+## Shell helper and lifecycle
 
-- **Detection:** `CallMonitor` combines Telecom, SIM and VoIP notification signals, enriches metadata, and decides when recording is permitted. Notification metadata is not evidence of two-way audio capture.
-- **Standard recording:** `RecordingService` starts a foreground service. `RecordingEngine` attempts one Android audio source at a time in auto mode (VOICE_CALL → VOICE_RECOGNITION → VOICE_COMMUNICATION; optional speaker mic), retaining the first source with a measurable signal. *Sequential* probing avoids competing simultaneous microphones and disruption of a known-good source; amplitude is **not** proof both callers are audible.
-- **ADB enhanced recording:** `ExperimentalCaptureDaemon` bootstraps the bundled Java recorder once; the shell process owns its call watcher and audio pipeline independently of the APK's microphone recorder. Local loopback commands are authenticated, and completed audio is imported without relying on a persistent ADB connection.
-- **Lifetime and health:** After VRec connects to authorized USB-bootstrapped localhost TCP/5555 and VRec verifies shell UID 2000, `AdbPrivilegedApiHelper` automatically starts or reattaches to the Java daemon. There is no separate Start button. The helper also reconciles an existing daemon after app process restart and when the Experimental screen appears. It must not silently enable USB debugging, start a new ADB listener, or re-arm capture against the user's Home preference.
-- **Mutual exclusion:** While the enhanced shell daemon is active, SIM calls are owned by it and VRec avoids a duplicate foreground microphone recording. VoIP uses the Standard fallback unless explicitly armed and supported by the shell side. The Home master switch stops future capture in both engines.
-- **Storage/metadata:** `RecordingStore` stores audio in app-specific storage with a JSON sidecar. Only record metadata that is actually observed or derived; unknown number/carrier/SIM/party voice should remain unknown, and approximate call times must be labeled estimated.
+The detached helper can survive disconnect of VRec's ADB client while the
+Android shell process stays alive. It is not an OS daemon guaranteed across
+reboot. Startup and foreground retries may reattach to a live helper, or
+restore one only if a previously verified TCP endpoint and stored ADB identity
+are still available. The Recording master switch controls whether capture
+is armed, including after restarts. Quit stops app-owned work safely.
 
-## Privileges and recovery
+## No microphone fallback
 
-- Android's `shell` UID is **not** root, and successful ADB authentication does not imply permission to capture every call-audio pipeline.
-- A daemon that Android kills, a reboot, an APK reinstall that rotates the local token, or an incompatible OS update may require a new authorized ADB/TCP bootstrap.
-- TCP/5555 can expose debugging to the local network even though VRec uses localhost, and it may not remain available after a restart.
-- We do **not** restart recording after Home Off, nor infer two-way sound from nonzero amplitude.
+This experimental workflow is ADB-only. If the shell helper is missing or
+cannot capture the selected SIM/VoIP source, do **not** start the app microphone
+recorder automatically or mark the recording as successful. Standard recorder
+classes remain in the codebase for existing data compatibility, but the
+method selector and normal fallback path are disabled in this branch.
+Android/OEM audio-HAL restrictions can still make protected call sources
+silent even when shell UID 2000 is verified.
 
-## Regression checklist
+## Permissions
 
-- Standard source fallback: Voice call source fails, Voice recognition produces audible audio; no extra duplicate files.
-- Standard silent fallback: test Communication mic only after Voice recognition remains silent during the probe.
-- Built-in ADB: start daemon using authenticated ADB; disconnect ADB; reopen VRec; verify local authenticated probe and file import.
-- Switch Home Off with an active call: both engines must stop/disable capturing; verify status, then re-enable only with explicit user action.
-- Restart app without ADB: helper reports running if daemon survived, otherwise ADB required. Never claim auto-persistence across reboot.
-- Old metadata remains readable; unknown details remain unknown rather than guessed.
-- Recordings screen: only one active inline audio player and rounded action/sort sheets.
+Eligible runtime grants are attempted only through a verified shell and
+checked afterwards with PackageManager. Telecom AppOp is checked separately.
+Restricted Call Log access may be refused. Accessibility, overlay settings,
+and notification-listener access require user control via Android Settings;
+there is no guarantee of blanket permission approval.
+
+## Metadata, recordings and diagnostics
+
+Import is authenticated using the local helper protocol. Keep source identity,
+SIM versus supported VoIP app, file size, timing estimates, silence diagnostics,
+and independently verified audio details. Never infer a second party from
+nonzero signal level. Confirm supported SIM audio sources and VoIP behavior
+with real consented test calls.
+
+## Regression priorities
+
+- Home badge: grey idle, yellow busy, red failed, green **only** after UID 2000.
+- USB debugging without TCP/5555 cannot self-authorize.
+- A TCP listener without authenticated shell cannot start the helper.
+- Automatic reconnection requires previous verification, allowed recovery,
+  USB debugging and a real localhost listener.
+- ADB missing: no new microphone recording.
+- Home Off: independent helper stops/disarms capture safely.
+- Android refuses a runtime grant: display attention required.
+- Accessibility label remains **Vrec call recording helper**.
+- Saved playback, imports, details, Settings/Quit and updates stay operational.

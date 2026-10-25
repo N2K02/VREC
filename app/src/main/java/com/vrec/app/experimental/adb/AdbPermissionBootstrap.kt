@@ -56,7 +56,8 @@ object AdbPermissionBootstrap {
                 unavailable.add("$short (Android denied the grant)")
             }
         }
-        val telecom = ExperimentalRecording.grantAdvancedDetection(app)
+        val telecom = runCatching { ExperimentalRecording.grantAdvancedDetection(app) }
+            .getOrElse { Result.failure(it) }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             granted.add("Advanced call detection not required on this Android version")
         } else if (telecom.isSuccess && CallDetectionAccess.isGranted(app)) {

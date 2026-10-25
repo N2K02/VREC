@@ -1,33 +1,49 @@
-# VRec embedded local command runner and USB-bootstrapped ADB
+# VRec USB-only ADB setup and auto-recovery
 
-VRec has a built-in Android app-shell diagnostic runner and a separate
-embedded ADB client. Neither requires a Termux installation, Windows
-emulator, container or Shizuku. The local diagnostic runner has VRec's
-normal app UID and cannot grant shell UID 2000, root, or protected
-two-way call recording.
+## On the phone, before first use
 
-## Home setup
+Enable **USB debugging** in Developer options. A phone-local app shell is not
+Android's privileged ADB shell and cannot authorize itself.
 
-In **Enhanced ADB** mode, the Home page shows **ADB quick setup** and
-**USB debugging**. Tap **Set up automatically** or enable the Home
-recording master switch to reattach a running, authorized helper or
-attempt localhost TCP/5555. A successful ADB handshake must return
-Android shell UID 2000 before the independent recording helper starts.
+## One-time external USB host
 
-## First-time USB authorization
+Use a trusted external USB ADB host, connect the Huawei through USB, approve
+Android's authorization prompt, and run:
 
-1. Enable USB debugging in Developer options.
-2. Connect a **trusted external USB ADB host** and authorize it.
-3. On that host, run `adb tcpip 5555` once.
-4. Return to VRec and connect to localhost TCP/5555. Approve any
-   Android authorization prompt for VRec's separate ADB identity.
-5. Test the helper and both audio channels before relying on recording.
+```sh
+adb devices
+adb tcpip 5555
+```
 
-On an unrooted Huawei with only USB debugging, no separate host and no
-pre-existing TCP listener, an ordinary local Android process cannot
-perform step 3. VRec reports this limitation rather than promising
-that one tap will unlock shell permissions.
+On the phone, open VRec Home → **Connect / restore ADB**. The built-in client
+uses only **127.0.0.1:5555**, never discovery or wireless pairing, and
+requires `id -u` to confirm `2000`. If Android asks to trust VRec's
+separate ADB identity, approve that OS prompt.
 
-No wireless pairing, discovery, network selection, or Wi-Fi-specific
-permissions are used for the ADB connection. TCP/5555 may still expose
-Android debugging beyond localhost; disable it when not needed.
+Without the external USB ADB host, stock USB-only Huawei phones cannot
+bootstrap this endpoint using Termux, VRec's local command middleware, or
+a container. After authorization, automatic reconnection can work as long
+as `adbd` stays available at TCP/5555; reboot or OEM settings may disable it.
+
+## Home indicator
+
+Grey: disconnected / connect. Yellow: connecting. Red: failed or missing
+bootstrap. Green: shell UID 2000 verified. The helper's readiness and audio
+quality are separate checks. Connection success does not establish recording
+health or privileged two-way audio capture.
+
+## Automatic permission attempts
+
+Only after UID 2000 verification, VRec tries permitted `pm grant` and Telecom
+AppOp commands. Every grant is checked after execution; Android-denied access
+is reported on Home and in ADB diagnostics. No silent claim of full access.
+Android Accessibility, notification listeners and overlay permissions remain
+subject to user-controlled system settings. The Accessibility service is
+named **Vrec call recording helper**.
+
+## Recording rules
+
+Only the shell helper captures new calls in this experimental workflow.
+A missing shell helper blocks capture instead of starting the app's standard
+microphone recorder. The Home Recording master switch still governs arming.
+TCP/5555 can expose debugging access beyond localhost; disable it when done.
