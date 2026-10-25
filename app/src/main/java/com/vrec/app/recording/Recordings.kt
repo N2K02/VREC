@@ -27,6 +27,7 @@ data class Recording(
     val simSlot: Int? = null,
     val carrier: String? = null,
     val callType: String? = null,
+    val callFlowDirection: String? = null,
     val sourcePackage: String? = null,
     val notes: String = "",
     val favorite: Boolean = false,
@@ -221,6 +222,7 @@ object RecordingStore {
             simSlot = meta?.optInt("simSlot")?.takeIf { it > 0 },
             carrier = meta?.optString("carrier")?.takeIf { it.isNotBlank() && it != "null" },
             callType = meta?.optString("callType")?.takeIf { it.isNotBlank() && it != "null" },
+            callFlowDirection = meta?.optString("callFlowDirection")?.takeIf { it.isNotBlank() && it != "null" },
             sourcePackage = meta?.optString("sourcePackage")
                 ?.takeIf { it.isNotBlank() && it != "null" },
             notes = meta?.optString("notes")?.takeIf { it != "null" } ?: "",
