@@ -10,6 +10,27 @@ import java.util.Locale
 
 enum class CallDirection { INCOMING, OUTGOING, VOIP, UNKNOWN }
 
+/** The audio capture path that actually produced a saved file, not the selected UI mode. */
+enum class RecordingType { STANDARD, ADB }
+
+object RecordingTypeResolver {
+    /**
+     * Older ADB imports used the dedicated vrec_rec_* filename and a shell source label.
+     * Never infer capture mode from the currently selected recording method.
+     */
+    fun resolve(savedType: String?, sourceLabel: String?, fileName: String): RecordingType? {
+        when (savedType?.uppercase(Locale.ROOT)) {
+            RecordingType.ADB.name -> return RecordingType.ADB
+            RecordingType.STANDARD.name -> return RecordingType.STANDARD
+        }
+        if (sourceLabel == "Enhanced shell capture" || sourceLabel == "Shell VOICE_CALL" ||
+            (Regex("^vrec_rec_\\d{12,15}_(?:in|out)\\.ogg$", RegexOption.IGNORE_CASE)
+                .matches(fileName))) return RecordingType.ADB
+        return if (sourceLabel != null || fileName.endsWith(".m4a", true)) RecordingType.STANDARD
+            else null
+    }
+}
+
 /** One saved recording and its editable, backwards-compatible sidecar metadata. */
 data class Recording(
     val file: File,
@@ -29,6 +50,7 @@ data class Recording(
     val callType: String? = null,
     val callFlowDirection: String? = null,
     val sourcePackage: String? = null,
+    val recordingType: RecordingType? = null,
     val notes: String = "",
     val favorite: Boolean = false,
     val bookmarksMs: List<Long> = emptyList(),
@@ -87,12 +109,14 @@ object RecordingStore {
         simLabel: String? = null,
         simSlot: Int? = null,
         carrier: String? = null,
+        recordingType: RecordingType = RecordingType.STANDARD,
     ) {
         val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
             ?: System.currentTimeMillis()
         val json = JSONObject()
             .put("schemaVersion", 3)
+            .put("recordingType", recordingType.name)
             .put("callConnectedAt", callConnectedAt ?: JSONObject.NULL)
             .put("callEndedAt", callEndedAt ?: JSONObject.NULL)
             .put("callDurationMs", if (callConnectedAt != null && callEndedAt != null && callEndedAt >= callConnectedAt) callEndedAt - callConnectedAt else JSONObject.NULL)
@@ -225,6 +249,11 @@ object RecordingStore {
             callFlowDirection = meta?.optString("callFlowDirection")?.takeIf { it.isNotBlank() && it != "null" },
             sourcePackage = meta?.optString("sourcePackage")
                 ?.takeIf { it.isNotBlank() && it != "null" },
+            recordingType = RecordingTypeResolver.resolve(
+                meta?.optString("recordingType")?.takeIf { it.isNotBlank() && it != "null" },
+                meta?.optString("source")?.takeIf { it.isNotBlank() && it != "null" },
+                file.name,
+            ),
             notes = meta?.optString("notes")?.takeIf { it != "null" } ?: "",
             favorite = meta?.optBoolean("favorite", false) ?: false,
             bookmarksMs = bookmarks,
