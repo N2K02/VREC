@@ -30,7 +30,10 @@ object AdbHelperAutoRecovery {
             val app = context.applicationContext
             // Reattachment works even after ADB itself disconnects; it also
             // reconciles Home Off before considering any new shell process.
-            if (AdbPrivilegedApiHelper.reconnect(app)) return@withLock true
+            if (AdbPrivilegedApiHelper.reconnect(app)) {
+                ExperimentalCaptureDaemon.collect(app)
+                return@withLock true
+            }
 
             val saved = ExperimentalRecording.recoveryAuthorization(app)
             val preferred = if (ExperimentalRecording.preferredTransport(app) ==

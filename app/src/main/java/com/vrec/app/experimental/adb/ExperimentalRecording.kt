@@ -186,7 +186,7 @@ object ExperimentalRecording {
             selectTransport(context, requested)
         }
         status.value = status.value.copy(busy = true, connected = false,
-            connectedTransport = null, shellUid = null,
+            connectedTransport = null, requestedTransport = requested, shellUid = null,
             message = if (wirelessOnly) "Connecting via Wireless debugging…"
                 else "Connecting to TCP/5555. Approve VREC's Android ADB authorization prompt if it appears.")
         val result = withContext(Dispatchers.IO) {
@@ -237,7 +237,9 @@ object ExperimentalRecording {
         else Result.success(Unit)
         // The ADB selection includes consent to configure advanced Telecom
         // detection. Only issue the AppOp command on this verified shell link.
-        val telecom = if (method(context) == Method.BUILT_IN_ADB)
+        // Automated recovery only restores a helper the user had authorized.
+        // Do not silently re-grant an AppOp the user may have revoked.
+        val telecom = if (!automatic && method(context) == Method.BUILT_IN_ADB)
             grantAdvancedDetection(context)
         else Result.success(Unit)
         status.value = status.value.copy(
@@ -247,6 +249,8 @@ object ExperimentalRecording {
                     (helper.exceptionOrNull()?.message ?: "unknown error")
                 telecom.isFailure -> "ADB and helper ready; advanced call detection still needs access: " +
                     (telecom.exceptionOrNull()?.message ?: "permission not confirmed")
+                automatic && method(context) == Method.BUILT_IN_ADB ->
+                    "ADB verified (shell UID 2000). Enhanced helper automatically restored."
                 method(context) == Method.BUILT_IN_ADB ->
                     "ADB verified (shell UID 2000). Helper ready; advanced call detection enabled."
                 else -> "ADB verified (shell UID 2000)."
