@@ -438,7 +438,7 @@ object ExperimentalCaptureDaemon {
                     val health = recordingHealth(context, name)
                     val label = if (voip) "Enhanced VoIP playback + microphone"
                         else health?.substringBefore(" | ")?.let { "Shell " + it }
-                            ?: "Shell VOICE_CALL"
+                            ?: "Enhanced shell capture"
                     RecordingStore.writeMeta(
                         dest, direction, ShellVoipLabels.forPackage(identity.appPackage), label,
                         silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
