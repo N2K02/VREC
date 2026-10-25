@@ -908,6 +908,7 @@ private fun RecordingDetailsDialog(
                             formatDuration(rec.callEndedAt - rec.callConnectedAt) else null)
                 }
                 RecordingDetailSection("Audio & file") {
+                    DetailLine("Recording type", rec.recordingType?.name)
                     DetailLine("Source", rec.sourceLabel)
                     DetailLine("Filename", rec.file.name)
                     DetailLine("Size", rec.sizeBytes.takeIf { it > 0 }?.let(::formatSize))
