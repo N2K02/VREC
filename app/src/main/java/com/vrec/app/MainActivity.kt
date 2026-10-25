@@ -198,7 +198,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
             VrecBrandHeader(
                 title = if (screen == Screen.SETTINGS) settingsSection ?: "Settings" else title,
                 screen = screen,
-                onBack = if (screen == Screen.HOME) null else { { navigateBack() } },
             )
         },
         bottomBar = {
@@ -274,7 +273,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
 
 /** MRadio-style header: screen icon/title on the left, app logo on the right. */
 @Composable
-private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?) {
+private fun VrecBrandHeader(title: String, screen: Screen) {
     val icon = when (screen) {
         Screen.HOME -> Icons.Rounded.Home
         Screen.RECORDINGS -> Icons.Rounded.Folder
@@ -293,21 +292,8 @@ private fun VrecBrandHeader(title: String, screen: Screen, onBack: (() -> Unit)?
             Row(Modifier.weight(1f),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (onBack != null) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                    if (screen == Screen.UPDATE) {
-                        dev.n2k02.updater.N2K02AppIcon(modifier = Modifier.size(24.dp))
-                    } else {
-                        Icon(icon, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp))
-                    }
-                } else {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp))
-                }
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
