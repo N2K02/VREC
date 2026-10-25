@@ -7,6 +7,8 @@
 
     <!-- Detecting SIM calls -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Personal sideloaded build: correlate saved cellular recordings with the local call log. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- Non-UI Telecom call observer; activation additionally needs the MANAGE_ONGOING_CALLS AppOp. -->
     <uses-permission android:name="android.permission.MANAGE_ONGOING_CALLS" />
     <!-- Optional: resolve the other party's name from contacts -->
