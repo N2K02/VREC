@@ -286,7 +286,7 @@ object ExperimentalCaptureDaemon {
                 !requireOutgoingAnswer(context)) return@withContext false
             runCatching {
                 open(context, 'C').use { socket ->
-                    socket.getInputStream().bufferedReader().readLine()?.startsWith("ANSWER ") == true
+                    socket.getInputStream().bufferedReader().readLine()?.trim() == "ANSWER STARTED"
                 }
             }.getOrDefault(false)
         }

@@ -8,9 +8,8 @@ package com.vrec.app.shell;
 final class AnsweredCallGate {
     private boolean waiting;
 
-    void begin(boolean incoming, boolean voip, boolean preciseAnswerAvailable,
-               boolean alreadyConfirmed) {
-        waiting = !incoming && !voip && preciseAnswerAvailable && !alreadyConfirmed;
+    void begin(boolean incoming, boolean voip, boolean preciseAnswerAvailable) {
+        waiting = !incoming && !voip && preciseAnswerAvailable;
     }
 
     boolean waiting() {

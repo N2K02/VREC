@@ -1073,7 +1073,6 @@ public final class Main {
     /** Updated by the authenticated E command when the Telecom AppOp changes. */
     private static volatile boolean requireOutgoingAnswer;
     private static final AnsweredCallGate answerGate = new AnsweredCallGate();
-    private static volatile long recentlyConfirmedAnswerAt;
 
     /** The call being recorded right now, or null between calls. */
     private static volatile RecordingSession activeRecording;
@@ -1423,9 +1422,7 @@ public final class Main {
             }
             if (!callActive) {
                 callSeq++;
-                answerGate.begin(incoming, app != null, requireOutgoingAnswer,
-                    android.os.SystemClock.elapsedRealtime() - recentlyConfirmedAnswerAt <= 3_000L &&
-                        recentlyConfirmedAnswerAt > 0);
+                answerGate.begin(incoming, app != null, requireOutgoingAnswer);
             }
             callActive = true;
             callIncoming = incoming;
@@ -1613,7 +1610,6 @@ public final class Main {
         synchronized (Main.class) {
             callActive = false;
             answerGate.reset();
-            recentlyConfirmedAnswerAt = 0;
             endedSeq = callSeq;
             app = callVoipApp;
             callVoipApp = null;
@@ -1886,11 +1882,7 @@ public final class Main {
         if (command == COMMAND_ANSWERED) {
             String started = null;
             synchronized (Main.class) {
-                // An ACTIVE event can reach the app just before Telephony sends
-                // OFFHOOK. Remember it briefly to tolerate that ordering.
-                if (!callActive) {
-                    recentlyConfirmedAnswerAt = android.os.SystemClock.elapsedRealtime();
-                } else if (callVoipApp == null && !callIncoming &&
+                if (callActive && callVoipApp == null && !callIncoming &&
                         recordingMode == MODE_AUTOMATIC && answerGate.confirm()) {
                     started = beginRecording(false, null);
                 }
@@ -1900,7 +1892,7 @@ public final class Main {
                 Ln.i("recording: confirmed outgoing answer -> " + started);
             }
             client.getOutputStream().write(
-                ("ANSWER " + (started != null ? "STARTED" : "ACK") + "\n").getBytes("UTF-8"));
+                ("ANSWER " + (started != null ? "STARTED" : "WAIT") + "\n").getBytes("UTF-8"));
             client.getOutputStream().flush();
             return;
         }

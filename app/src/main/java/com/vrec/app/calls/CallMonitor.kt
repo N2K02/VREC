@@ -145,7 +145,18 @@ object CallMonitor {
             Prefs.experimentalCallDetection(context)) {
             val app = context.applicationContext
             modeScope.launch {
-                ExperimentalCaptureDaemon.confirmOutgoingAnswered(app)
+                // Some devices publish Telecom ACTIVE just before the shell
+                // callback gets OFFHOOK. Retry only for THIS still-active call;
+                // do not cache an answer that could unlock the next call.
+                repeat(8) {
+                    val stillActive = synchronized(this@CallMonitor) {
+                        sessions[id]?.active == true
+                    }
+                    if (!stillActive || !Prefs.recordingEnabled(app)) return@launch
+                    if (ExperimentalCaptureDaemon.confirmOutgoingAnswered(app)) return@launch
+                    delay(300L)
+                }
+                Log.w("Outgoing Telecom answer was not acknowledged by the shell helper")
             }
         }
         Log.i("Telecom call state=$state voip=$voip app=" + (packageName ?: "unknown") +
