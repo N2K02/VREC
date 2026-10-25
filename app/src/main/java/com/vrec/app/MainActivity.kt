@@ -222,18 +222,10 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                     ) {
                         listOf(
                             Triple(Screen.HOME, "Home", Icons.Rounded.Home),
-                            Triple(Screen.RECORDINGS, "Recordings", Icons.Rounded.Folder),
-                            Triple(Screen.SETUP, "Setup", Icons.Rounded.Tune),
                             Triple(Screen.SETTINGS, "Settings", Icons.Rounded.Settings),
                         ).forEach { (destination, label, icon) ->
                             NavigationBarItem(
-                                selected = when {
-                                    screen == Screen.SETUP && returnToSettings ->
-                                        destination == Screen.SETTINGS
-                                    screen == Screen.LOG || screen == Screen.UPDATE ->
-                                        destination == Screen.SETTINGS
-                                    else -> screen == destination
-                                },
+                                selected = if (destination == Screen.HOME) screen == Screen.HOME else screen != Screen.HOME,
                                 onClick = { navigateTo(destination) },
                                 icon = {
                                     if (destination == Screen.SETTINGS) {
@@ -263,6 +255,8 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                     onSectionChange = { settingsSection = it },
                     onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
+                    onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
+                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                 )
                 Screen.LOG -> LogScreen()
                 Screen.UPDATE -> UpdateScreen()
@@ -447,12 +441,6 @@ private fun HomeScreen(onOpenSetup: () -> Unit, onNavigate: (Screen) -> Unit) {
             subtitle = "Configure recording behavior",
             icon = Icons.Rounded.Settings,
             onClick = { onNavigate(Screen.SETTINGS) },
-        )
-        NavigationCard(
-            title = "Activity log",
-            subtitle = "Review app events and diagnostics",
-            icon = Icons.Rounded.Article,
-            onClick = { onNavigate(Screen.LOG) },
         )
     }
 }
