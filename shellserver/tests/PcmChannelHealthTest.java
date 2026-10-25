@@ -17,6 +17,14 @@ public final class PcmChannelHealthTest {
         check(result.rightSilentRatio > result.leftSilentRatio, "detect quiet channel");
         check(result.leftClipRatio > 0 && result.rightClipRatio == 0, "clip ratios");
         check(result.summary().contains("PCM diagnostic: frames=5"), "summary available");
+        check("RIGHT_CHANNEL_QUIET".equals(result.verdict()),
+                "quiet channel diagnostic must not infer speaker identity");
+        PcmChannelHealth quiet = new PcmChannelHealth();
+        quiet.accept(new short[] { 0, 0, 0, 0 }, 2);
+        check("BOTH_CHANNELS_QUIET".equals(quiet.snapshot().verdict()), "silent PCM detection");
+        PcmChannelHealth loud = new PcmChannelHealth();
+        loud.accept(new short[] { 2000, 2000, -2000, -2000 }, 2);
+        check("AUDIO_DETECTED".equals(loud.snapshot().verdict()), "active PCM detection");
         health.accept(new short[] { 1 }, 1); // odd/truncated frame ignored
         check(health.snapshot().frames == 5, "never read beyond supplied sample pair");
         System.out.println("PCM channel diagnostics regression tests passed");
