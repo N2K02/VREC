@@ -1360,7 +1360,7 @@ public final class Main {
                 Ln.i("recording: started -> " + name);
                 return new RecordingSession(name, incoming, startedAt, app, file, out, recorder,
                         channelHealth);
-            } catch (Throwable failure) {
+            } catch (Exception | Error failure) {
                 closeQuietly(out);
                 if (!file.delete()) {
                     Ln.w("recording: could not remove failed startup file " + name);
