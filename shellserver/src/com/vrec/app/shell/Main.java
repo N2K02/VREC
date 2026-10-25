@@ -1885,6 +1885,11 @@ public final class Main {
                 if (callActive && callVoipApp == null && !callIncoming &&
                         recordingMode == MODE_AUTOMATIC && answerGate.confirm()) {
                     started = beginRecording(false, null);
+                    if (started == null) {
+                        // Source preparation can fail transiently. A Telecom
+                        // retry must be able to attempt this same answered call.
+                        answerGate.retryAfterFailedStart();
+                    }
                 }
             }
             if (started != null) {

@@ -23,6 +23,10 @@ final class AnsweredCallGate {
         return true;
     }
 
+    void retryAfterFailedStart() {
+        waiting = true;
+    }
+
     void reset() {
         waiting = false;
     }

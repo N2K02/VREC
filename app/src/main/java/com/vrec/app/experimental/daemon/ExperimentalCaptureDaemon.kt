@@ -157,13 +157,34 @@ object ExperimentalCaptureDaemon {
                 "Select Built-in ADB first."
             }
             if (probe(context)) {
-                check(setMode(context, Prefs.recordingEnabled(context))) {
-                    "Could not confirm the helper's recording mode."
+                if (setMode(context, Prefs.recordingEnabled(context))) {
+                    message.value = if (Prefs.recordingEnabled(context))
+                        "Recorder running. It can capture without a current ADB connection."
+                    else "Recorder running; Home recording switch is off."
+                    return@runCatching
                 }
-                message.value = if (Prefs.recordingEnabled(context))
-                    "Recorder running. It can capture without a current ADB connection."
-                else "Recorder running; Home recording switch is off."
-                return@runCatching
+                // The previous APK may have left an old shell daemon running.
+                // A new app must not pretend an old binary supports answered-call
+                // gating. Only a verified ADB shell may replace it, and never
+                // while it is recording or handling a call (Q responds BUSY).
+                val link = ExperimentalRecording.status.value
+                check(link.connected && link.shellUid == 2000) {
+                    "Reauthorize ADB to update the older helper."
+                }
+                val exit = open(context, 'Q').use {
+                    it.getInputStream().bufferedReader().readLine()?.trim()
+                }
+                check(exit == "BYE") {
+                    "The existing helper is busy or cannot be upgraded during a call."
+                }
+                var exited = false
+                repeat(15) {
+                    if (!exited) {
+                        delay(250)
+                        exited = !probe(context)
+                    }
+                }
+                check(exited) { "Old helper did not release its authenticated socket." }
             }
             val staged = stage(context)
             // External files are used only to move the executable into shell-private
@@ -213,19 +234,24 @@ object ExperimentalCaptureDaemon {
                     AdbFallbackNotice.handoffInProgress.value &&
                         RecordingService.state.value is RecordingService.State.Idle
                 else shouldArmForNextCall(context)
-            runCatching {
+            val verified = runCatching {
                 val waitForAnswer = allowed && requireOutgoingAnswer(context)
                 open(context, 'E', byteArrayOf(
                         if (allowed) 1 else 0,
                         if (waitForAnswer) 1 else 0,
                     )).use {
                     val confirmed = it.getInputStream().bufferedReader().readLine()?.trim()
-                    // A previous daemon may only know the old one-byte protocol.
-                    // Don't claim the precise answered-call guarantee in that case.
+                    // Never consider an old one-byte daemon compatible with
+                    // the authorized answered-call timing requirement.
                     confirmed == "${if (allowed) 1 else 0} WAIT ${if (waitForAnswer) 1 else 0}" ||
-                        (!waitForAnswer && confirmed == if (allowed) "1" else "0")
+                        (!waitForAnswer && confirmed == (if (allowed) "1" else "0"))
                 }
             }.getOrDefault(false)
+            if (!verified) {
+                ready.value = false
+                message.value = "Enhanced helper mode not verified. Reconnect authorized ADB to update it."
+            }
+            verified
         }
     }
 

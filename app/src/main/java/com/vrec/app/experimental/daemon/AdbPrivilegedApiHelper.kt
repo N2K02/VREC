@@ -66,8 +66,12 @@ object AdbPrivilegedApiHelper {
 
     suspend fun checkHealth(context: Context): State = lock.withLock {
         val available = ExperimentalCaptureDaemon.probe(context.applicationContext)
-        state.value = if (available) State.RUNNING else State.NEEDS_ADB
-        if (available) RecordingService.requestAdbHandoff(context.applicationContext)
+        // checkHealth must not resurrect an incompatible helper after reconnect
+        // rejected its mode handshake.
+        val usable = available && state.value != State.ERROR
+        if (!usable) ExperimentalCaptureDaemon.ready.value = false
+        state.value = if (usable) State.RUNNING else if (available) State.ERROR else State.NEEDS_ADB
+        if (usable) RecordingService.requestAdbHandoff(context.applicationContext)
         state.value
     }
 }

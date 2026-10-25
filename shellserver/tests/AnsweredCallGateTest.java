@@ -32,6 +32,9 @@ public final class AnsweredCallGateTest {
         gate.begin(false, false, true);
         check(gate.waiting(), "Next call must still wait for its own answer");
         check(gate.confirm(), "A retry after OFFHOOK should start exactly once");
+        gate.retryAfterFailedStart();
+        check(gate.waiting(), "Failed audio initialization allows an ACTIVE retry");
+        check(gate.confirm(), "Retry should unlock the same answered call");
         System.out.println("AnsweredCallGate regression tests passed");
     }
 }

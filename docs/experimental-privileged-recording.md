@@ -207,6 +207,10 @@ real-device tests have passed.**
   wait for the actual `Call.STATE_ACTIVE` event. OFFHOOK alone is *dialing*,
   not an answer. A verified ACTIVE signal reaches the shell recorder via an
   authenticated loopback command. Incoming calls start on their off-hook state.
+- When an older shell binary survives the app update, a verified ADB session
+  can upgrade it after its current call ends. If it refuses to stop because a
+  call is in progress, do not interrupt that call; the app must fall back to
+  Standard until the helper is updated.
 - When advanced Telecom observation is unavailable, Android exposes only the
   coarser OFFHOOK signal; the legacy immediate fallback remains, and its precise
   connection timing cannot be guaranteed. If an older shell helper is still
