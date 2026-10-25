@@ -55,7 +55,7 @@ fun rememberReadiness(): Boolean {
     return remember(tick) { isReady(context) }
 }
 
-/** Two required steps first; extra permissions and ADB are always optional and collapsed. */
+/** Recording setup is separate from the Contacts permission used for caller name matching. */
 @Composable
 fun SetupScreen() {
     val context = LocalContext.current
@@ -80,9 +80,9 @@ fun SetupScreen() {
     }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
     var accessibilityHelpOpen by rememberSaveable { mutableStateOf(false) }
-    val optionalCount = listOf(contactsOn, floatingOn).count { it } +
+    val optionalCount = (if (floatingOn) 1 else 0) +
         if (Build.VERSION.SDK_INT >= 33 && appAlertsOn) 1 else 0
-    val optionalTotal = if (Build.VERSION.SDK_INT >= 33) 3 else 2
+    val optionalTotal = if (Build.VERSION.SDK_INT >= 33) 2 else 1
     val completed = listOf(basicsReady, accessibilityOn).count { it }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -146,6 +146,17 @@ fun SetupScreen() {
             },
         )
 
+        // Caller names are a prominent, permission-controlled feature, not a recording prerequisite.
+        SetupStepCard(
+            number = "3",
+            title = "Show SIM caller names (recommended)",
+            detail = "Allow Contacts so VREC can match captured phone numbers to saved names. " +
+                "If Android hides the number, you can still choose a contact for the recording.",
+            done = contactsOn,
+            actionLabel = "Allow Contacts",
+            onAction = { request(Manifest.permission.READ_CONTACTS) },
+        )
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
@@ -172,14 +183,6 @@ fun SetupScreen() {
                     )
                 }
                 if (moreOpen) {
-                    HorizontalDivider()
-                    Text("Caller identification", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ExtraPermissionRow(
-                        title = "Contacts",
-                        detail = "Show saved caller names and numbers",
-                        enabled = contactsOn,
-                    ) { request(Manifest.permission.READ_CONTACTS) }
                     HorizontalDivider()
                     Text("Recording controls", style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
