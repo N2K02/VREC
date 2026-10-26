@@ -39,7 +39,6 @@ import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.vrec.app.calls.CallDetectionAccess
 
 /** Actual Android grants, not the permissions we merely requested. */
 internal object PermissionDashboardPolicy {
