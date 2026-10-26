@@ -1,6 +1,8 @@
 package com.vrec.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,7 +106,7 @@ fun AdbDashboard(
                 }
                 androidx.compose.material3.HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Stat("Connection", when {
                         verified -> "Connected"
                         healthy -> "Detached"
@@ -116,7 +118,7 @@ fun AdbDashboard(
                         else -> "Armed"
                     }, Modifier.weight(1f))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Stat("Recovery via", restore, Modifier.weight(1f))
                     Stat("Shell identity", if (verified || healthy) "UID 2000" else "Not verified",
                         Modifier.weight(1f))
@@ -181,10 +183,14 @@ fun AdbDashboard(
 
 @Composable
 private fun Stat(label: String, value: String, modifier: Modifier) {
-    Column(modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(modifier.padding(horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        Text(value, style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center, fontWeight = FontWeight.Medium)
     }
 }
 
