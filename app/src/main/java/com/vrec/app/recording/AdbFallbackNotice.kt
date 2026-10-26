@@ -11,6 +11,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.vrec.app.Log
+import com.vrec.app.Prefs
 import com.vrec.app.MainActivity
 import com.vrec.app.R
 import kotlinx.coroutines.flow.MutableStateFlow
