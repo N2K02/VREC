@@ -89,7 +89,10 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val resumeTick = rememberOnResumeTick()
     val voipNotificationGranted = remember(resumeTick) { VoipNotifListener.isEnabled(context) }
-    val recordingMethod = ExperimentalRecording.Method.BUILT_IN_ADB
+    var recordingMethod by remember(resumeTick) { mutableStateOf(ExperimentalRecording.method(context)) }
+    val captureState by com.vrec.app.recording.RecordingService.state.collectAsState()
+    val shellRecording by com.vrec.app.recording.AdbFallbackNotice.enhancedActive.collectAsState()
+    val methodLocked = captureState !is com.vrec.app.recording.RecordingService.State.Idle || shellRecording
     val connection by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
@@ -99,7 +102,7 @@ fun SettingsScreen(
         }
     }
 
-    // ADB is always the capture mode. There is no recording-method selector.
+    // Home and Settings share the same persisted recording method.
     // Local mirror of the stored values, so the UI updates immediately.
     var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
@@ -126,6 +129,34 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 12.dp),
             )
+            SettingCard("Recording method") {
+                ExperimentalRecording.Method.entries.forEach { option ->
+                    val title = if (option == ExperimentalRecording.Method.STANDARD)
+                        "Standard · microphone" else "ADB enhanced · shell helper"
+                    Row(Modifier.fillMaxWidth().clickable(enabled = !methodLocked) {
+                        recordingMethod = option
+                        ExperimentalRecording.setMethod(context, option)
+                        scope.launch {
+                            ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context))
+                        }
+                    }, verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(
+                            selected = recordingMethod == option,
+                            enabled = !methodLocked,
+                            onClick = {
+                                recordingMethod = option
+                                ExperimentalRecording.setMethod(context, option)
+                                scope.launch {
+                                    ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context))
+                                }
+                            },
+                        )
+                        Text(title, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                if (methodLocked) Text("Finish the current recording before changing methods.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
             listOfNotNull(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
