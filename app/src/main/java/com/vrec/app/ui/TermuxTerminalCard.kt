@@ -51,8 +51,8 @@ fun TermuxTerminalCard() {
         if (!expanded) return@Column
         Text(
             "Run Android Platform Tools in Termux and view output here. " +
-                "This is a normal app terminal. It cannot enable TCP/5555 or authorize ADB " +
-                "on this same phone without an already authorized external USB host.",
+                "Termux and VRec run on this same phone. This does not emulate a second USB host " +
+                "or enable ADB shell UID 2000. A separate authorized USB host is still required.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

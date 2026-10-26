@@ -20,6 +20,7 @@ class TermuxBridgeContractTest {
         assertTrue(bridge.contains("com.termux.app.RunCommandService"))
         assertTrue(bridge.contains("FLAG_MUTABLE"))
         assertTrue(bridge.contains("RUN_COMMAND_PENDING_INTENT"))
+        assertTrue(bridge.contains("RESULT_BUNDLE = \"result\""))
         assertTrue(bridge.contains("RUN_COMMAND_BACKGROUND"))
         assertFalse(bridge.contains("AdbPermissionBootstrap.grantEligible"))
     }
@@ -30,7 +31,7 @@ class TermuxBridgeContractTest {
         assertTrue(ui.contains("TermuxTerminalCard()"))
         assertTrue(terminal.contains("Termux command console (optional)"))
         assertTrue(terminal.contains("allow-external-apps=true"))
-        assertTrue(terminal.contains("It cannot enable TCP/5555"))
+        assertTrue(terminal.contains("does not emulate a second USB host"))
         assertTrue(terminal.contains("adb devices -l"))
         assertFalse(terminal.contains("pm grant"))
     }

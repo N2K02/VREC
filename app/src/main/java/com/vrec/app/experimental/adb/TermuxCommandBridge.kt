@@ -1,6 +1,5 @@
 package com.vrec.app.experimental.adb
 
-import android.Manifest
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -11,7 +10,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -29,7 +27,7 @@ object TermuxCommandBridge {
     private const val COMMAND_TIMEOUT_MS = 120_000L
     const val RUN_PERMISSION = "com.termux.permission.RUN_COMMAND"
 
-    private const val RESULT_BUNDLE = "com.termux.RUN_COMMAND_RESULT"
+    private const val RESULT_BUNDLE = "result"
     private const val RESULT_STDOUT = "stdout"
     private const val RESULT_STDERR = "stderr"
     private const val RESULT_EXIT_CODE = "exitCode"
@@ -81,7 +79,7 @@ object TermuxCommandBridge {
         status.value = State(busy = true, output = "$ $trimmed\nRunning in Termux…",
             command = trimmed, executionId = id)
         return try {
-            app.startService(intent)
+            checkNotNull(app.startService(intent)) { "Termux did not accept the request" }
             mainHandler.postDelayed({
                 val current = status.value
                 if (current.executionId == id && current.busy) {
@@ -112,10 +110,11 @@ object TermuxCommandBridge {
         val stdout = bundle.getString(RESULT_STDOUT).orEmpty().takeLast(10000)
         val stderr = bundle.getString(RESULT_STDERR).orEmpty().takeLast(4000)
         val exit = bundle.getInt(RESULT_EXIT_CODE, -1)
-        val err = bundle.getInt(RESULT_ERROR_CODE, -1)
+        val err = bundle.getInt(RESULT_ERROR_CODE, android.app.Activity.RESULT_OK)
         val errMessage = bundle.getString(RESULT_ERROR_MESSAGE).orEmpty()
         val failure = when {
-            errMessage.isNotBlank() -> errMessage.take(800)
+            err != android.app.Activity.RESULT_OK ->
+                errMessage.ifBlank { "Termux error code $err" }.take(800)
             exit != 0 -> "Command exited with code $exit."
             else -> null
         }

@@ -2,7 +2,7 @@
 
 VRec Home contains an optional expandable **Termux command console** which
 executes user-submitted commands in the Termux app and displays their output.
-Termux must already be installed from F-Droid and opened at least once.
+Termux must already be installed from F-Droid and opened at least once. The console does not simulate a second USB host: sharing one phone cannot recreate the physical USB host/device connection.
 
 Configure Termux:
 
