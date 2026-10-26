@@ -423,6 +423,8 @@ private fun HomeScreen() {
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
     val recording = recState !is RecordingService.State.Idle || enhancedActive
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
+    var selectedMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
+    val scope = rememberCoroutineScope()
 
     // Observe connection changes while Home is visible. This does not connect,
     // enable TCP debugging, or start the privileged helper without user consent.
@@ -447,6 +449,44 @@ private fun HomeScreen() {
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
         })
+        Surface(shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Recording method", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+                ExperimentalRecording.Method.entries.forEach { method ->
+                    val label = if (method == ExperimentalRecording.Method.STANDARD)
+                        "Standard · microphone" else "ADB enhanced · shell helper"
+                    Row(Modifier.fillMaxWidth().clickable(enabled = !recording) {
+                        selectedMethod = method
+                        ExperimentalRecording.setMethod(context, method)
+                        scope.launch {
+                            ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context))
+                        }
+                    }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        RadioButton(selected = selectedMethod == method,
+                            enabled = !recording, onClick = {
+                                selectedMethod = method
+                                ExperimentalRecording.setMethod(context, method)
+                                scope.launch {
+                                    ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context))
+                                }
+                            })
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                if (recording) {
+                    Text("Recording method is locked until this call finishes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (selectedMethod == ExperimentalRecording.Method.BUILT_IN_ADB && !ready) {
+                    Text("ADB setup needed · Connect the helper below before recording.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
         if (recordingEnabled) {
             com.vrec.app.ui.LocalAdbHomeCard(\n                recordingActive = recState is RecordingService.State.Recording || enhancedActive,\n                standardRecording = recState is RecordingService.State.Recording && !enhancedActive,\n            )
         } else {
