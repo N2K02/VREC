@@ -52,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -409,7 +410,7 @@ private fun HomeScreen() {
             recordingEnabled = enabled
         })
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -466,7 +467,7 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, onEnabledChang
     ) {
         Row(
             Modifier.fillMaxWidth().clickable { onEnabledChange(!enabled) }
-                .padding(horizontal = 18.dp, vertical = 18.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -485,7 +486,7 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, onEnabledChang
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            RadioButton(selected = enabled, onClick = { onEnabledChange(!enabled) })
         }
     }
 }

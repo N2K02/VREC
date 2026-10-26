@@ -179,8 +179,9 @@ object LocalWirelessAdb {
                 val port = status.value.connectPort
                 if (port != null) {
                     val result = ExperimentalRecording.connectWireless(app, port)
+                    if (result.isSuccess) switchToLocalTcp(app)
                     status.value = status.value.copy(message = if (result.isSuccess)
-                        "Wireless ADB shell UID 2000 verified; helper ready."
+                        "Wireless ADB verified; switching to localhost TCP/5555."
                     else "Paired, but could not connect. Retry from Home.")
                 } else {
                     status.value = status.value.copy(message =
@@ -190,6 +191,22 @@ object LocalWirelessAdb {
             (app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .cancel(NOTIFICATION_ID)
         }
+    }
+
+    private suspend fun switchToLocalTcp(context: Context) {
+        // The shell itself changes adbd transport. It may drop the TLS connection.
+        // Only report readiness after reconnecting and rechecking UID 2000.
+        val switched = AdbTransport.switchToTcpip(5555)
+        if (switched.isFailure) {
+            status.value = status.value.copy(message =
+                "Wireless shell verified, but TCP/5555 switch failed: ${switched.exceptionOrNull()?.message}")
+            return
+        }
+        kotlinx.coroutines.delay(900L)
+        val restored = ExperimentalRecording.connect(context, automatic = false)
+        status.value = status.value.copy(message = if (restored.isSuccess)
+            "ADB connected over localhost TCP/5555; UID 2000 verified."
+        else "TCP/5555 enabled, but localhost reconnection needs attention: ${restored.exceptionOrNull()?.message}")
     }
 
     fun retry(context: Context) {

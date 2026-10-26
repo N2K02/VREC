@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Optional Termux command-console bridge. Android asks the user to grant this. -->
-    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
-    <queries>
-        <package android:name="com.termux" />
-    </queries>
-
     <!-- Discover on-device Wireless debugging mDNS pairing and TLS services. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
@@ -62,11 +56,6 @@
 
         <!-- Shizuku-style notification pairing code, handled only by this app. -->
         <receiver android:name=".experimental.adb.VrecPairingReceiver" android:exported="false" />
-
-        <!-- Explicit, non-exported callback target for results from Termux RUN_COMMAND. -->
-        <service
-            android:name=".experimental.adb.TermuxResultService"
-            android:exported="false" />
 
         <!-- Holds the mic and writes the file while a call is active. -->
         <service

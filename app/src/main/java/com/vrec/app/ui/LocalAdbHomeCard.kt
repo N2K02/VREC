@@ -2,6 +2,10 @@ package com.vrec.app.ui
 
 import android.content.Intent
 import android.provider.Settings
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -195,7 +199,6 @@ fun LocalAdbHomeCard() {
                 )
             }
             WirelessAdbSetupCard()
-            TermuxTerminalCard()
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { instructionsExpanded = !instructionsExpanded }
                     .padding(vertical = 6.dp),
@@ -213,6 +216,11 @@ fun LocalAdbHomeCard() {
                         "VRec cannot reliably read this toggle because Android reports it disabled to third-party apps.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                OutlinedButton(onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("VRec USB ADB bootstrap",
+                        "adb devices\\nadb tcpip 5555"))
+                }, modifier = Modifier.fillMaxWidth()) { Text("Copy USB ADB commands") }
                 Text(
                     "1. Enable USB debugging in Android Developer options.\n" +
                         "2. Connect this phone to a trusted external USB ADB host and approve its debugging key.\n" +
