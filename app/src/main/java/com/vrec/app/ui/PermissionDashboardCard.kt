@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -42,6 +46,8 @@ internal object PermissionDashboardPolicy {
     fun grantedCount(grants: List<Boolean>): Int = grants.count { it }
 
     fun permissionBadge(granted: Boolean): String = if (granted) "Granted" else "Not granted"
+
+    fun badgeColor(granted: Boolean): Color = if (granted) Color(0xFF2E7D32) else Color(0xFFC62828)
 }
 
 @Composable
@@ -77,71 +83,77 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
         }
     }
     val grantedCount = PermissionDashboardPolicy.grantedCount(permissions.map { it.second })
-    Surface(shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+    Surface(shape = RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("App permissions", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
-                Text("$grantedCount / ${permissions.size} available",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary)
-            }
-            Text("Verified access · ${if (method == ExperimentalRecording.Method.STANDARD) "Standard" else "ADB enhanced"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (method == ExperimentalRecording.Method.BUILT_IN_ADB && Build.VERSION.SDK_INT >= 31) {
-                val advancedGranted = CallDetectionAccess.isGranted(context)
-                Surface(shape = RoundedCornerShape(18.dp),
-                    color = if (advancedGranted) Color(0xFF1B5E20).copy(alpha = 0.20f)
-                        else MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Advanced call detection",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold)
-                            Text(if (advancedGranted) "Android confirmed shell AppOp access"
-                                else "Android has not granted the shell AppOp",
-                                style = MaterialTheme.typography.bodySmall)
-                        }
-                        Surface(shape = RoundedCornerShape(50),
-                            color = if (advancedGranted) Color(0xFF2E7D32)
-                                else Color(0xFFC62828)) {
-                            Text(PermissionDashboardPolicy.permissionBadge(advancedGranted),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold)
-                        }
-                    }
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF156F4B).copy(alpha = 0.25f)) {
+                    Icon(Icons.Rounded.VerifiedUser, contentDescription = null,
+                        modifier = Modifier.padding(12.dp).size(25.dp),
+                        tint = Color(0xFF66D9A4))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("App Permissions", style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold)
+                    Text("Verified access · " + if (method == ExperimentalRecording.Method.STANDARD)
+                        "Standard" else "ADB enhanced",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Surface(shape = RoundedCornerShape(50),
+                    color = if (grantedCount == permissions.size) Color(0xFF146B3C)
+                        else Color(0xFF8A2828)) {
+                    Text("$grantedCount / ${permissions.size}",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        color = Color.White, style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold)
                 }
             }
             permissions.chunked(2).forEach { pair ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     pair.forEach { (label, granted) ->
-                        Surface(shape = RoundedCornerShape(14.dp),
-                            color = if (granted) Color(0xFF1B5E20).copy(alpha = 0.18f)
-                                else MaterialTheme.colorScheme.errorContainer,
+                        Surface(shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = androidx.compose.foundation.BorderStroke(1.dp,
+                                PermissionDashboardPolicy.badgeColor(granted).copy(alpha = 0.45f)),
                             modifier = Modifier.weight(1f)) {
                             Column(Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(label, style = MaterialTheme.typography.labelMedium)
-                                Text(PermissionDashboardPolicy.permissionBadge(granted),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (granted) Color(0xFF66BB6A)
-                                        else MaterialTheme.colorScheme.error)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(label, style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold)
+                                Surface(shape = RoundedCornerShape(50),
+                                    color = PermissionDashboardPolicy.badgeColor(granted)) {
+                                    Text((if (granted) "✓ " else "✕ ") +
+                                        PermissionDashboardPolicy.permissionBadge(granted),
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
-                    if (pair.size == 1) {
+                    if (pair.size == 1)
                         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                    }
                 }
             }
-            Text("Some permissions require Android approval. ADB cannot bypass protected system consent.",
+            val allGranted = grantedCount == permissions.size
+            Surface(shape = RoundedCornerShape(18.dp),
+                color = if (allGranted) Color(0xFF135F3D).copy(alpha = 0.40f)
+                    else MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth()) {
+                Text(if (allGranted) "✓ All displayed access checks passed."
+                    else "Some access is not granted. Check the red badges above.",
+                    modifier = Modifier.padding(14.dp),
+                    color = if (allGranted) Color(0xFF7CE0AB)
+                        else MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            Text("ADB grants eligible permissions after authorization. Android may reject restricted access; status is verified.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
