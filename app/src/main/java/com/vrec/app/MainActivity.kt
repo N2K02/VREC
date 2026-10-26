@@ -450,42 +450,73 @@ private fun HomeScreen() {
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
         })
-        Surface(shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+        Surface(shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
             modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Recording method", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
-                ExperimentalRecording.Method.entries.forEach { method ->
-                    val label = if (method == ExperimentalRecording.Method.STANDARD)
-                        "Standard · microphone" else "ADB enhanced · shell helper"
-                    Row(Modifier.fillMaxWidth().clickable(enabled = !recording) {
-                        selectedMethod = method
-                        ExperimentalRecording.setMethod(context, method)
-                        scope.launch {
-                            ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context))
-                        }
-                    }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        RadioButton(selected = selectedMethod == method,
-                            enabled = !recording, onClick = {
-                                selectedMethod = method
-                                ExperimentalRecording.setMethod(context, method)
-                                scope.launch {
-                                    ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context))
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Rounded.Tune, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+                    Text("Recording method", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    if (recording) Text("Locked", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    ExperimentalRecording.Method.entries.forEach { method ->
+                        val isAdb = method == ExperimentalRecording.Method.BUILT_IN_ADB
+                        val selected = selectedMethod == method
+                        val accent = if (isAdb) Color(0xFF8DC3FF) else Color(0xFF7BD8AE)
+                        Surface(
+                            modifier = Modifier.weight(1f).clickable(enabled = !recording) {
+                                if (selectedMethod != method) {
+                                    selectedMethod = method
+                                    ExperimentalRecording.setMethod(context, method)
+                                    scope.launch {
+                                        ExperimentalCaptureDaemon.setMode(context,
+                                            Prefs.recordingEnabled(context))
+                                    }
                                 }
-                            })
-                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (selected) accent.copy(alpha = 0.18f)
+                                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = androidx.compose.foundation.BorderStroke(
+                                if (selected) 1.5.dp else 1.dp,
+                                if (selected) accent else MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(if (isAdb) Icons.Rounded.Tune else Icons.Rounded.Mic,
+                                        contentDescription = null, tint = if (selected) accent
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(19.dp))
+                                    Text(if (isAdb) "ADB enhanced" else "Standard",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1)
+                                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                                    if (selected) Text("✓", color = accent,
+                                        style = MaterialTheme.typography.labelLarge)
+                                }
+                                Text(if (isAdb) "Shell helper" else "Microphone",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
-                if (recording) {
-                    Text("Recording method is locked until this call finishes.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (selectedMethod == ExperimentalRecording.Method.BUILT_IN_ADB && !ready) {
-                    Text("ADB setup needed · Connect the helper below before recording.",
-                        style = MaterialTheme.typography.bodySmall,
+                if (recording) Text("Finish the current recording to change methods.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else if (selectedMethod == ExperimentalRecording.Method.BUILT_IN_ADB && !ready)
+                    Text("ADB setup needed · Connect the helper below.",
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error)
-                }
             }
         }
         com.vrec.app.ui.PermissionDashboardCard(selectedMethod)
