@@ -421,7 +421,7 @@ private fun HomeScreen() {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
-    val recording = recState !is RecordingService.State.Idle || enhancedActive
+    val recording = !com.vrec.app.recording.RecordingMethodPolicy.canChange(\n        recState is RecordingService.State.Idle, enhancedActive)
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
     var selectedMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
     val scope = rememberCoroutineScope()
