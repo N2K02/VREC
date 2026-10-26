@@ -1,5 +1,7 @@
 package com.vrec.app.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
@@ -111,12 +113,12 @@ fun AdbDashboard(
                         verified -> "Connected"
                         healthy -> "Detached"
                         else -> "Offline"
-                    }, Modifier.weight(1f))
+                    }, Modifier.weight(1f), badge = true)
                     Stat("Recording", when {
                         !recordingOn -> "Off"
                         !healthy -> "Waiting"
                         else -> "Armed"
-                    }, Modifier.weight(1f))
+                    }, Modifier.weight(1f), badge = true)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Stat("Recovery via", restore, Modifier.weight(1f))
@@ -182,15 +184,31 @@ fun AdbDashboard(
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier) {
+private fun Stat(label: String, value: String, modifier: Modifier, badge: Boolean = false) {
     Column(modifier.padding(horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center, fontWeight = FontWeight.Medium)
+        if (badge) {
+            val badgeColor = when (value) {
+                "Connected", "Armed" -> Color(0xFF2E7D32)
+                "Detached", "Waiting" -> Color(0xFFF9A825)
+                "Offline", "Off" -> Color(0xFF616161)
+                else -> Color(0xFFC62828)
+            }
+            val animatedColor by animateColorAsState(badgeColor, label = "$label badge color")
+            Surface(shape = RoundedCornerShape(50), color = animatedColor) {
+                Text(value, modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold,
+                    color = if (value == "Detached" || value == "Waiting") Color.Black else Color.White)
+            }
+        } else {
+            Text(value, style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center, fontWeight = FontWeight.Medium)
+        }
     }
 }
 
