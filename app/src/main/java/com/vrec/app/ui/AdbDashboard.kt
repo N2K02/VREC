@@ -197,7 +197,7 @@ private fun Stat(label: String, value: String, modifier: Modifier, badge: Boolea
                 "Detached", "Waiting" -> Color(0xFFF9A825)
                 "Offline", "Off", "Not verified" -> Color(0xFF616161)
                 "UID 2000" -> Color(0xFF2E7D32)
-                "Automatic" -> Color(0xFF1565C0)
+                "Automatic" -> Color(0xFF6A1B9A)
                 "Wi-Fi" -> Color(0xFF00838F)
                 "Computer" -> Color(0xFF1565C0)
                 "None", "Unavailable" -> Color(0xFFC62828)
