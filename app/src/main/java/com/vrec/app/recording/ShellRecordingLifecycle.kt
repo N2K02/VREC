@@ -9,7 +9,7 @@ internal class ShellRecordingLifecycle {
     private var current: String? = null
 
     @Synchronized fun started(file: String): Boolean {
-        if (!valid(file) || file in ended) return false
+        if (!valid(file) || identity(file) in ended) return false
         if (current == file) return false
         if (current != null) return false
         current = file
@@ -18,9 +18,9 @@ internal class ShellRecordingLifecycle {
 
     @Synchronized fun ended(file: String): Boolean {
         if (!valid(file)) return false
-        ended.add(file)
+        ended.add(identity(file))
         while (ended.size > 64) ended.remove(ended.first())
-        if (current != file) return false
+        if (current == null || identity(current!!) != identity(file)) return false
         current = null
         return true
     }
@@ -31,6 +31,9 @@ internal class ShellRecordingLifecycle {
     }
 
     @Synchronized fun isActive(): Boolean = current != null
+
+    private fun identity(file: String): String =
+        file.removePrefix("vrec_rec_").substringBefore("_").substringBefore(".")
 
     private fun valid(file: String): Boolean =
         file.startsWith("vrec_rec_") && file.endsWith(".dat") &&
