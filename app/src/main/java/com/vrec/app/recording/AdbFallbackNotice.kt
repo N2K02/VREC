@@ -46,10 +46,20 @@ object AdbFallbackNotice {
     fun notifyEnhancedStarted(context: Context) {
         dismiss(context)
         enhancedActive.value = true
+        if (Prefs.showOverlay(context) && !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
+            runCatching {
+                context.startService(Intent(context, OverlayControlService::class.java)
+                    .setAction(OverlayControlService.ACTION_SHOW))
+            }.onFailure { Log.w("Unable to show enhanced recording overlay", it) }
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
+            manager.createNotificationChannel(NotificationChannel(
+                CHANNEL, "ADB recording status", NotificationManager.IMPORTANCE_DEFAULT))
+        }
         val notice = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Switched to enhanced ADB recording")
