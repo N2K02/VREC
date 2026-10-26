@@ -105,6 +105,15 @@ object CallMonitor {
         if (!name.isNullOrBlank()) {
             session.name = name
             session.nameSource = "telecom"
+        } else if (session.name == null && !session.number.isNullOrBlank()) {
+            // Telecom often supplies only the number; resolve the saved contact
+            // before starting, and preserve any stronger name arriving later.
+            val contact = CallInfo.describe(context, session.number)
+                ?.takeIf { it != session.number }
+            if (contact != null) {
+                session.name = contact
+                session.nameSource = "contacts"
+            }
         }
         val wasActive = session.active
         // HOLD is not proof that a newly observed outgoing call was answered.
@@ -200,8 +209,11 @@ object CallMonitor {
                 if (!number.isNullOrBlank()) pendingIncomingNumber = number
                 if (session.number == null) session.number = pendingIncomingNumber
                 if (session.number != null) session.numberSource = "phone-state"
-                if (session.name == null) session.name = CallInfo.describe(context, session.number)
-                    ?.takeIf { it != session.number }
+                if (session.name == null) {
+                    session.name = CallInfo.describe(context, session.number)
+                        ?.takeIf { it != session.number }
+                    if (session.name != null) session.nameSource = "contacts"
+                }
                 session.active = true
                 if (session.connectedAt == null) session.connectedAt = System.currentTimeMillis()
                 reconcile(context)
