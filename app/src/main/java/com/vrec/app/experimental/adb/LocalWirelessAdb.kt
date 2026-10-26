@@ -48,6 +48,7 @@ object LocalWirelessAdb {
     private var connectDiscovery: NsdManager.DiscoveryListener? = null
     private var nsd: NsdManager? = null
     @Volatile private var attached = false
+    @Volatile private var pairedInThisSession = false
 
     fun start(context: Context) {
         val app = context.applicationContext
@@ -108,7 +109,7 @@ object LocalWirelessAdb {
                                 message = "This phone's Wireless debugging is available.",
                                 paired = ExperimentalRecording.wirelessWasPaired(app))
                             if ((ExperimentalRecording.wirelessRecoveryAllowed(app) ||
-                                    status.value.paired) &&
+                                    pairedInThisSession) &&
                                 !ExperimentalRecording.awaitingManualRetry &&
                                 !ExperimentalRecording.status.value.connected &&
                                 !ExperimentalRecording.status.value.busy) {
@@ -156,6 +157,7 @@ object LocalWirelessAdb {
                 AdbTransport.pairLocal(app, pairingPort, code)
             } ?: Result.failure(IllegalStateException("Pairing timed out"))
             // Never retain or log pairing code.
+            if (outcome.isSuccess) pairedInThisSession = true
             status.value = if (outcome.isSuccess) status.value.copy(
                 pairing = false, paired = true,
                 message = "Paired. Connecting to the Android shell…")
@@ -240,6 +242,7 @@ object LocalWirelessAdb {
         connectDiscovery = null
         nsd = null
         attached = false
+        pairedInThisSession = false
     }
 }
 

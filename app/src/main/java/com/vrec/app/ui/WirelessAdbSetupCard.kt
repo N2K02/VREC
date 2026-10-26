@@ -45,7 +45,10 @@ fun WirelessAdbSetupCard() {
     var code by remember { mutableStateOf("") }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* In-app code entry always works when notifications are disabled. */ }
+    ) {
+        // Keep notification workflow compatible with split-screen Android Settings.
+        LocalWirelessAdb.openSettings(context)
+    }
     if (!wireless.supported) {
         Text("Wireless debugging is not supported on Android 10 or earlier. Use the USB host instructions.",
             style = MaterialTheme.typography.bodySmall,
@@ -86,8 +89,7 @@ fun WirelessAdbSetupCard() {
                         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                         PackageManager.PERMISSION_GRANTED) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                    LocalWirelessAdb.openSettings(context)
+                    } else LocalWirelessAdb.openSettings(context)
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("Open Android Developer options")
                 }

@@ -9,7 +9,6 @@
 
     <!-- Discover on-device Wireless debugging mDNS pairing and TLS services. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
