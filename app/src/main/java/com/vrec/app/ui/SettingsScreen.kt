@@ -130,6 +130,7 @@ fun SettingsScreen(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
+                Triple("Audio source", "Enhanced SIM capture source and diagnostics", Icons.Rounded.Tune),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -151,7 +152,7 @@ fun SettingsScreen(
             // Diagnostics, logs and updates remain together at the bottom like mRadio.
             ListItem(
                 headlineContent = { Text("ADB diagnostics") },
-                supportingContent = { Text("Helper status, audio sources and access exceptions") },
+                supportingContent = { Text("Helper status and access exceptions") },
                 leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                 modifier = Modifier.clickable { onSectionChange("Experimental") },
@@ -219,6 +220,18 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 AdbSecurityChoices()
+                // UID 2000 bootstrap handles eligible grants automatically.
+                val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
+                if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
+                    SettingCard("Access still requiring attention") {
+                        Text(bootstrap.unavailable.joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+        }
+
+        if (section == "Audio source") {
                 SettingCard("Enhanced SIM capture source") {
                     Text(
                         "Select the shell's call-audio source. This does not use VRec's " +
@@ -240,15 +253,6 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                // UID 2000 bootstrap handles eligible grants automatically.
-                val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
-                if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
-                    SettingCard("Access still requiring attention") {
-                        Text(bootstrap.unavailable.joinToString("\n"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                 }
         }
 
