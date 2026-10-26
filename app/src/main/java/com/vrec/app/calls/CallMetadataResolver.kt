@@ -27,6 +27,13 @@ object CallMetadataResolver {
         "signal", "messenger", "viber", "end call", "answer", "decline",
     )
 
+    /** Explicit network withholding is a valid display identity, not a missing caller. */
+    fun privateCallerLabel(text: String?): String? = when (normalize(text.orEmpty())) {
+        "private number", "private caller", "private", "no caller id", "withheld",
+        "restricted", "anonymous", "unknown caller" -> "Private number"
+        else -> null
+    }
+
     fun cleanName(text: String?): String? {
         val value = text?.trim()?.replace(Regex("\\s+"), " ")?.take(120) ?: return null
         if (value.length < 2 || normalize(value) in placeholders) return null
@@ -67,8 +74,10 @@ object CallMetadataResolver {
         val textName = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
             ?.takeIf { value -> value.length <= 80 &&
                 !value.contains(Regex("(?i)\\b(call|calling|ringing|answer|decline|connecting|ongoing|tap|return|video|voice)\\b")) }
-        val name = listOf(person?.name?.toString(), compat?.getCharSequence("name")?.toString(),
-            title, textName).firstNotNullOfOrNull(::cleanName)
+        val identityCandidates = listOf(person?.name?.toString(),
+            compat?.getCharSequence("name")?.toString(), title, textName)
+        val name = identityCandidates.firstNotNullOfOrNull(::cleanName)
+            ?: identityCandidates.firstNotNullOfOrNull(::privateCallerLabel)
         if (number == null && name == null) return null
         return resolve(context, CallerMetadata(name, number, "notification"))
     }
