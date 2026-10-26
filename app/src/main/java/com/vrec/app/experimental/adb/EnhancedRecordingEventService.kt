@@ -10,6 +10,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.vrec.app.R
+import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,8 +53,17 @@ class EnhancedRecordingEventService : Service() {
         }
         scope.launch {
             try {
-                if (intent?.action == "com.vrec.app.CALL_ENDED") {
-                    ExperimentalCaptureDaemon.collect(applicationContext)
+                when (intent?.action) {
+                    "com.vrec.app.CALL_STARTED" -> {
+                        val file = intent.getStringExtra("recfile").orEmpty()
+                        if (file.isNotBlank()) {
+                            AdbFallbackNotice.shellRecordingStarted(applicationContext, file)
+                        }
+                    }
+                    "com.vrec.app.CALL_ENDED" -> {
+                        AdbFallbackNotice.shellRecordingEnded(applicationContext)
+                        ExperimentalCaptureDaemon.collect(applicationContext)
+                    }
                 }
             } finally {
                 ServiceCompat.stopForeground(this@EnhancedRecordingEventService,
