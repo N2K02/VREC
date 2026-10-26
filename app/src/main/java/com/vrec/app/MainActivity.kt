@@ -3,6 +3,7 @@ package com.vrec.app
 import android.Manifest
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -438,12 +439,21 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolea
             else MaterialTheme.colorScheme.surfaceContainerHigh,
         label = "Recording master card color",
     )
+    val adbStatus by ExperimentalRecording.status.collectAsState()
     val badge = when {
         !enabled -> "OFF"
         active -> "RECORDING"
         ready -> "READY"
+        adbStatus.busy -> "CONNECTING"
         else -> "SETUP NEEDED"
     }
+    val badgeColor = when (badge) {
+        "READY" -> Color(0xFF2E7D32)
+        "CONNECTING" -> Color(0xFFF9A825)
+        "RECORDING", "OFF" -> Color(0xFF1565C0)
+        else -> Color(0xFFC62828)
+    }
+    val animatedBadgeColor by animateColorAsState(badgeColor, label = "Recording status color")
     Surface(
         shape = RoundedCornerShape(28.dp),
         color = cardColor,
@@ -473,12 +483,10 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolea
             Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Surface(shape = RoundedCornerShape(50),
-                    color = if (enabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant) {
+                    color = animatedBadgeColor) {
                     Text(badge, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (enabled) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = Color.White)
                 }
                 RadioButton(selected = enabled, onClick = { onEnabledChange(!enabled) })
             }
