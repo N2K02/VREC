@@ -55,7 +55,7 @@ class EnhancedRecordingEventService : Service() {
             try {
                 when (intent?.action) {
                     "com.vrec.app.CALL_STARTED" -> {
-                        val file = intent.getStringExtra("recfile").orEmpty()
+                        val file = intent?.getStringExtra("recfile").orEmpty()
                         if (file.isNotBlank()) {
                             AdbFallbackNotice.shellRecordingStarted(applicationContext, file)
                         }
