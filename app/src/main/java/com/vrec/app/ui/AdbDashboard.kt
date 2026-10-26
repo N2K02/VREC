@@ -55,6 +55,7 @@ fun AdbDashboard(
     recordingOn: Boolean,
     restore: String,
     onStart: () -> Unit,
+    recordingActive: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -127,7 +128,7 @@ fun AdbDashboard(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (!recordingActive) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
                 onClick = {
                     note = null
