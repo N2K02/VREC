@@ -40,6 +40,8 @@ internal object PermissionDashboardPolicy {
         !isMicrophone || method == ExperimentalRecording.Method.STANDARD
 
     fun grantedCount(grants: List<Boolean>): Int = grants.count { it }
+
+    fun permissionBadge(granted: Boolean): String = if (granted) "Granted" else "Not granted"
 }
 
 @Composable
@@ -67,11 +69,8 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
             add("Call notification access" to VoipNotifListener.isEnabled(context))
             add("Floating controls" to (Build.VERSION.SDK_INT < 23 ||
                 Settings.canDrawOverlays(context)))
-            if (method == ExperimentalRecording.Method.BUILT_IN_ADB && Build.VERSION.SDK_INT >= 31) {
-                add("Advanced call detection" to
-                    (CallDetectionAccess.isGranted(context) &&
-                        Prefs.experimentalCallDetection(context)))
-            }
+            if (method == ExperimentalRecording.Method.BUILT_IN_ADB && Build.VERSION.SDK_INT >= 31)
+                add("Advanced detection" to CallDetectionAccess.isGranted(context))
             if (method == ExperimentalRecording.Method.BUILT_IN_ADB)
                 add("ADB shell helper" to (ExperimentalCaptureDaemon.ready.value &&
                     AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING))
@@ -89,9 +88,37 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
             }
-            Text("Live access status · ${if (method == ExperimentalRecording.Method.STANDARD) "Standard" else "ADB enhanced"}",
+            Text("Verified access · ${if (method == ExperimentalRecording.Method.STANDARD) "Standard" else "ADB enhanced"}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (method == ExperimentalRecording.Method.BUILT_IN_ADB && Build.VERSION.SDK_INT >= 31) {
+                val advancedGranted = CallDetectionAccess.isGranted(context)
+                Surface(shape = RoundedCornerShape(18.dp),
+                    color = if (advancedGranted) Color(0xFF1B5E20).copy(alpha = 0.20f)
+                        else MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Advanced call detection",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold)
+                            Text(if (advancedGranted) "Android confirmed shell AppOp access"
+                                else "Android has not granted the shell AppOp",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        Surface(shape = RoundedCornerShape(50),
+                            color = if (advancedGranted) Color(0xFF2E7D32)
+                                else Color(0xFFC62828)) {
+                            Text(PermissionDashboardPolicy.permissionBadge(advancedGranted),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
             permissions.chunked(2).forEach { pair ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     pair.forEach { (label, granted) ->
@@ -102,7 +129,7 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                             Column(Modifier.padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(label, style = MaterialTheme.typography.labelMedium)
-                                Text(if (granted) "✓ Granted" else "Needs access",
+                                Text(PermissionDashboardPolicy.permissionBadge(granted),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (granted) Color(0xFF66BB6A)
                                         else MaterialTheme.colorScheme.error)
