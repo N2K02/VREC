@@ -127,8 +127,7 @@ object LocalWirelessAdb {
                                 !ExperimentalRecording.status.value.busy) {
                                 scope.launch {
                                     val result = ExperimentalRecording.connectWireless(app, port, automatic = true)
-                                    if (result.isSuccess) status.value =
-                                        status.value.copy(message = "Wireless ADB helper is ready.")
+                                    if (result.isSuccess) switchToLocalTcp(app)
                                 }
                             }
                         }
@@ -180,9 +179,8 @@ object LocalWirelessAdb {
                 if (port != null) {
                     val result = ExperimentalRecording.connectWireless(app, port)
                     if (result.isSuccess) switchToLocalTcp(app)
-                    status.value = status.value.copy(message = if (result.isSuccess)
-                        "Wireless ADB verified; switching to localhost TCP/5555."
-                    else "Paired, but could not connect. Retry from Home.")
+                    if (result.isFailure) status.value = status.value.copy(message =
+                        "Paired, but could not connect. Retry from Home.")
                 } else {
                     status.value = status.value.copy(message =
                         "Paired successfully. Waiting for Android Wireless debugging connection service…")
@@ -204,9 +202,12 @@ object LocalWirelessAdb {
         }
         kotlinx.coroutines.delay(900L)
         val restored = ExperimentalRecording.connect(context, automatic = false)
-        status.value = status.value.copy(message = if (restored.isSuccess)
-            "ADB connected over localhost TCP/5555; UID 2000 verified."
-        else "TCP/5555 enabled, but localhost reconnection needs attention: ${restored.exceptionOrNull()?.message}")
+        if (restored.isSuccess) {
+            stop(context)
+            status.value = status.value.copy(message =
+                "TCP/5555 verified. Wireless discovery stopped; recording helper monitored normally.")
+        } else status.value = status.value.copy(message =
+            "TCP/5555 enabled, but localhost reconnection needs attention: ${restored.exceptionOrNull()?.message}")
     }
 
     fun retry(context: Context) {
@@ -214,9 +215,9 @@ object LocalWirelessAdb {
         if (port != null) scope.launch {
             ExperimentalRecording.allowManualRetry()
             val result = ExperimentalRecording.connectWireless(context.applicationContext, port)
-            status.value = status.value.copy(message = if (result.isSuccess)
-                "Wireless ADB verified; recording helper ready."
-            else "Wireless ADB connect failed: ${result.exceptionOrNull()?.message}")
+            if (result.isSuccess) switchToLocalTcp(context.applicationContext)
+            else status.value = status.value.copy(message =
+                "Wireless ADB connect failed: ${result.exceptionOrNull()?.message}")
         }
         else status.value = status.value.copy(
             message = "Enable Wireless debugging and return here. Listening for the Android service.")
@@ -274,6 +275,7 @@ object LocalWirelessAdb {
         multicastLock = null
         attached = false
         pairedInThisSession = false
+        status.value = status.value.copy(scanning = false, pairingPort = null, connectPort = null)
     }
 }
 

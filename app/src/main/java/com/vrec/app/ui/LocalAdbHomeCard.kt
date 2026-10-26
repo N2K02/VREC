@@ -70,13 +70,18 @@ fun LocalAdbHomeCard() {
     // Automatic first-open detection. No manual transport picker or repeated
     // background retries after a user-visible authorization failure.
     LaunchedEffect(Unit) {
-        LocalWirelessAdb.start(context)
         LocalAdbMiddleware.setup(context, userInitiated = false)
+        if (!ExperimentalRecording.tcpPortListening()) LocalWirelessAdb.start(context)
         // Passive wait only: don't solicit a new ADB authorization while no host
         // exists. Once a trusted USB host enables TCP/5555, continue automatically.
         // Any actual authorization failure latches until the user presses Retry.
         while (true) {
             delay(3_000L)
+            if (!ExperimentalRecording.tcpPortListening() &&
+                !ExperimentalRecording.status.value.connected &&
+                !LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.start(context)
+            if (ExperimentalRecording.tcpPortListening() &&
+                LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.stop(context)
             if (LocalAdbMiddleware.needsUsbBootstrap.value &&
                 !ExperimentalRecording.awaitingManualRetry &&
                 !LocalAdbMiddleware.busy.value &&
@@ -155,7 +160,9 @@ fun LocalAdbHomeCard() {
                             ExperimentalRecording.wirelessWasPaired(context))
                             LocalWirelessAdb.retry(context)
                         else scope.launch {
-                            LocalAdbMiddleware.setup(context, userInitiated = true)
+                            val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
+                            if (!restored && !ExperimentalRecording.tcpPortListening())
+                                LocalWirelessAdb.start(context)
                         }
                     },
                     enabled = !busy && !adbState.busy,
@@ -166,7 +173,8 @@ fun LocalAdbHomeCard() {
                         wireless.pairingPort != null -> "Waiting for pairing code"
                         wireless.connectPort != null &&
                             ExperimentalRecording.wirelessWasPaired(context) -> "Restore wireless ADB"
-                        needsUsbBootstrap -> "Check USB ADB connection"
+                        needsUsbBootstrap && ExperimentalRecording.wirelessWasPaired(context) -> "Restore ADB (paired)"
+                        needsUsbBootstrap -> "Redo ADB setup"
                         lastSetupFailed || ExperimentalRecording.awaitingManualRetry -> "Retry ADB setup"
                         verified -> "Start recording helper"
                         else -> "Set up ADB recording"
