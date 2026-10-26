@@ -228,7 +228,7 @@ fun SettingsScreen(
         }
 
         if (section == "Experimental") {
-                SettingCard("ADB status") {
+                SettingCard("ADB connection") {
                     Text(
                         when {
                             helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
