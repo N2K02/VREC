@@ -1,11 +1,17 @@
 package com.vrec.app
 
 import android.Manifest
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Folder
@@ -32,6 +38,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -78,6 +86,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
@@ -342,6 +351,25 @@ private fun VrecBrandHeader(title: String, screen: Screen) {
     }
 }
 
+/** Animated indicator shown only while a recording is actually active. */
+@Composable
+private fun BlinkingRecordingDot(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "Recording indicator")
+    val opacity by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "Recording dot blink",
+    )
+    Box(
+        modifier = modifier.size(10.dp).alpha(opacity)
+            .background(Color(0xFFE53935), CircleShape),
+    )
+}
+
 /** Recording equivalent of MRadio's persistent Now Playing mini-bar. */
 @Composable
 private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Unit) {
@@ -370,8 +398,12 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp))
             Column(Modifier.weight(1f)) {
-                Text(status, style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    if (state is RecordingService.State.Recording) BlinkingRecordingDot()
+                    Text(status, style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold)
+                }
                 Text(peer?.takeIf { it.isNotBlank() } ?: "Tap to view recording controls",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -559,7 +591,12 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("● Recording now", color = MaterialTheme.colorScheme.onTertiary, style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                BlinkingRecordingDot()
+                Text("Recording now", color = MaterialTheme.colorScheme.onTertiary,
+                    style = MaterialTheme.typography.titleMedium)
+            }
             Text(
                 (state.peer?.let { "$it · " } ?: "") + state.sourceLabel,
                 color = MaterialTheme.colorScheme.onTertiary,
