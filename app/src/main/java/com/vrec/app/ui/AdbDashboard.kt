@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -79,12 +80,12 @@ fun AdbDashboard(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(26.dp),
             color = if (healthy) MaterialTheme.colorScheme.secondaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Icon(icon, contentDescription = null,
@@ -92,12 +93,12 @@ fun AdbDashboard(
                             else MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.size(28.dp))
                     Column {
-                        Text(title, style = MaterialTheme.typography.titleLarge,
+                        Text("System Status", style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold)
                         Text(
                             when {
-                                busy -> "Checking helper connection and readiness"
-                                healthy && verified -> "Helper active · ADB session verified"
+                                busy -> "Working · Checking helper connection and readiness"
+                                healthy && verified -> "Connected · Helper active · ADB verified"
                                 healthy -> "Helper active · ADB session detached"
                                 failed -> "Check ADB setup or diagnostics"
                                 else -> "Start the helper to prepare call capture"
@@ -109,7 +110,7 @@ fun AdbDashboard(
                 }
                 androidx.compose.material3.HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Stat("Connection", when {
                         verified -> "Connected"
                         healthy -> "Detached"
@@ -121,7 +122,7 @@ fun AdbDashboard(
                         else -> "Armed"
                     }, Modifier.weight(1f), badge = true)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Stat("Recovery via", restore, Modifier.weight(1f), badge = true)
                     Stat("Shell identity", if (verified || healthy) "UID 2000" else "Not verified",
                         Modifier.weight(1f), badge = true)
@@ -186,35 +187,36 @@ fun AdbDashboard(
 
 @Composable
 private fun Stat(label: String, value: String, modifier: Modifier, badge: Boolean = false) {
-    Column(modifier.padding(horizontal = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (badge) {
-            val badgeColor = when (value) {
-                "Connected", "Armed" -> Color(0xFF2E7D32)
-                "Detached", "Waiting" -> Color(0xFFF9A825)
-                "Offline", "Off", "Not verified" -> Color(0xFF616161)
-                "UID 2000" -> Color(0xFF2E7D32)
-                "Automatic" -> Color(0xFF6A1B9A)
-                "Wi-Fi" -> Color(0xFF2E7D32)
-                "Computer" -> Color(0xFF1565C0)
-                "None", "Unavailable" -> Color(0xFFC62828)
-                else -> Color(0xFFC62828)
-            }
-            val animatedColor by animateColorAsState(badgeColor, label = "$label badge color")
-            Surface(shape = RoundedCornerShape(50), color = animatedColor) {
-                Text(value, modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold,
-                    color = if (value == "Detached" || value == "Waiting") Color.Black else Color.White)
-            }
-        } else {
+    val accent = when (label) {
+        "Connection" -> when (value) {
+            "Connected" -> Color(0xFF43A66A)
+            "Detached" -> Color(0xFFE2B448)
+            else -> Color(0xFFCF5454)
+        }
+        "Recording" -> when (value) {
+            "Armed" -> Color(0xFF43A66A)
+            "Waiting" -> Color(0xFFE2B448)
+            else -> Color(0xFF929AA5)
+        }
+        "Recovery via" -> when (value) {
+            "Wi-Fi" -> Color(0xFF43A66A)
+            "Computer" -> Color(0xFF4BA6DD)
+            "Automatic" -> Color(0xFFB27DDA)
+            else -> Color(0xFF929AA5)
+        }
+        else -> if (value == "UID 2000") Color(0xFFB27DDA) else Color(0xFFCF5454)
+    }
+    Surface(modifier = modifier, shape = RoundedCornerShape(16.dp),
+        color = accent.copy(alpha = 0.13f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.65f))) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
             Text(value, style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center, fontWeight = FontWeight.Medium)
+                textAlign = TextAlign.Center, fontWeight = FontWeight.Bold,
+                color = accent)
         }
     }
 }
-
