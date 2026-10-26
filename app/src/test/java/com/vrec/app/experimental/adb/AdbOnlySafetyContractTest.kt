@@ -42,7 +42,7 @@ class AdbOnlySafetyContractTest {
         assertFalse(client.contains("AdbMdns"))
         assertFalse(client.contains("discoverPort("))
         assertFalse(client.contains("suspend fun pair("))
-        assertTrue(card.contains("AdbUidBadge(badge)"))
+        assertTrue(card.contains("AdbUidBadge(badge, needsUsbBootstrap)"))
         assertTrue(card.contains("Vrec call recording helper"))
     }
 }

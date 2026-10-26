@@ -45,7 +45,7 @@ class AdbHomeNavigationContractTest {
         val quick = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(quick.contains("helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING"))
         assertTrue(quick.contains("adbState.shellUid == 2000"))
-        assertTrue(quick.contains("AdbUidBadge(badge)"))
+        assertTrue(quick.contains("AdbUidBadge(badge, needsUsbBootstrap)"))
         assertTrue(quick.contains("Vrec call recording helper"))
     }
 
