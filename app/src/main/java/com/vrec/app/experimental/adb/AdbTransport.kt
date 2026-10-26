@@ -333,6 +333,26 @@ object AdbTransport {
         }
     }
 
+    /** Switch the already-authorized TLS adbd session to legacy TCP/5555.
+     * adbd may close the TLS stream as soon as the command is accepted.
+     * The caller must reconnect to localhost and reverify UID 2000. */
+    suspend fun switchToTcpip(port: Int = LEGACY_TCP_PORT): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                require(port == LEGACY_TCP_PORT)
+                val mgr = manager ?: error("ADB is not connected")
+                check(mgr.isConnected) { "ADB is not connected" }
+                val stream = mgr.openStream("tcpip:$port")
+                delay(500L)
+                runCatching { stream.close() }
+                runCatching { shell?.close() }
+                shell = null
+                runCatching { mgr.disconnect() }
+                lastKnownConnected = false
+                Unit
+            }
+        }
+
     /** Ask adbd to leave TCP mode and return to USB, when connected. */
     suspend fun switchToUsb(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
