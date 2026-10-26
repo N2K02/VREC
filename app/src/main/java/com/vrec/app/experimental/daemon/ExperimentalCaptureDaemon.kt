@@ -455,7 +455,7 @@ object ExperimentalCaptureDaemon {
                             }
                         }
                     }
-                    Log.i("Capture diagnostic: shell import packets=" + packets + " bytes=" + temp.length() + " file=" + name)
+                    com.vrec.app.Log.i("Capture diagnostic: shell import packets=" + packets + " bytes=" + temp.length() + " file=" + name)
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
                     }
@@ -487,7 +487,7 @@ object ExperimentalCaptureDaemon {
                         }
                         sidecar.writeText(json.toString())
                     }
-                    Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
+                    com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     delete(context, name)
                     collected++
                 } catch (t: Throwable) {
