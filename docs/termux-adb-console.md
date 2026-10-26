@@ -21,13 +21,18 @@ Configure Termux:
 **Important security and Android limitation:** Termux uses its own ordinary
 app UID. `adb` inside Termux is an ADB client, not a host-side authorization
 bypass. It cannot connect to the phone's own USB gadget to obtain UID 2000.
-For VRec's USB-only ADB capture, a separate trusted USB ADB host must
-first authorize the target device and run `adb tcpip 5555` after `adb devices`.
+For VRec's USB ADB option, a separate trusted USB ADB host must first
+authorize the target device and run `adb tcpip 5555` after `adb devices`.
 Termux on ANOTHER Android device connected by USB can be such a host if
 proper USB-host tooling is installed. On the target phone, once an authorized
 `127.0.0.1:5555` ADB service is running, VRec's embedded ADB client verifies
 shell UID 2000 and applies eligible grants in sequence.
 
+For Android 11+ VRec also supports optional Shizuku-style on-device Wireless
+debugging: Android shows a six-digit pairing code, VRec detects the local
+mDNS services and receives the code through an Android notification (or an
+in-app field), then verifies UID 2000. This does not use Termux or Shizuku.
+
 The Termux console does NOT run Android `pm grant` automatically and does NOT
-replace VRec's existing verified ADB setup flow. Do not log entered commands:
+replace VRec's verified ADB setup flow. Do not log entered commands:
 they may contain credentials.

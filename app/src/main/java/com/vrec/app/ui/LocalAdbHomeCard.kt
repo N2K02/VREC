@@ -41,6 +41,7 @@ import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 /**
  * Home owns the only setup/retry action. First-time directions are disclosure
@@ -67,6 +68,18 @@ fun LocalAdbHomeCard() {
     LaunchedEffect(Unit) {
         LocalWirelessAdb.start(context)
         LocalAdbMiddleware.setup(context, userInitiated = false)
+        // Passive wait only: don't solicit a new ADB authorization while no host
+        // exists. Once a trusted USB host enables TCP/5555, continue automatically.
+        // Any actual authorization failure latches until the user presses Retry.
+        while (true) {
+            delay(3_000L)
+            if (LocalAdbMiddleware.needsUsbBootstrap.value &&
+                !ExperimentalRecording.awaitingManualRetry &&
+                !LocalAdbMiddleware.busy.value &&
+                ExperimentalRecording.tcpPortListening()) {
+                LocalAdbMiddleware.setup(context, userInitiated = false)
+            }
+        }
     }
     LaunchedEffect(needsUsbBootstrap, wireless.connectPort, wireless.pairingPort) {
         instructionsExpanded = needsUsbBootstrap &&
