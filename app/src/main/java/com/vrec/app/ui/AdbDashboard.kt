@@ -121,9 +121,9 @@ fun AdbDashboard(
                     }, Modifier.weight(1f), badge = true)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Stat("Recovery via", restore, Modifier.weight(1f))
+                    Stat("Recovery via", restore, Modifier.weight(1f), badge = true)
                     Stat("Shell identity", if (verified || healthy) "UID 2000" else "Not verified",
-                        Modifier.weight(1f))
+                        Modifier.weight(1f), badge = true)
                 }
             }
         }
@@ -195,7 +195,12 @@ private fun Stat(label: String, value: String, modifier: Modifier, badge: Boolea
             val badgeColor = when (value) {
                 "Connected", "Armed" -> Color(0xFF2E7D32)
                 "Detached", "Waiting" -> Color(0xFFF9A825)
-                "Offline", "Off" -> Color(0xFF616161)
+                "Offline", "Off", "Not verified" -> Color(0xFF616161)
+                "UID 2000" -> Color(0xFF2E7D32)
+                "Automatic" -> Color(0xFF1565C0)
+                "Wi-Fi" -> Color(0xFF00838F)
+                "Computer" -> Color(0xFF1565C0)
+                "None", "Unavailable" -> Color(0xFFC62828)
                 else -> Color(0xFFC62828)
             }
             val animatedColor by animateColorAsState(badgeColor, label = "$label badge color")
