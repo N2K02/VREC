@@ -61,8 +61,14 @@ object CallMetadataResolver {
         val number = listOf(uriNumber, person?.name?.toString(), compat?.getCharSequence("name")?.toString(),
             title, extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
             .firstNotNullOfOrNull(::directNumber)
+        // Some third-party CallStyle notifications put the caller in EXTRA_TEXT
+        // rather than the title. Accept it only when it is a simple identity,
+        // not descriptive call status or a sentence.
+        val textName = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            ?.takeIf { value -> value.length <= 80 &&
+                !value.contains(Regex("(?i)\\b(call|calling|ringing|answer|decline|connecting|ongoing|tap|return|video|voice)\\b")) }
         val name = listOf(person?.name?.toString(), compat?.getCharSequence("name")?.toString(),
-            title).firstNotNullOfOrNull(::cleanName)
+            title, textName).firstNotNullOfOrNull(::cleanName)
         if (number == null && name == null) return null
         return resolve(context, CallerMetadata(name, number, "notification"))
     }
