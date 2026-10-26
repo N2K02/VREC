@@ -450,7 +450,8 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolea
     val badgeColor = when (badge) {
         "READY" -> Color(0xFF2E7D32)
         "CONNECTING" -> Color(0xFFF9A825)
-        "RECORDING", "OFF" -> Color(0xFF1565C0)
+        "RECORDING" -> Color(0xFF1565C0)
+        "OFF" -> Color(0xFF616161)
         else -> Color(0xFFC62828)
     }
     val animatedBadgeColor by animateColorAsState(badgeColor, label = "Recording status color")
