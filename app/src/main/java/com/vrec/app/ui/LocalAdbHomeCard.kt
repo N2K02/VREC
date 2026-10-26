@@ -1,9 +1,8 @@
 package com.vrec.app.ui
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,27 +10,29 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import com.vrec.app.experimental.adb.AdbBadgePolicy
+import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VrecAccessibilityService
+import com.vrec.app.experimental.adb.AdbBadgePolicy
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalAdbMiddleware
@@ -39,9 +40,12 @@ import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.launch
 
-/** One-tap USB-debugging setup, with honest authorization diagnostics. */
+/**
+ * Home owns the only setup/retry action. First-time directions are disclosure
+ * content, not a second setup wizard or a collection of competing buttons.
+ */
 @Composable
-fun LocalAdbHomeCard(onOpenDetailedSetup: () -> Unit) {
+fun LocalAdbHomeCard() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val adbState by ExperimentalRecording.status.collectAsState()
@@ -52,12 +56,10 @@ fun LocalAdbHomeCard(onOpenDetailedSetup: () -> Unit) {
     val lastSetupFailed by LocalAdbMiddleware.lastSetupFailed.collectAsState()
     val permissions by AdbPermissionBootstrap.status.collectAsState()
     val tick = rememberOnResumeTick()
-    val usbDebugging = androidx.compose.runtime.remember(tick, adbState) {
-        ExperimentalRecording.usbDebuggingFlag(context)
-    }
-    val accessibilityOn = androidx.compose.runtime.remember(tick) {
-        VrecAccessibilityService.isEnabled(context)
-    }
+    val usbDebugging = remember(tick) { ExperimentalRecording.usbDebuggingFlag(context) }
+    val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
+    var instructionsExpanded by remember { mutableStateOf(false) }
+
     val healthy = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
     val verified = adbState.connected && adbState.shellUid == 2000
     val badge = AdbBadgePolicy.resolve(
@@ -67,110 +69,140 @@ fun LocalAdbHomeCard(onOpenDetailedSetup: () -> Unit) {
             failed = lastSetupFailed ||
                 adbState.message.contains("failed", ignoreCase = true) ||
                 adbState.message.contains("denied", ignoreCase = true) ||
-                setupMessage.contains("required once", ignoreCase = true) ||
                 setupMessage.contains("could not connect", ignoreCase = true),
         )
     )
 
-    fun openDeveloperOptions() {
-        try {
-            context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-        } catch (_: ActivityNotFoundException) {
-            onOpenDetailedSetup()
-        }
-    }
-
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(if (healthy) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
-                    contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    if (healthy) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
                 Column(Modifier.weight(1f)) {
-                    Text("ADB control center", style = MaterialTheme.typography.titleMedium,
+                    Text("ADB recording setup", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold)
-                    Text("USB debugging · local shell helper",
+                    Text("USB bootstrap · one-time authorization",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 AdbUidBadge(badge)
             }
-            Text(when {
-                healthy -> "Enhanced recording helper ready"
-                verified -> "Authorized Android shell UID 2000"
-                else -> "Enhanced helper not connected"
-            }, style = MaterialTheme.typography.bodyMedium)
-            Text(setupMessage, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                when {
+                    healthy -> "Recording helper ready — nothing to set up"
+                    verified -> "Android shell UID 2000 verified — preparing helper"
+                    busy || adbState.busy -> "Waiting for Android ADB authorization…"
+                    lastSetupFailed || ExperimentalRecording.awaitingManualRetry ->
+                        "Connection stopped. Tap Retry to try again."
+                    else -> "Authorize ADB once to configure recording"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                if (healthy && !verified)
+                    "The independent recording helper is running. A live ADB session is not required until recovery."
+                else setupMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!healthy) {
+                Button(
+                    onClick = {
+                        scope.launch { LocalAdbMiddleware.setup(context, userInitiated = true) }
+                    },
+                    enabled = !busy && !adbState.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(when {
+                        busy || adbState.busy -> "Waiting for authorization…"
+                        lastSetupFailed || ExperimentalRecording.awaitingManualRetry -> "Retry ADB setup"
+                        verified -> "Start recording helper"
+                        else -> "Set up ADB recording"
+                    })
+                }
+                Text(
+                    "Authorization times out after 15 seconds. No automatic retry after a failed attempt.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (permissions.finished) {
                 Text(
                     if (permissions.unavailable.isEmpty())
-                        "Supported permissions confirmed (${permissions.granted.size})."
-                    else "Permissions confirmed: ${permissions.granted.size}. " +
-                        "Android still requires attention for: ${permissions.unavailable.joinToString()}",
+                        "Supported Android permissions configured automatically."
+                    else "Configured ${permissions.granted.size} permissions. Android requires manual attention: " +
+                        permissions.unavailable.joinToString(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (permissions.unavailable.isNotEmpty()) {
-                    OutlinedButton(onClick = {
-                        runCatching {
-                            context.startActivity(Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.parse("package:${context.packageName}")))
-                        }
-                    }, modifier = Modifier.fillMaxWidth()) { Text("Review Android app permissions") }
-                }
             }
-            if (!accessibilityOn) {
+            if (!accessibilityOn && (verified || healthy)) {
                 Text(
-                    "Optional caller detection helper: enable 'Vrec call recording helper' " +
-                        "in Android Accessibility settings if you use this feature. " +
-                        "ADB authorization does not activate Accessibility.",
+                    "Optional: Vrec call recording helper needs Android Accessibility approval for accessibility-based detection. " +
+                        "ADB does not enable this protected setting.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedButton(onClick = {
-                    runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                }, modifier = Modifier.fillMaxWidth()) { Text("Accessibility settings") }
             }
-            Button(onClick = { scope.launch { LocalAdbMiddleware.setup(context) } },
-                enabled = !busy && !adbState.busy, modifier = Modifier.fillMaxWidth()) {
-                Text(if (busy || adbState.busy) "Connecting…" else "Connect / restore ADB")
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { instructionsExpanded = !instructionsExpanded }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("First-time USB instructions", modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall)
+                Text(if (instructionsExpanded) "▲" else "▼",
+                    style = MaterialTheme.typography.bodySmall)
             }
-            OutlinedButton(onClick = onOpenDetailedSetup, modifier = Modifier.fillMaxWidth()) {
-                Text("USB ADB setup instructions")
+            if (instructionsExpanded) {
+                Text("USB debugging", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    when (usbDebugging) {
+                        true -> "Enabled"
+                        false -> "Disabled — turn it on in Developer options"
+                        null -> "Status unavailable"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "1. Enable USB debugging in Android Developer options.\n" +
+                        "2. Connect this phone to a trusted external USB ADB host and approve its debugging key.\n" +
+                        "3. On that host run: adb devices, then adb tcpip 5555.\n" +
+                        "4. Back in VRec, tap Set up ADB recording and approve VRec's ADB key if prompted.\n" +
+                        "5. VRec verifies UID 2000, grants supported permissions and starts the recording helper in order.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Android cannot authorize its own first USB ADB connection. " +
+                        "A reboot or debugging reset can disable TCP/5555 and require the external host again. " +
+                        "TCP/5555 may also be accessible from your network while enabled.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Open Developer options",
+                    modifier = Modifier.clickable {
+                        runCatching {
+                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                        }
+                    }.padding(vertical = 6.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
-        }
-    }
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("USB debugging", style = MaterialTheme.typography.titleMedium)
-            Text(when {
-                usbDebugging == true -> "USB debugging is on"
-                usbDebugging == false -> "USB debugging is off"
-                else -> "USB debugging status unavailable"
-            }, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                if (usbDebugging == true && !adbState.tcpPortOpen)
-                    "USB debugging is on, but a local authorized ADB endpoint is missing. An external trusted USB host must enable TCP/5555 once. VRec's local shell cannot authorize itself."
-                else "VRec checks localhost TCP/5555 after a trusted USB host has enabled it. USB debugging alone is not shell authorization.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "First time: enable USB debugging, authorize a trusted USB ADB host, " +
-                    "run adb tcpip 5555 on that host, then return and connect.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(onClick = ::openDeveloperOptions) { Text("Developer options") }
         }
     }
 }
 
-/** A single meaningful connection indicator with explicit shell UID verification. */
+/** Badge represents a verified current shell session, not merely an open TCP socket. */
 @Composable
 private fun AdbUidBadge(state: AdbBadgePolicy.State) {
     val background = when (state) {
@@ -185,10 +217,11 @@ private fun AdbUidBadge(state: AdbBadgePolicy.State) {
         AdbBadgePolicy.State.IN_PROGRESS -> "Connecting…"
         AdbBadgePolicy.State.DISCONNECTED -> "Connect"
     }
-    androidx.compose.material3.Surface(shape = RoundedCornerShape(50),
-        color = background) {
-        Text(label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+    androidx.compose.material3.Surface(shape = RoundedCornerShape(50), color = background) {
+        Text(
+            label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
             color = if (state == AdbBadgePolicy.State.IN_PROGRESS) Color.Black else Color.White,
-            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+        )
     }
 }

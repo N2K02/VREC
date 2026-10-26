@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -25,6 +27,10 @@ object ExperimentalRecording {
         val busy: Boolean = false,
     )
     val status = MutableStateFlow(Status())
+    @Volatile var awaitingManualRetry: Boolean = false
+        private set
+
+    fun allowManualRetry() { awaitingManualRetry = false }
     private const val PREFERENCES = "vrec_experimental_recorder"
     private const val METHOD_KEY = "recorder_method"
     private const val AUTO_RECOVERY_KEY = "auto_reconnect_after_verified_adb"
@@ -114,25 +120,36 @@ object ExperimentalRecording {
 
     /** Connect only to USB-bootstrapped localhost TCP/5555, never external hosts. */
     suspend fun connect(context: Context, automatic: Boolean = false): Result<Int> {
+        if (automatic && awaitingManualRetry)
+            return Result.failure(IllegalStateException("ADB authorization stopped. Tap Retry on Home."))
+        if (!automatic) allowManualRetry()
         if (status.value.busy)
             return Result.failure(IllegalStateException("ADB setup is already running"))
         status.value = status.value.copy(busy = true, connected = false, shellUid = null,
             message = "Checking USB-bootstrapped localhost ADB…")
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
+        val result: Result<Int> = try {
+            withTimeout(15_000L) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
                 check(tcpPresent()) {
                     "No local ADB endpoint. An authorized USB ADB host must first run adb tcpip 5555."
                 }
                 AdbTransport.close()
                 AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
-                val uid = AdbTransport.exec("id -u").getOrThrow().lineSequence()
+                val uid = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow().lineSequence()
                     .mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
                     ?: error("ADB returned no shell UID")
                 check(uid == 2000) { "ADB did not verify shell UID 2000 (received $uid)" }
                 uid
+                    }
+                }
             }
+        } catch (_: TimeoutCancellationException) {
+            Result.failure(IllegalStateException("ADB authorization timed out after 15 seconds. Tap Retry on Home."))
         }
         if (result.isFailure) {
+            awaitingManualRetry = true
+            withContext(Dispatchers.IO) { AdbTransport.close() }
             status.value = status.value.copy(
                 busy = false, connected = false, shellUid = null,
                 tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },

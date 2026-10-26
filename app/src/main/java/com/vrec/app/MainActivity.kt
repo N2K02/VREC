@@ -161,8 +161,8 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
 
     LaunchedEffect(openAdbSetup) {
         if (openAdbSetup) {
-            screen = Screen.SETTINGS
-            settingsSection = "Experimental"
+            screen = Screen.HOME
+            settingsSection = null
             returnToSettings = false
             onAdbSetupHandled()
         }
@@ -199,7 +199,10 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     Scaffold(
         topBar = {
             VrecBrandHeader(
-                title = if (screen == Screen.SETTINGS) settingsSection ?: "Settings" else title,
+                title = if (screen == Screen.SETTINGS) {
+                    if (settingsSection == "Experimental") "ADB diagnostics"
+                    else settingsSection ?: "Settings"
+                } else title,
                 screen = screen,
             )
         },
@@ -266,12 +269,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(
-                    onOpenExperimental = {
-                        navigateTo(Screen.SETTINGS)
-                        settingsSection = "Experimental"
-                    },
-                )
+                Screen.HOME -> HomeScreen()
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
@@ -376,7 +374,7 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 }
 
 @Composable
-private fun HomeScreen(onOpenExperimental: () -> Unit) {
+private fun HomeScreen() {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
@@ -403,7 +401,7 @@ private fun HomeScreen(onOpenExperimental: () -> Unit) {
         Text("Connect the verified Android shell, then enable automatic call recording.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        com.vrec.app.ui.LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)
+        com.vrec.app.ui.LocalAdbHomeCard()
         RecordingMasterCard(enabled = recordingEnabled, onEnabledChange = { enabled ->
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
@@ -448,11 +446,6 @@ private fun HomeScreen(onOpenExperimental: () -> Unit) {
                 }
                 if (recordingEnabled) {
                     (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-                }
-                if (!ready) {
-                    OutlinedButton(onClick = onOpenExperimental, modifier = Modifier.fillMaxWidth()) {
-                        Text("ADB is not ready · Review USB setup")
-                    }
                 }
             }
         }

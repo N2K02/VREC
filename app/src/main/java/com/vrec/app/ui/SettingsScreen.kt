@@ -93,19 +93,6 @@ fun SettingsScreen(
     val connection by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    var permissionCheckTick by remember { mutableIntStateOf(0) }
-    // Recheck after an ADB connection finishes its automatic AppOp command.
-    val advancedPermissionGranted = remember(
-        resumeTick, section, permissionCheckTick, connection.message, connection.busy
-    ) {
-        CallDetectionAccess.isGranted(context)
-    }
-    val advancedDetectionEnabled = remember(
-        resumeTick, section, permissionCheckTick, connection.message, connection.busy,
-        recordingMethod
-    ) {
-        Prefs.experimentalCallDetection(context)
-    }
     LaunchedEffect(resumeTick, section, recordingMethod) {
         if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
             AdbPrivilegedApiHelper.checkHealth(context)
@@ -139,17 +126,10 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 12.dp),
             )
-            SettingCard("ADB-first recording") {
-                Text("VRec captures calls through the verified Android shell helper. " +
-                    "USB debugging needs a one-time authorized host to enable localhost TCP/5555.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
             listOfNotNull(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Experimental", "USB ADB access, helper health, audio sources", Icons.Rounded.Tune),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -171,7 +151,7 @@ fun SettingsScreen(
             // Diagnostics, logs and updates remain together at the bottom like mRadio.
             ListItem(
                 headlineContent = { Text("ADB diagnostics") },
-                supportingContent = { Text("Connection checks, shell helper and audio source health") },
+                supportingContent = { Text("Helper status, audio sources and access exceptions") },
                 leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                 modifier = Modifier.clickable { onSectionChange("Experimental") },
@@ -222,15 +202,22 @@ fun SettingsScreen(
         }
 
         if (section == "Experimental") {
-                // Full setup checklist lives only here, not on the Settings overview.
-                AdbSetupProgressCard(
-                    adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
-                        (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
-                    helperReady = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING,
-                    advancedGranted = advancedPermissionGranted,
-                    advancedEnabled = advancedDetectionEnabled,
-                )
-                ExperimentalRecorderCard()
+                SettingCard("ADB status") {
+                    Text(
+                        when {
+                            helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
+                                "Recording helper is running."
+                            connection.connected && connection.shellUid == 2000 ->
+                                "Shell UID 2000 verified; helper is not ready yet."
+                            else -> "Open Home to set up or retry ADB authorization."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text("USB authorization and retry are managed on Home. " +
+                        "This screen contains capture configuration and diagnostics only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 SettingCard("Enhanced SIM capture source") {
                     Text(
                         "Select the shell's call-audio source. This does not use VRec's " +
@@ -360,100 +347,3 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
     }
 }
 
- /** Persistent setup feedback for ADB; disconnecting a healthy daemon doesn't undo setup. */
-@Composable
-private fun AdbSetupProgressCard(
-    adbAuthorized: Boolean,
-    helperReady: Boolean,
-    advancedGranted: Boolean,
-    advancedEnabled: Boolean,
-    onConfigure: (() -> Unit)? = null,
-) {
-    // Advanced Telecom detection is only supported from Android 12. On earlier
-    // versions it is skipped; the shell helper still works independently.
-    val supportsAdvanced = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val advancedReady = !supportsAdvanced || (advancedGranted && advancedEnabled)
-    val done = listOf(adbAuthorized, helperReady, advancedReady).count { it }
-    val complete = done == 3
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(
-                    if (complete) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-                    contentDescription = null,
-                    tint = if (complete) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (complete) "ADB setup complete" else "ADB setup required",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        "$done of 3 checks complete",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            LinearProgressIndicator(
-                progress = { done / 3f },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            AdbSetupStep("ADB authorization", adbAuthorized,
-                if (adbAuthorized) "Verified" else "Connect USB-bootstrapped localhost TCP/5555")
-            AdbSetupStep("Recording helper", helperReady,
-                if (helperReady) "Ready" else "Connect ADB to start or restore")
-            AdbSetupStep(
-                "Advanced call detection",
-                advancedReady,
-                when {
-                    !supportsAdvanced -> "Not supported on this Android version"
-                    !advancedGranted -> "Grant special access in Experimental"
-                    !advancedEnabled -> "Enable advanced detection in Experimental"
-                    else -> "Granted and enabled"
-                },
-            )
-            if (onConfigure != null && !complete) {
-                TextButton(onClick = onConfigure) {
-                    Text("Complete ADB setup →")
-                }
-            }
-            if (complete) {
-                Text(
-                    "The helper is ready, but recording both voices still requires device testing.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdbSetupStep(label: String, done: Boolean, message: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(
-            if (done) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-            contentDescription = null,
-            modifier = Modifier.padding(start = 2.dp),
-            tint = if (done) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(message, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}

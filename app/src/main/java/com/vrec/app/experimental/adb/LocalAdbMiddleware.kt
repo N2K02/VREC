@@ -26,7 +26,7 @@ object LocalAdbMiddleware {
     }
 
     val busy = MutableStateFlow(false)
-    val message = MutableStateFlow("Tap Set up automatically to check ADB access on this phone.")
+    val message = MutableStateFlow("First time? Expand USB instructions below, then tap Set up ADB recording.")
     val lastSetupFailed = MutableStateFlow(false)
     private val mutex = Mutex()
 
@@ -58,7 +58,7 @@ object LocalAdbMiddleware {
     }
 
     /** Attempt USB-bootstrapped localhost ADB only; never enable adbd. */
-    suspend fun setup(context: Context): Boolean = mutex.withLock {
+    suspend fun setup(context: Context, userInitiated: Boolean = false): Boolean = mutex.withLock {
         val app = context.applicationContext
         busy.value = true
         lastSetupFailed.value = false
@@ -68,6 +68,12 @@ object LocalAdbMiddleware {
                 message.value = "Enhanced recording helper is connected and ready."
                 return@withLock true
             }
+            if (!userInitiated && (ExperimentalRecording.awaitingManualRetry ||
+                !ExperimentalRecording.recoveryAuthorization(app).tcpVerified)) {
+                message.value = "Open Home and tap Set up ADB recording to authorize this phone."
+                return@withLock false
+            }
+            if (userInitiated) ExperimentalRecording.allowManualRetry()
             val session = ExperimentalRecording.status.value
             val next = LocalAdbSetupPolicy.next(LocalAdbSetupPolicy.Signals(
                 adbModeSelected = true,
@@ -93,9 +99,9 @@ object LocalAdbMiddleware {
                 }
                 LocalAdbSetupPolicy.Next.CONNECT_TCP -> {
                     message.value = "Checking USB-bootstrapped localhost TCP/5555…"
-                    val result = ExperimentalRecording.connect(app, automatic = true)
+                    val result = ExperimentalRecording.connect(app, automatic = !userInitiated)
                     message.value = if (result.isSuccess) "Authorized ADB connected; helper started."
-                        else "ADB could not connect: ${result.exceptionOrNull()?.message}. Open USB setup."
+                        else "ADB could not connect: ${result.exceptionOrNull()?.message}. Tap Retry on Home."
                     result.isSuccess
                 }
                 LocalAdbSetupPolicy.Next.NEED_USB_HOST -> {
