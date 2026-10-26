@@ -172,13 +172,6 @@ fun SettingsScreen(
                     modifier = Modifier.clickable { onSectionChange(name) },
                 )
             }
-            ListItem(
-                headlineContent = { Text("Recordings") },
-                supportingContent = { Text("Browse, play and share recorded calls") },
-                leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
-                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = onOpenRecordings),
-            )
             // Supported runtime permissions are configured after UID 2000 verification.
             HorizontalDivider()
             // Diagnostics, logs and updates remain together at the bottom like mRadio.
