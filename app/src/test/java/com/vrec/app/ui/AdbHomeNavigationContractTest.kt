@@ -70,7 +70,9 @@ class AdbHomeNavigationContractTest {
         assertFalse(recovery.contains("usbDebuggingFlag("))
         assertTrue(controller.contains("awaitingManualRetry = true"))
         assertTrue(controller.contains("AdbPermissionBootstrap.grantEligible(context)"))
-        assertTrue(controller.indexOf("check(uid == 2000)") <
-            controller.indexOf("AdbPermissionBootstrap.grantEligible(context)"))
+        // UID 2000 is verified (verifyShellUid) before the permission grants run.
+        val connectBody = controller.substringAfter("suspend fun connect(context: Context")
+        assertTrue(connectBody.indexOf("verifyShellUid()") < connectBody.indexOf("grantSafely(context)"))
+        assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
     }
 }

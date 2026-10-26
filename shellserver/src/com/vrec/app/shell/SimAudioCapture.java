@@ -71,8 +71,12 @@ final class SimAudioCapture {
                 far.start();
                 started = true;
             } catch (Throwable t) {
-                near.stop();
-                Ln.w("Dual SIM source unsupported by device; capture startup aborted");
+                // Release the uplink source even if stopping it fails, and keep
+                // the original reason in the log instead of losing it.
+                try { near.stop(); } catch (Throwable stopError) {
+                    Ln.w("Dual SIM: releasing uplink after failed start also failed", stopError);
+                }
+                Ln.w("Dual SIM source unsupported by device; capture startup aborted", t);
                 throw new AudioCaptureException();
             }
         }

@@ -5,46 +5,62 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Restore-after-restart reuses an approved pairing; Home dashboard controls stay safe. */
+/** Restore and TCP/5555 are opt-in, verified, and respect the user's own choices. */
 class AdbSelfRestoreContractTest {
     private fun read(path: String) = listOf(File(path), File("../$path"))
         .firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
+    private val restore = read("app/src/main/java/com/vrec/app/experimental/adb/AdbSelfRecovery.kt")
+    private val boot = read("app/src/main/java/com/vrec/app/experimental/adb/AdbPermissionBootstrap.kt")
+    private val choices = read("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
+    private val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+    private val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
 
-    @Test fun secureSettingsIsGrantedOnlyThroughVerifiedShellAndChecked() {
-        val boot = read("app/src/main/java/com/vrec/app/experimental/adb/AdbPermissionBootstrap.kt")
-        val restore = read("app/src/main/java/com/vrec/app/experimental/adb/AdbSelfRecovery.kt")
-        val manifest = read("app/src/main/AndroidManifest.xml")
-        assertTrue(manifest.contains("android.permission.WRITE_SECURE_SETTINGS"))
+    @Test fun bothSecurityChoicesDefaultOff() {
+        assertTrue(choices.contains("getBoolean(RESTORE_AFTER_RESTART, false)"))
+        assertTrue(choices.contains("getBoolean(TCP_MODE, false)"))
+    }
+
+    @Test fun secureSettingsOnlyRequestedForOptedInRestoreAfterVerifiedUid() {
+        assertTrue(boot.contains("AdbUserChoices.restoreAfterRestart(app)"))
         assertTrue(boot.indexOf("shellUid != 2000") < boot.indexOf("grantSecureSettings(app)"))
-        assertTrue(restore.contains("return hasSecureSettings(context)"))
+        assertTrue(restore.contains("if (!AdbUserChoices.restoreAfterRestart(context)) return false"))
+        assertTrue(restore.contains("return hasSecureSettings(context).also"))
+        assertTrue(restore.contains("pm revoke"))
+        assertTrue(read("app/src/main/AndroidManifest.xml").contains("android.permission.WRITE_SECURE_SETTINGS"))
     }
 
-    @Test fun restoreNeedsPriorPairingWifiAndDoesNotTouchUsbDebugging() {
-        val restore = read("app/src/main/java/com/vrec/app/experimental/adb/AdbSelfRecovery.kt")
-        assertTrue(restore.contains("ExperimentalRecording.wirelessWasPaired(context)"))
-        assertTrue(restore.contains("!onWifi(app)"))
-        assertFalse(restore.contains("ADB_ENABLED"))
-        assertFalse(restore.contains("\"adb_enabled\""))
-        val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(recovery.contains("ExperimentalRecording.awaitingManualRetry ||"))
-        assertTrue(recovery.contains("AdbSelfRecovery.restoreWireless(app)"))
-        assertTrue(recovery.contains("wirelessBackoff.allowed(now)"))
-        assertTrue(recovery.contains("tcpBackoff.allowed(now)"))
-    }
-
-    @Test fun restoreVerifiesSettingAndHelperInsteadOfAssuming() {
-        val restore = read("app/src/main/java/com/vrec/app/experimental/adb/AdbSelfRecovery.kt")
+    @Test fun restoreVerifiesSettingUidAndHelperAndNeverTouchesUsbDebugging() {
+        assertTrue(restore.contains("RestoreDecision.decide(inputs(app))"))
         assertTrue(restore.contains("RestoreOutcome.SETTING_REJECTED"))
         assertTrue(restore.indexOf("putInt(app.contentResolver") <
             restore.lastIndexOf("if (!wirelessDebuggingOn(app))"))
-        assertTrue(restore.contains("ExperimentalCaptureDaemon.probe(app)"))
+        assertTrue(restore.contains("link.connected && link.shellUid == 2000 && ExperimentalCaptureDaemon.probe(app)"))
+        assertTrue(restore.contains("AdbFailurePolicy.requiresManualRetry(link.lastFailure)) break"))
         assertTrue(restore.contains("LocalWirelessAdb.stop(app)"))
+        assertFalse(restore.contains("ADB_ENABLED"))
+        assertFalse(restore.contains("\"adb_enabled\""))
     }
 
-    @Test fun authorizationTimeoutIsNeverRetriedAutomatically() {
-        val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(recovery.contains("if (lastFailureWasAuthTimeout || reason.contains(\"stopped\""))
-        assertTrue(recovery.contains("awaitingManualRetry && !lastFailureWasAuthTimeout"))
+    @Test fun tcpSwitchOnlyWhenOptedInAndReadyNeedsHelper() {
+        val connect = wireless.substringAfter("private suspend fun connectAndSwitch(")
+            .substringBefore("fun shutdown(")
+        assertTrue(connect.contains("if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)"))
+        assertTrue(connect.contains("ExperimentalCaptureDaemon.probe(app)"))
+        assertTrue(connect.indexOf("connectWireless(") < connect.indexOf("switchToLocalTcp(app)"))
+        assertTrue(wireless.contains("turn USB debugging off in Developer options"))
+    }
+
+    @Test fun recoveryUsesTypedFailuresAndNeverClearsTheManualRetryLatch() {
+        assertFalse(recovery.contains("allowManualRetry"))
+        assertFalse(recovery.contains("ignoreCase"))
+        assertFalse(recovery.contains(".message"))
+        assertTrue(recovery.contains("if (!AdbFailurePolicy.retryable(failure)) return failure"))
+        assertTrue(recovery.contains("if (ExperimentalRecording.awaitingManualRetry) return Outcome.MANUAL_RETRY_REQUIRED"))
+        // Disconnect and recording OFF stop automatic reconnection.
+        assertTrue(recovery.contains("!Prefs.recordingEnabled(app) || !saved.allowed"))
+        assertTrue(recovery.contains("if (AdbLifecycle.quitting) return Outcome.SKIPPED"))
+        assertTrue(recovery.contains("wirelessBackoff.allowed(now)"))
+        assertTrue(recovery.contains("tcpBackoff.allowed(now)"))
     }
 
     @Test fun dashboardStopIsRefusedMidCallAndRestartChecksAdbFirst() {

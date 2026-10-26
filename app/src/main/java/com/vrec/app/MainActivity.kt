@@ -118,6 +118,8 @@ class MainActivity : ComponentActivity() {
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
         openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
+        // Opening VRec after Quit resumes background ADB recovery.
+        com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
                 App(openAdbSetup = openAdbSetup, onAdbSetupHandled = { openAdbSetup = false })
@@ -258,7 +260,9 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 // dismiss floating controls, and disable ADB capture.
                                 CallMonitor.setRecordingEnabled(quitContext, false)
                                 LiveUpdater.controller.cancel()
-                                LocalWirelessAdb.stop(quitContext)
+                                // Stops recovery loop, Wi-Fi listener, discovery, in-flight
+                                // connects and closes VRec's ADB session.
+                                com.vrec.app.experimental.adb.AdbLifecycle.quit(quitContext)
                                 (quitContext as? ComponentActivity)?.finishAndRemoveTask()
                             },
                             icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Quit") },

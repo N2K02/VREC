@@ -218,6 +218,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                AdbSecurityChoices()
                 SettingCard("Enhanced SIM capture source") {
                     Text(
                         "Select the shell's call-audio source. This does not use VRec's " +
@@ -347,3 +348,104 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
     }
 }
 
+
+
+/**
+ * Opt-in ADB behaviour with security impact. Both default off and can be
+ * switched off again at any time.
+ */
+@Composable
+private fun AdbSecurityChoices() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val connection by ExperimentalRecording.status.collectAsState()
+    var restore by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.restoreAfterRestart(context)) }
+    var tcp by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context)) }
+    var confirmTcp by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val verified = connection.connected && connection.shellUid == 2000
+
+    SettingCard("ADB restore and network access") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Restore after restart", style = MaterialTheme.typography.bodyLarge)
+                Text("After a reboot, VRec may turn Wireless debugging back on (on Wi-Fi) to restart " +
+                    "the recording helper with your existing pairing. Never if you turn Wireless " +
+                    "debugging off yourself. Needs one extra Android permission.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = restore, onCheckedChange = { on ->
+                restore = on
+                com.vrec.app.experimental.adb.AdbUserChoices.setRestoreAfterRestart(context, on)
+                scope.launch {
+                    note = when {
+                        on && verified ->
+                            if (com.vrec.app.experimental.adb.AdbSelfRecovery.grantSecureSettings(context))
+                                "Restore after restart is on."
+                            else "Android refused the permission; restore can't run on this phone."
+                        on -> "Restore turns on the next time ADB is verified."
+                        verified -> {
+                            com.vrec.app.experimental.adb.AdbSelfRecovery.revokeSecureSettings(context)
+                            "Restore after restart is off."
+                        }
+                        else -> "Restore after restart is off. VRec won't change Wireless debugging."
+                    }
+                }
+            })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Keep ADB without Wi-Fi (TCP/5555)", style = MaterialTheme.typography.bodyLarge)
+                Text("Moves ADB to port 5555 so the helper can restart without Wi-Fi. Other devices " +
+                    "on your network may reach ADB while it is on. Off keeps the encrypted Wireless " +
+                    "debugging connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = tcp, onCheckedChange = { on ->
+                if (on) confirmTcp = true
+                else {
+                    tcp = false
+                    com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, false)
+                    note = if (connection.tcpPortOpen && !verified)
+                        "TCP/5555 is still listening. Retry on Home, then tap Disable TCP/5555, " +
+                            "or turn USB debugging off in Developer options."
+                        else "TCP/5555 mode is off."
+                }
+            })
+        }
+        if (connection.tcpPortOpen && verified) {
+            OutlinedButton(onClick = {
+                scope.launch {
+                    note = ExperimentalRecording.disableTcp(context).fold(
+                        { "TCP/5555 is closed." }, { it.message ?: "Couldn't close TCP/5555." })
+                }
+            }, enabled = !connection.busy, modifier = Modifier.fillMaxWidth()) { Text("Disable TCP/5555") }
+        }
+        note?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+
+    if (confirmTcp) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmTcp = false },
+            title = { Text("Allow ADB on TCP/5555?") },
+            text = { Text("ADB will listen on port 5555. Any device on the same network that you " +
+                "have authorized, or that Android lets connect, can then reach this phone's ADB. " +
+                "Use only on trusted networks. VRec re-verifies Android shell access after the " +
+                "switch, and you can turn this off here at any time.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmTcp = false
+                    tcp = true
+                    com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, true)
+                    note = "TCP/5555 mode applies the next time VRec connects over Wireless debugging."
+                }) { Text("Allow") }
+            },
+            dismissButton = { TextButton(onClick = { confirmTcp = false }) { Text("Cancel") } },
+        )
+    }
+}

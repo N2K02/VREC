@@ -25,6 +25,8 @@ object ExperimentalRecording {
         /** Socket presence only; never grants access to the shell helper. */
         val tcpPortOpen: Boolean = false,
         val busy: Boolean = false,
+        /** Typed reason for the last failed attempt; cleared on success. */
+        val lastFailure: AdbFailure? = null,
     )
     val status = MutableStateFlow(Status())
     @Volatile var awaitingManualRetry: Boolean = false
@@ -131,56 +133,57 @@ object ExperimentalRecording {
     /** Connect only to USB-bootstrapped localhost TCP/5555, never external hosts. */
     suspend fun connect(context: Context, automatic: Boolean = false): Result<Int> {
         if (automatic && awaitingManualRetry)
-            return Result.failure(IllegalStateException("ADB authorization stopped. Tap Retry on Home."))
+            return Result.failure(AdbConnectionException(
+                status.value.lastFailure ?: AdbFailure.AUTH_TIMEOUT, "ADB authorization stopped; press Retry on Home."))
         if (!automatic) allowManualRetry()
         if (status.value.busy)
-            return Result.failure(IllegalStateException("ADB setup is already running"))
+            return Result.failure(AdbConnectionException(AdbFailure.CONNECTION_LOST, "ADB setup is already running"))
         status.value = status.value.copy(busy = true, connected = false, shellUid = null,
             message = "Checking USB-bootstrapped localhost ADB…")
         Log.i("ADB: verifying localhost:5555 authorization (15-second limit)")
         val result: Result<Int> = try {
             withTimeout(15_000L) {
                 withContext(Dispatchers.IO) {
-                    runCatching {
-                        check(tcpPresent()) {
-                            "No local ADB endpoint. An authorized USB ADB host must first run adb tcpip 5555."
+                    typed {
+                        AdbFailurePolicy.staged(AdbFailurePolicy.Stage.ENDPOINT) {
+                            check(tcpPresent()) {
+                                "No local ADB endpoint. An authorized USB ADB host must first run adb tcpip 5555."
+                            }
                         }
                         AdbTransport.close()
-                        AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
-                        val uid = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow()
-                            .lineSequence().mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
-                            ?: error("ADB returned no shell UID")
-                        check(uid == 2000) { "ADB did not verify shell UID 2000 (received $uid)" }
-                        uid
+                        AdbFailurePolicy.staged(AdbFailurePolicy.Stage.HANDSHAKE) {
+                            AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
+                        }
+                        verifyShellUid()
                     }
                 }
             }
         } catch (_: TimeoutCancellationException) {
-            Result.failure(IllegalStateException("ADB authorization timed out after 15 seconds. Tap Retry on Home."))
+            Result.failure(AdbConnectionException(AdbFailure.AUTH_TIMEOUT,
+                "ADB authorization timed out after 15 seconds. Unlock the phone, tap Allow (tick Always allow), then Retry."))
         }
         if (result.isFailure) {
-            Log.w("ADB: authorization failed — ${result.exceptionOrNull()?.message ?: "unknown error"}")
-            awaitingManualRetry = true
+            val kind = result.exceptionOrNull().adbFailure
+            Log.w("ADB: TCP connection failed ($kind) — ${result.exceptionOrNull()?.message ?: "unknown error"}")
+            // Only an authorization problem stops automatic attempts; a lost
+            // connection (adbd restarting) may be retried with backoff.
+            if (AdbFailurePolicy.requiresManualRetry(kind)) awaitingManualRetry = true
             withContext(Dispatchers.IO) { AdbTransport.close() }
             status.value = status.value.copy(
-                busy = false, connected = false, shellUid = null,
+                busy = false, connected = false, shellUid = null, lastFailure = kind,
                 tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },
-                message = "ADB connection failed: ${result.exceptionOrNull()?.message}",
+                message = failureMessage(kind, result.exceptionOrNull()?.message),
             )
             return result
         }
         Log.i("ADB: Android shell UID 2000 verified")
         rememberVerifiedTcp(context)
-        status.value = status.value.copy(busy = true, connected = true,
+        status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
             shellUid = 2000, tcpPortOpen = true,
             message = "Android shell UID 2000 verified. Configuring supported permissions…")
-        val permissionResult = runCatching {
-            AdbPermissionBootstrap.grantEligible(context)
-        }.getOrElse { AdbPermissionBootstrap.ResultSummary(
-            unavailable = listOf("Permission setup failed: ${it.message}"), finished = true)
-        }
+        val permissionResult = grantSafely(context)
         Log.i("ADB: supported permissions verified — ${permissionResult.granted.size} granted, ${permissionResult.unavailable.size} unavailable")
-        val helper = AdbPrivilegedApiHelper.startWithAdb(context)
+        val helper = startHelperTyped(context)
         if (helper.isSuccess) Log.i("ADB: recording helper started and verified")
         else Log.w("ADB: recording helper failed — ${helper.exceptionOrNull()?.message ?: "unknown error"}")
         status.value = status.value.copy(busy = false, message = when {
@@ -198,45 +201,45 @@ object ExperimentalRecording {
      * Wireless connection has a separate dynamic Android TLS port. */
     suspend fun connectWireless(context: Context, port: Int, automatic: Boolean = false): Result<Int> {
         if (automatic && awaitingManualRetry)
-            return Result.failure(IllegalStateException("ADB authorization stopped; press Retry."))
+            return Result.failure(AdbConnectionException(
+                status.value.lastFailure ?: AdbFailure.AUTH_TIMEOUT, "ADB authorization stopped; press Retry on Home."))
         if (status.value.busy)
-            return Result.failure(IllegalStateException("ADB setup is already running"))
+            return Result.failure(AdbConnectionException(AdbFailure.CONNECTION_LOST, "ADB setup is already running"))
         if (!automatic) allowManualRetry()
         status.value = status.value.copy(busy = true, connected = false, shellUid = null,
             message = "Connecting to this phone's Wireless debugging TLS endpoint…")
         val attempt: Result<Int> = try {
             withTimeout(15_000L) {
                 withContext(Dispatchers.IO) {
-                    runCatching {
+                    typed {
                         AdbTransport.close()
-                        AdbTransport.connectLocalTls(context, port).getOrThrow()
-                        val uid = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow()
-                            .lineSequence().mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
-                            ?: error("ADB did not report a shell UID")
-                        check(uid == 2000) { "ADB UID $uid is not Android shell UID 2000" }
-                        uid
+                        AdbFailurePolicy.staged(AdbFailurePolicy.Stage.HANDSHAKE) {
+                            AdbTransport.connectLocalTls(context, port).getOrThrow()
+                        }
+                        verifyShellUid()
                     }
                 }
             }
         } catch (_: TimeoutCancellationException) {
-            Result.failure(IllegalStateException("Wireless ADB authorization timed out after 15 seconds"))
+            Result.failure(AdbConnectionException(AdbFailure.AUTH_TIMEOUT,
+                "Wireless ADB authorization timed out after 15 seconds"))
         }
         if (attempt.isFailure) {
-            awaitingManualRetry = true
+            val kind = attempt.exceptionOrNull().adbFailure
+            if (AdbFailurePolicy.requiresManualRetry(kind)) awaitingManualRetry = true
             AdbTransport.close()
             status.value = status.value.copy(busy = false, connected = false, shellUid = null,
-                message = "Wireless ADB failed: ${attempt.exceptionOrNull()?.message}. Retry from Home.")
-            Log.w("ADB: Wireless connection failed — ${attempt.exceptionOrNull()?.message}")
+                lastFailure = kind, message = failureMessage(kind, attempt.exceptionOrNull()?.message))
+            Log.w("ADB: Wireless connection failed ($kind) — ${attempt.exceptionOrNull()?.message}")
             return attempt
         }
         rememberVerifiedWireless(context)
+        AdbUserChoices.rememberVerifiedWirelessBoot(context)
         Log.i("ADB: wireless TLS Android shell UID 2000 verified")
-        status.value = status.value.copy(busy = true, connected = true,
+        status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
             shellUid = 2000, message = "Wireless ADB UID 2000 verified; granting eligible permissions…")
-        val permissions = runCatching { AdbPermissionBootstrap.grantEligible(context) }
-            .getOrElse { AdbPermissionBootstrap.ResultSummary(unavailable =
-                listOf("Permission setup failed: ${it.message}"), finished = true) }
-        val helper = AdbPrivilegedApiHelper.startWithAdb(context)
+        val permissions = grantSafely(context)
+        val helper = startHelperTyped(context)
         Log.i("ADB: wireless setup ${if (helper.isSuccess) "helper ready" else "helper failed"}; ${permissions.unavailable.size} unavailable permissions")
         status.value = status.value.copy(busy = false, message = when {
             helper.isFailure -> "Wireless UID 2000 verified; helper failed: ${helper.exceptionOrNull()?.message}"
@@ -246,6 +249,61 @@ object ExperimentalRecording {
         })
         return if (helper.isSuccess) attempt else Result.failure(
             helper.exceptionOrNull() ?: IllegalStateException("Recording helper failed"))
+    }
+
+    /** Runs a connection attempt; cancellation propagates, other failures become typed Results. */
+    private inline fun <T> typed(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (c: kotlin.coroutines.cancellation.CancellationException) {
+        throw c
+    } catch (t: Throwable) {
+        Result.failure(if (t is AdbConnectionException) t
+            else AdbConnectionException(AdbFailure.CONNECTION_LOST, t.message ?: "ADB error", t))
+    }
+
+    /** Re-verifies shell UID 2000 on the current transport (after every transport change). */
+    private suspend fun verifyShellUid(): Int {
+        val output = AdbFailurePolicy.staged(AdbFailurePolicy.Stage.VERIFY_UID) {
+            AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow()
+        }
+        val uid = output.lineSequence().mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
+            ?: throw AdbConnectionException(AdbFailure.PERMISSION_DENIED, "ADB returned no shell UID")
+        if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED,
+            "ADB UID $uid is not Android shell UID 2000")
+        return uid
+    }
+
+    /** Helper failures are typed HELPER_UNAVAILABLE and recorded, so UI and recovery don't parse text. */
+    private suspend fun startHelperTyped(context: Context): Result<Unit> {
+        val helper = AdbPrivilegedApiHelper.startWithAdb(context)
+        if (helper.isFailure) status.value = status.value.copy(lastFailure = AdbFailure.HELPER_UNAVAILABLE)
+        return helper.fold({ Result.success(Unit) }, {
+            Result.failure(AdbConnectionException(AdbFailure.HELPER_UNAVAILABLE,
+                it.message ?: "Recording helper failed", it))
+        })
+    }
+
+    /** Permission grants after UID 2000; cancellation propagates instead of being swallowed. */
+    private suspend fun grantSafely(context: Context): AdbPermissionBootstrap.ResultSummary = try {
+        AdbPermissionBootstrap.grantEligible(context)
+    } catch (c: kotlin.coroutines.cancellation.CancellationException) {
+        throw c
+    } catch (t: Throwable) {
+        AdbPermissionBootstrap.ResultSummary(
+            unavailable = listOf("Permission setup failed: ${t.message}"), finished = true)
+    }
+
+    /** Actionable text per failure type. */
+    fun failureMessage(kind: AdbFailure?, detail: String?): String = when (kind) {
+        AdbFailure.AUTH_TIMEOUT -> "Android's authorization prompt wasn't answered. Unlock the phone, tap Allow " +
+            "(tick Always allow), then press Retry."
+        AdbFailure.AUTH_REJECTED -> "Android refused VRec's ADB key (denied or revoked). Press Retry and tap Allow, " +
+            "or pair again in Wireless debugging."
+        AdbFailure.CONNECTION_LOST -> "ADB connection dropped (Android may be restarting ADB). VRec will retry."
+        AdbFailure.NETWORK_UNAVAILABLE -> "No ADB endpoint found. Turn on Wireless debugging on Wi-Fi, or use a USB host."
+        AdbFailure.HELPER_UNAVAILABLE -> "ADB connected, but the recording helper didn't start: ${detail ?: "unknown"}"
+        AdbFailure.PERMISSION_DENIED -> "ADB isn't running as Android shell (UID 2000). Recording can't use it."
+        null -> "ADB connection failed: ${detail ?: "unknown error"}"
     }
 
     /** Ends only VRec's ADB session. The detached shell recorder is not stopped. */

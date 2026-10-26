@@ -31,9 +31,10 @@ class BackgroundRecoveryContractTest {
         .firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
 
     @Test fun recoveryRunsFromTheAppProcessNotOnlyHome() {
-        val app = read("app/src/main/java/com/vrec/app/VrecApp.kt")
-        assertTrue(app.contains("recover(\"background check\")"))
-        assertTrue(app.contains("registerNetworkCallback"))
+        val lifecycle = read("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
+        assertTrue(lifecycle.contains("recover(app, \"background check\")"))
+        assertTrue(lifecycle.contains("registerNetworkCallback"))
+        assertTrue(read("app/src/main/java/com/vrec/app/VrecApp.kt").contains("AdbLifecycle.startBackground(this)"))
     }
 
     @Test fun automaticDiscoveryIsBoundedAndPausesAfterRepeatedEmptySearches() {
@@ -41,6 +42,6 @@ class BackgroundRecoveryContractTest {
         assertTrue(wireless.contains("emptySearches >= MAX_EMPTY_SEARCHES || now < nextAutoSearchAt"))
         assertTrue(wireless.contains("private const val AUTO_SEARCH_MS = 60_000L"))
         assertTrue(wireless.contains("repeat(20) { if (!listening)"))
-        assertTrue(wireless.contains("reconnectTcpWithRetry(context, automatic = false)"))
+        assertTrue(wireless.contains(".reconnectTcp(context, automatic = false) == null"))
     }
 }

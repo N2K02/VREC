@@ -36,7 +36,7 @@ object LocalAdbMiddleware {
     /** Termux-style local commands, executed without a companion app. Not privileged. */
     suspend fun runLocal(diagnostic: LocalDiagnostic): Result<LocalResult> =
         withContext(Dispatchers.IO) {
-            runCatching {
+            catchingNonCancellation {
                 val process = ProcessBuilder(diagnostic.command)
                     .redirectErrorStream(true).start()
                 try {
@@ -67,6 +67,7 @@ object LocalAdbMiddleware {
         lastSetupFailed.value = false
         needsUsbBootstrap.value = false
         if (userInitiated) Log.i("ADB setup: user requested first-time USB bootstrap check")
+        if (AdbLifecycle.quitting) { busy.value = false; return@withLock false }
         try {
             if (userInitiated) ExperimentalRecording.allowManualRetry()
             // Detached helper can survive ADB disconnect and needs no new bootstrap.
@@ -123,6 +124,10 @@ object LocalAdbMiddleware {
             }
             lastSetupFailed.value = !success && !needsUsbBootstrap.value
             success
+        } catch (c: kotlin.coroutines.cancellation.CancellationException) {
+            // Quit or a closed screen cancelled setup: stop here, no failure banner,
+            // no stale message. The transport is closed by whoever cancelled.
+            throw c
         } catch (t: Throwable) {
             lastSetupFailed.value = true
             Log.w("ADB setup failed: ${t.message ?: "unknown error"}", t)

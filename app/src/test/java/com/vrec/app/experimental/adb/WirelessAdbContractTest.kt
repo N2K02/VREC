@@ -18,7 +18,8 @@ class WirelessAdbContractTest {
         assertTrue(transport.contains("connect(LOOPBACK, port)"))
         assertTrue(wireless.contains("belongsToThisPhone(host)"))
         assertTrue(controller.contains("connectWireless(context: Context, port: Int"))
-        assertTrue(controller.contains("check(uid == 2000)"))
+        assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
+        assertTrue(controller.substringAfter("suspend fun connectWireless(").contains("verifyShellUid()"))
         assertTrue(controller.contains("AdbPermissionBootstrap.grantEligible(context)"))
         assertTrue(controller.contains("AdbPrivilegedApiHelper.startWithAdb(context)"))
     }

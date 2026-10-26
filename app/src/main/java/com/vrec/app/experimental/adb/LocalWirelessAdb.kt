@@ -19,6 +19,7 @@ import com.vrec.app.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -83,6 +84,7 @@ object LocalWirelessAdb {
      */
     fun start(context: Context, userInitiated: Boolean = false) {
         val app = context.applicationContext
+        if (AdbLifecycle.quitting) return
         val now = android.os.SystemClock.elapsedRealtime()
         if (userInitiated) {
             emptySearches = 0
@@ -272,7 +274,8 @@ object LocalWirelessAdb {
     private suspend fun connectAndSwitch(app: Context, port: Int, automatic: Boolean): Boolean {
         val link = ExperimentalRecording.status.value
         if (link.connected && link.shellUid == 2000 &&
-            ExperimentalRecording.tcpPortListening()) {
+            (!AdbUserChoices.tcpMode(app) || ExperimentalRecording.tcpPortListening()) &&
+            com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.probe(app)) {
             status.value = status.value.copy(phase = Phase.READY)
             return true
         }
@@ -280,10 +283,28 @@ object LocalWirelessAdb {
         val result = ExperimentalRecording.connectWireless(app, port, automatic = automatic)
         if (result.isFailure) {
             status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED,
-                message = "Wireless ADB connect failed: ${result.exceptionOrNull()?.message}")
+                message = ExperimentalRecording.failureMessage(result.exceptionOrNull().adbFailure,
+                    result.exceptionOrNull()?.message))
             return false
         }
-        return switchToLocalTcp(app)
+        // Default: keep the authenticated Wireless debugging TLS session. TCP/5555
+        // is reachable from the network, so it is only used when the user opted in.
+        if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)
+        val helperAnswers = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.probe(app)
+        stop(app)
+        status.value = status.value.copy(
+            phase = if (helperAnswers) Phase.READY else Phase.RECOVERY_REQUIRED,
+            message = if (helperAnswers)
+                "Wireless debugging verified (UID 2000) and recording helper answering."
+                else "Wireless debugging verified, but the recording helper didn't answer. Retry from Home.")
+        return helperAnswers
+    }
+
+    /** Quit: stop discovery and cancel any in-flight pairing or connect. */
+    fun shutdown(context: Context) {
+        scope.coroutineContext.cancelChildren()
+        stop(context)
+        status.value = status.value.copy(phase = Phase.IDLE)
     }
 
     private suspend fun switchToLocalTcp(context: Context): Boolean {
@@ -305,11 +326,13 @@ object LocalWirelessAdb {
             listening = ExperimentalRecording.tcpPortListening() } }
         if (!listening) {
             status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
-                "TCP/5555 did not come up after Android restarted ADB. Retry from Home.")
+                "TCP/5555 did not come up after Android restarted ADB. Turn Wireless debugging off " +
+                    "and on in Developer options, then Retry from Home.")
             return false
         }
+        // Re-verifies UID 2000 on the new transport and requires the helper to answer.
         val restored = com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
-            .reconnectTcpWithRetry(context, automatic = false)
+            .reconnectTcp(context, automatic = false) == null
         if (restored) {
             stop(context)
             status.value = status.value.copy(phase = Phase.READY, message =
@@ -318,9 +341,11 @@ object LocalWirelessAdb {
             // Wireless discovery has nothing more to do; background TCP recovery
             // (with backoff) or the user's Retry takes it from here.
             stop(context)
+            // TCP/5555 may now be listening without a session to turn it off.
             status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
-                "TCP/5555 enabled, but localhost reconnection needs attention: " +
-                    ExperimentalRecording.status.value.message)
+                "TCP/5555 may still be listening, but VRec couldn't verify it: " +
+                    ExperimentalRecording.status.value.message +
+                    " To close it, turn USB debugging off in Developer options, or Retry and use Disable TCP.")
         }
         return restored
     }

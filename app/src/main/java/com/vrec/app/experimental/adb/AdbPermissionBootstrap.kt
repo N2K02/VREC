@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import com.vrec.app.calls.CallDetectionAccess
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * One-tap best-effort permission configuration only AFTER real adbd UID 2000.
@@ -21,13 +23,26 @@ object AdbPermissionBootstrap {
         val finished: Boolean = false,
     )
     val status = MutableStateFlow(ResultSummary())
+    /** Serializes grant runs: overlapping connects (USB, wireless, recovery) can't interleave pm grant. */
+    private val mutex = Mutex()
 
-    suspend fun grantEligible(context: Context): ResultSummary {
-        val app = context.applicationContext
+    suspend fun grantEligible(context: Context): ResultSummary = mutex.withLock {
+        grantLocked(context.applicationContext)
+    }
+
+    private suspend fun grantLocked(app: Context): ResultSummary {
         if (!ExperimentalRecording.status.value.connected ||
             ExperimentalRecording.status.value.shellUid != 2000 ||
             !AdbTransport.isConnected) {
             return ResultSummary(unavailable = listOf("ADB shell UID 2000 not authorized"))
+                .also { status.value = it }
+        }
+        // The cached status can lag a dropped transport: re-verify on the live shell
+        // immediately before any privileged command.
+        val live = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrNull()
+            ?.lineSequence()?.any { it.trim() == "2000" } == true
+        if (!live) {
+            return ResultSummary(unavailable = listOf("ADB shell UID 2000 not re-verified"))
                 .also { status.value = it }
         }
         status.value = ResultSummary(busy = true)
@@ -46,7 +61,7 @@ object AdbPermissionBootstrap {
                 granted.add(short)
                 continue
             }
-            runCatching {
+            catchingNonCancellation {
                 AdbTransport.exec("pm grant ${app.packageName} $permission", timeoutMs = 10_000)
                     .getOrThrow()
             }
@@ -56,14 +71,13 @@ object AdbPermissionBootstrap {
                 unavailable.add("$short (Android denied the grant)")
             }
         }
-        // Lets VRec turn Wireless debugging back on after a restart and reuse
-        // the existing pairing, so a reboot doesn't mean redoing setup.
-        if (Build.VERSION.SDK_INT >= 30) {
-            if (runCatching { AdbSelfRecovery.grantSecureSettings(app) }.getOrDefault(false))
+        // Only for the user's opt-in "Restore after restart"; never requested otherwise.
+        if (Build.VERSION.SDK_INT >= 30 && AdbUserChoices.restoreAfterRestart(app)) {
+            if (catchingNonCancellation { AdbSelfRecovery.grantSecureSettings(app) }.getOrDefault(false))
                 granted.add("Automatic restore after restart")
             else unavailable.add("Automatic restore after restart (Android denied the grant)")
         }
-        val telecom = runCatching { ExperimentalRecording.grantAdvancedDetection(app) }
+        val telecom = catchingNonCancellation { ExperimentalRecording.grantAdvancedDetection(app) }
             .getOrElse { Result.failure(it) }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             granted.add("Advanced call detection not required on this Android version")

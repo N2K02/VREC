@@ -119,10 +119,10 @@ fun LocalAdbHomeCard() {
         AdbBadgePolicy.Signals(
             busy = busy || adbState.busy,
             verifiedUid2000 = verified,
+            // Typed failure, not message text. A missing endpoint is a setup step, not a failure.
             failed = !needsUsbBootstrap && (lastSetupFailed ||
-                adbState.message.contains("failed", ignoreCase = true) ||
-                adbState.message.contains("denied", ignoreCase = true) ||
-                setupMessage.contains("could not connect", ignoreCase = true)),
+                (adbState.lastFailure != null &&
+                    adbState.lastFailure != com.vrec.app.experimental.adb.AdbFailure.NETWORK_UNAVAILABLE)),
         )
     )
 
