@@ -44,6 +44,45 @@ object AdbFallbackNotice {
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     }
 
+    /** Only a shell-authenticated STARTED event with a real recording file may show capture UI. */
+    fun shellRecordingStarted(context: Context, file: String) {
+        if (!file.startsWith("vrec_rec_") || !file.endsWith(".dat")) return
+        enhancedActive.value = true
+        if (Prefs.showOverlay(context) && !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
+            runCatching {
+                context.startService(Intent(context, OverlayControlService::class.java)
+                    .setAction(OverlayControlService.ACTION_SHOW))
+            }.onFailure { Log.w("Shell overlay unavailable", it) }
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
+            manager.createNotificationChannel(NotificationChannel(
+                CHANNEL, "ADB recording status", NotificationManager.IMPORTANCE_LOW))
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("VRec · Shell recording")
+            .setContentText("Enhanced call audio capture started")
+            .setContentIntent(PendingIntent.getActivity(context, 89,
+                Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        runCatching { manager.notify(NOTIFICATION_ID, notification) }
+            .onFailure { Log.w("Shell recording notification unavailable", it) }
+    }
+
+    fun shellRecordingEnded(context: Context) {
+        enhancedActive.value = false
+        dismiss(context)
+        runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
+    }
+
     fun notifyEnhancedStarted(context: Context) {
         dismiss(context)
         enhancedActive.value = true
