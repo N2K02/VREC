@@ -455,6 +455,7 @@ object ExperimentalCaptureDaemon {
                             }
                         }
                     }
+                    Log.i("Capture diagnostic: shell import packets=" + packets + " bytes=" + temp.length() + " file=" + name)
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
                     }
@@ -486,6 +487,7 @@ object ExperimentalCaptureDaemon {
                         }
                         sidecar.writeText(json.toString())
                     }
+                    Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     delete(context, name)
                     collected++
                 } catch (t: Throwable) {
@@ -493,6 +495,7 @@ object ExperimentalCaptureDaemon {
                     // recordings in the list. Preserve the shell original;
                     // only temporary app-side output is discarded.
                     Log.w(TAG, "Import failed for " + name, t)
+                    com.vrec.app.Log.w("Capture diagnostic: shell recording import failed file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
                     temp.delete()
                     failures++
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
