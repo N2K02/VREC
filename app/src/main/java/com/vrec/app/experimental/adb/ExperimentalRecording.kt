@@ -87,8 +87,16 @@ object ExperimentalRecording {
         } else current.copy(tcpPortOpen = tcpListening)
     }
 
-    /** ADB is the single recording mode. Legacy STANDARD choices are ignored. */
-    fun method(context: Context): Method = Method.BUILT_IN_ADB
+    /** Shared Home/Settings capture method. Default retains existing ADB behavior. */
+    fun method(context: Context): Method =
+        if (context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
+                .getString("method", Method.BUILT_IN_ADB.name) == Method.STANDARD.name)
+            Method.STANDARD else Method.BUILT_IN_ADB
+
+    fun setMethod(context: Context, selected: Method) {
+        context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
+            .edit().putString("method", selected.name).apply()
+    }
 
     fun adbIdentityPresent(context: Context): Boolean = AdbIdentity.exists(context)
 
