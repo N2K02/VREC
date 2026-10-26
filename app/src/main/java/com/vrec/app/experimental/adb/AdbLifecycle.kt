@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.vrec.app.Log
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,8 +64,14 @@ object AdbLifecycle {
 
     private suspend fun recover(app: Context, reason: String) {
         if (quitting) return
-        catchingNonCancellation { AdbHelperAutoRecovery.check(app) }
-            .onFailure { Log.w("ADB helper recovery failed ($reason)", it) }
+        try {
+            AdbHelperAutoRecovery.check(app)
+        } catch (cancelled: CancellationException) {
+            // Quit and superseded recovery jobs are expected cancellation, not failures.
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w("ADB helper recovery failed ($reason)", failure)
+        }
     }
 
     /**
