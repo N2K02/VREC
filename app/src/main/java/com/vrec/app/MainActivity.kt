@@ -83,6 +83,7 @@ import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
@@ -256,6 +257,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 // dismiss floating controls, and disable ADB capture.
                                 CallMonitor.setRecordingEnabled(quitContext, false)
                                 LiveUpdater.controller.cancel()
+                                LocalWirelessAdb.stop(quitContext)
                                 (quitContext as? ComponentActivity)?.finishAndRemoveTask()
                             },
                             icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Quit") },

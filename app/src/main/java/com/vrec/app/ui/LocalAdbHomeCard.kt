@@ -37,6 +37,7 @@ import com.vrec.app.experimental.adb.AdbBadgePolicy
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalAdbMiddleware
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.launch
@@ -56,10 +57,17 @@ fun LocalAdbHomeCard() {
     val setupMessage by LocalAdbMiddleware.message.collectAsState()
     val lastSetupFailed by LocalAdbMiddleware.lastSetupFailed.collectAsState()
     val needsUsbBootstrap by LocalAdbMiddleware.needsUsbBootstrap.collectAsState()
+    val wireless by LocalWirelessAdb.status.collectAsState()
     val permissions by AdbPermissionBootstrap.status.collectAsState()
     val tick = rememberOnResumeTick()
     val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
     var instructionsExpanded by remember { mutableStateOf(false) }
+    // Automatic first-open detection. No manual transport picker or repeated
+    // background retries after a user-visible authorization failure.
+    LaunchedEffect(Unit) {
+        LocalWirelessAdb.start(context)
+        LocalAdbMiddleware.setup(context, userInitiated = false)
+    }
     LaunchedEffect(needsUsbBootstrap) {
         if (needsUsbBootstrap) instructionsExpanded = true
     }
@@ -92,7 +100,7 @@ fun LocalAdbHomeCard() {
                 Column(Modifier.weight(1f)) {
                     Text("ADB recording setup", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold)
-                    Text("USB bootstrap · one-time authorization",
+                    Text("Auto-detect · USB or Wireless debugging",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -103,7 +111,10 @@ fun LocalAdbHomeCard() {
                     healthy -> "Recording helper ready — nothing to set up"
                     verified -> "Android shell UID 2000 verified — preparing helper"
                     busy || adbState.busy -> "Checking ADB authorization…"
-                    needsUsbBootstrap -> "USB host bootstrap needed — not yet authorized"
+                    wireless.pairingPort != null -> "Wireless pairing found — enter Android's six-digit code"
+                    wireless.connectPort != null && !wireless.paired ->
+                        "Wireless debugging available — pair to authorize VRec"
+                    needsUsbBootstrap -> "Waiting for USB host or Wireless debugging"
                     lastSetupFailed || ExperimentalRecording.awaitingManualRetry ->
                         "Authorization stopped. Tap Retry to try again."
                     else -> "Authorize ADB once to configure recording"
@@ -113,6 +124,8 @@ fun LocalAdbHomeCard() {
             Text(
                 if (healthy && !verified)
                     "The independent recording helper is running. A live ADB session is not required until recovery."
+                else if (wireless.pairingPort != null || wireless.connectPort != null)
+                    wireless.message
                 else setupMessage,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -120,21 +133,30 @@ fun LocalAdbHomeCard() {
             if (!healthy) {
                 Button(
                     onClick = {
-                        scope.launch { LocalAdbMiddleware.setup(context, userInitiated = true) }
+                        if (wireless.connectPort != null &&
+                            ExperimentalRecording.wirelessWasPaired(context))
+                            LocalWirelessAdb.retry(context)
+                        else scope.launch {
+                            LocalAdbMiddleware.setup(context, userInitiated = true)
+                        }
                     },
                     enabled = !busy && !adbState.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(when {
                         busy || adbState.busy -> "Waiting for authorization…"
-                        needsUsbBootstrap -> "Check ADB connection"
+                        wireless.pairingPort != null -> "Waiting for pairing code"
+                        wireless.connectPort != null &&
+                            ExperimentalRecording.wirelessWasPaired(context) -> "Restore wireless ADB"
+                        needsUsbBootstrap -> "Check USB ADB connection"
                         lastSetupFailed || ExperimentalRecording.awaitingManualRetry -> "Retry ADB setup"
                         verified -> "Start recording helper"
                         else -> "Set up ADB recording"
                     })
                 }
                 Text(
-                    if (needsUsbBootstrap) "First complete the external USB bootstrap steps below. VRec will not repeatedly retry."
+                    if (needsUsbBootstrap && wireless.connectPort == null)
+                        "No USB ADB endpoint detected. Use another USB host or enable Wireless debugging below."
                     else "Authorization times out after 15 seconds. No automatic retry after a failed attempt.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -158,13 +180,14 @@ fun LocalAdbHomeCard() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            WirelessAdbSetupCard()
             TermuxTerminalCard()
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { instructionsExpanded = !instructionsExpanded }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("First-time USB instructions", modifier = Modifier.weight(1f),
+                Text("USB host instructions (when Wireless debugging is unavailable)", modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleSmall)
                 Text(if (instructionsExpanded) "▲" else "▼",
                     style = MaterialTheme.typography.bodySmall)

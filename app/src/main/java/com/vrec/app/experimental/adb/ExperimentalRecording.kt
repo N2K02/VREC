@@ -37,6 +37,9 @@ object ExperimentalRecording {
     private const val VERIFIED_TCP_KEY = "verified_tcp_adb"
     private const val VERIFIED_WIRELESS_KEY = "verified_wireless_adb"
 
+    fun wirelessRecoveryAllowed(context: Context): Boolean =
+        wirelessWasPaired(context) && recoveryAuthorization(context).allowed
+
     fun wirelessWasPaired(context: Context): Boolean =
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getBoolean(VERIFIED_WIRELESS_KEY, false)

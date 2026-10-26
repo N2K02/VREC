@@ -107,9 +107,11 @@ object LocalWirelessAdb {
                             status.value = status.value.copy(connectPort = port, scanning = false,
                                 message = "This phone's Wireless debugging is available.",
                                 paired = ExperimentalRecording.wirelessWasPaired(app))
-                            if (ExperimentalRecording.wirelessWasPaired(app) &&
+                            if ((ExperimentalRecording.wirelessRecoveryAllowed(app) ||
+                                    status.value.paired) &&
                                 !ExperimentalRecording.awaitingManualRetry &&
-                                !ExperimentalRecording.status.value.connected) {
+                                !ExperimentalRecording.status.value.connected &&
+                                !ExperimentalRecording.status.value.busy) {
                                 scope.launch {
                                     val result = ExperimentalRecording.connectWireless(app, port, automatic = true)
                                     if (result.isSuccess) status.value =
@@ -179,6 +181,7 @@ object LocalWirelessAdb {
     fun retry(context: Context) {
         val port = status.value.connectPort
         if (port != null) scope.launch {
+            ExperimentalRecording.allowManualRetry()
             val result = ExperimentalRecording.connectWireless(context.applicationContext, port)
             status.value = status.value.copy(message = if (result.isSuccess)
                 "Wireless ADB verified; recording helper ready."
@@ -220,7 +223,13 @@ object LocalWirelessAdb {
         manager.notify(NOTIFICATION_ID, notification)
     }
 
-    fun stop() {
+    fun stop(context: Context? = null) {
+        context?.let {
+            runCatching {
+                (it.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                    .cancel(NOTIFICATION_ID)
+            }
+        }
         val mgr = nsd
         if (mgr != null) {
             listOfNotNull(pairingDiscovery, connectDiscovery).forEach {

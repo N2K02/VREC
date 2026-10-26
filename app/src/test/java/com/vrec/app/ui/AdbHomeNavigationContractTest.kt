@@ -30,13 +30,15 @@ class AdbHomeNavigationContractTest {
         assertTrue(source.contains("Screen.HOME -> HomeScreen()"))
         val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(card.contains("LocalAdbMiddleware.setup(context, userInitiated = true)"))
+        assertTrue(card.contains("LocalWirelessAdb.start(context)"))
+        assertTrue(card.contains("WirelessAdbSetupCard()"))
         assertTrue(card.contains("instructionsExpanded = !instructionsExpanded"))
-        assertTrue(card.contains("First-time USB instructions"))
+        assertTrue(card.contains("USB host instructions (when Wireless debugging is unavailable)"))
         assertTrue(card.contains("Text(\"USB debugging\""))
         assertTrue(card.contains("needsUsbBootstrap"))
         assertTrue(card.contains("First complete the external USB bootstrap steps"))
         assertFalse(card.contains("One-time USB setup"))
-        assertFalse(card.contains("Wireless debugging"))
+        assertTrue(card.contains("Wireless debugging"))
     }
 
     @Test fun verifiedUidAndHelperAreDistinctSignals() {
