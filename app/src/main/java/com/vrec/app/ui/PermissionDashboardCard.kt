@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,8 @@ import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import com.vrec.app.calls.CallDetectionAccess
 
 /** Actual Android grants, not the permissions we merely requested. */
 internal object PermissionDashboardPolicy {
@@ -50,15 +53,41 @@ internal object PermissionDashboardPolicy {
     fun badgeColor(granted: Boolean): Color = if (granted) Color(0xFF2E7D32) else Color(0xFFC62828)
 }
 
+/** Android controls special access; only runtime grants are requested directly. */
+internal fun permissionIntent(label: String): String = when (label) {
+    "Accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
+    "Call notification access" -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+    "Floating controls" -> Settings.ACTION_MANAGE_OVERLAY_PERMISSION
+    else -> Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+}
+
 @Composable
 fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            tick++
-            delay(5_000L)
+    var actionMessage by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var working by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val runtimePermission = mapOf(
+        "Phone state" to Manifest.permission.READ_PHONE_STATE,
+        "Call history" to Manifest.permission.READ_CALL_LOG,
+        "Contacts" to Manifest.permission.READ_CONTACTS,
+        "Notifications" to Manifest.permission.POST_NOTIFICATIONS,
+        "Microphone" to Manifest.permission.RECORD_AUDIO,
+    )
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { tick++ }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++
         }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(Unit) {
+        while (true) { delay(5_000L); tick++ }
     }
     val permissions = remember(tick, method) {
         fun granted(name: String) =
@@ -82,55 +111,80 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                     AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING))
         }
     }
-    val grantedCount = PermissionDashboardPolicy.grantedCount(permissions.map { it.second })
-    Surface(shape = RoundedCornerShape(26.dp),
+    fun tryGrant(label: String) {
+        if (working) return
+        actionMessage = null
+        val runtime = runtimePermission[label]
+        if (method == ExperimentalRecording.Method.BUILT_IN_ADB &&
+            label in setOf("Phone state", "Call history", "Contacts", "Notifications", "Advanced detection")) {
+            scope.launch {
+                working = true
+                val result = com.vrec.app.experimental.adb.AdbPermissionBootstrap.grantEligible(context)
+                actionMessage = if (result.unavailable.isEmpty()) "ADB access checks completed."
+                    else result.unavailable.joinToString("; ")
+                working = false
+                tick++
+            }
+        } else if (runtime != null) {
+            launcher.launch(runtime)
+        } else if (label == "ADB shell helper") {
+            actionMessage = "Open Experimental settings to connect and authorize the ADB helper."
+        } else {
+            val action = permissionIntent(label)
+            val intent = android.content.Intent(action).apply {
+                if (action == Settings.ACTION_MANAGE_OVERLAY_PERMISSION ||
+                    action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    data = android.net.Uri.parse("package:${context.packageName}")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching { context.startActivity(intent) }.onFailure {
+                actionMessage = "Android settings could not be opened."
+            }
+        }
+    }
+    val count = PermissionDashboardPolicy.grantedCount(permissions.map { it.second })
+    Surface(shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF156F4B).copy(alpha = 0.25f)) {
-                    Icon(Icons.Rounded.VerifiedUser, contentDescription = null,
-                        modifier = Modifier.padding(12.dp).size(25.dp),
-                        tint = Color(0xFF66D9A4))
-                }
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Rounded.VerifiedUser, contentDescription = null,
+                    tint = Color(0xFF66D9A4), modifier = Modifier.size(27.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("App Permissions", style = MaterialTheme.typography.titleLarge,
+                    Text("App Permissions", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
-                    Text("Verified access · " + if (method == ExperimentalRecording.Method.STANDARD)
-                        "Standard" else "ADB enhanced",
-                        style = MaterialTheme.typography.bodySmall,
+                    Text(if (method == ExperimentalRecording.Method.STANDARD) "Standard"
+                        else "ADB enhanced", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Surface(shape = RoundedCornerShape(50),
-                    color = if (grantedCount == permissions.size) Color(0xFF146B3C)
+                    color = if (count == permissions.size) Color(0xFF146B3C)
                         else Color(0xFF8A2828)) {
-                    Text("$grantedCount / ${permissions.size}",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        color = Color.White, style = MaterialTheme.typography.labelLarge,
+                    Text("$count / ${permissions.size} granted",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = Color.White, style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold)
                 }
             }
             permissions.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     pair.forEach { (label, granted) ->
-                        Surface(shape = RoundedCornerShape(16.dp),
+                        Surface(shape = RoundedCornerShape(13.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             border = androidx.compose.foundation.BorderStroke(1.dp,
                                 PermissionDashboardPolicy.badgeColor(granted).copy(alpha = 0.45f)),
-                            modifier = Modifier.weight(1f)) {
-                            Column(Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(label, style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold)
-                                Surface(shape = RoundedCornerShape(50),
-                                    color = PermissionDashboardPolicy.badgeColor(granted)) {
-                                    Text((if (granted) "✓ " else "✕ ") +
-                                        PermissionDashboardPolicy.permissionBadge(granted),
-                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                                        color = Color.White,
+                            modifier = Modifier.weight(1f)
+                                .then(if (!granted) Modifier.clickable { tryGrant(label) } else Modifier)) {
+                            Row(Modifier.padding(horizontal = 9.dp, vertical = 11.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(label, style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2)
+                                    Text(if (granted) "✓ Granted" else "✕ Not granted",
+                                        color = if (granted) Color(0xFF69CB89) else Color(0xFFFF7474),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold)
                                 }
@@ -141,21 +195,15 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 }
             }
-            val allGranted = grantedCount == permissions.size
-            Surface(shape = RoundedCornerShape(18.dp),
-                color = if (allGranted) Color(0xFF135F3D).copy(alpha = 0.40f)
-                    else MaterialTheme.colorScheme.errorContainer,
-                modifier = Modifier.fillMaxWidth()) {
-                Text(if (allGranted) "✓ All displayed access checks passed."
-                    else "Some access is not granted. Check the red badges above.",
-                    modifier = Modifier.padding(14.dp),
-                    color = if (allGranted) Color(0xFF7CE0AB)
-                        else MaterialTheme.colorScheme.onErrorContainer,
-                    style = MaterialTheme.typography.bodySmall)
+            if (count != permissions.size) {
+                Text(if (working) "Checking ADB grants…" else "Tap a red tile to request access.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("ADB grants eligible permissions after authorization. Android may reject restricted access; status is verified.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            actionMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
