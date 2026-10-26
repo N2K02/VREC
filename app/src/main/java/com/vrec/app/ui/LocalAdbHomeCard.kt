@@ -1,5 +1,6 @@
 package com.vrec.app.ui
 
+import android.os.SystemClock
 import android.content.Intent
 import android.provider.Settings
 import android.content.ClipData
@@ -69,6 +70,8 @@ fun LocalAdbHomeCard() {
     val tick = rememberOnResumeTick()
     val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
     var instructionsExpanded by remember { mutableStateOf(false) }
+    var lastSetupTapAt by remember { mutableStateOf(0L) }
+    var setupTapInFlight by remember { mutableStateOf(false) }
     var recordingOn by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
     var devOptionsOn by remember { mutableStateOf(true) }
     var onWifi by remember { mutableStateOf(true) }
@@ -127,13 +130,23 @@ fun LocalAdbHomeCard() {
     )
 
     fun runSetup() {
-        if (wireless.connectPort != null &&
-            ExperimentalRecording.wirelessWasPaired(context))
-            LocalWirelessAdb.retry(context)
-        else scope.launch {
-            val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
-            if (!restored && !ExperimentalRecording.tcpPortListening())
-                LocalWirelessAdb.start(context, userInitiated = true)
+        val now = SystemClock.elapsedRealtime()
+        if (setupTapInFlight || busy || adbState.busy || now - lastSetupTapAt < 1_500L) return
+        lastSetupTapAt = now
+        setupTapInFlight = true
+        scope.launch {
+            try {
+                if (wireless.connectPort != null &&
+                    ExperimentalRecording.wirelessWasPaired(context)) {
+                    LocalWirelessAdb.retry(context)
+                } else {
+                    val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
+                    if (!restored && !ExperimentalRecording.tcpPortListening())
+                        LocalWirelessAdb.start(context, userInitiated = true)
+                }
+            } finally {
+                setupTapInFlight = false
+            }
         }
     }
 
@@ -228,7 +241,7 @@ fun LocalAdbHomeCard() {
             if (!healthy) {
                 Button(
                     onClick = { runSetup() },
-                    enabled = !busy && !adbState.busy,
+                    enabled = !setupTapInFlight && !busy && !adbState.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(when {
