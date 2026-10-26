@@ -140,7 +140,9 @@ fun LocalAdbHomeCard() {
     AdbDashboard(
         healthy = healthy,
         verified = verified,
-        working = busy || adbState.busy || helperState == AdbPrivilegedApiHelper.State.STARTING,
+        working = busy || adbState.busy || helperState == AdbPrivilegedApiHelper.State.STARTING ||
+            wireless.phase in setOf(LocalWirelessAdb.Phase.PAIRING, LocalWirelessAdb.Phase.CONNECTING,
+                LocalWirelessAdb.Phase.SWITCHING, LocalWirelessAdb.Phase.VERIFYING_TCP),
         failed = helperState == AdbPrivilegedApiHelper.State.ERROR,
         canReconnect = verified || adbState.tcpPortOpen,
         recordingOn = recordingOn,

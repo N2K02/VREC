@@ -21,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -32,7 +34,15 @@ import java.util.Collections
  * localhost, not to another network device. No code is ever persisted.
  */
 object LocalWirelessAdb {
+    /**
+     * Where the wireless setup is. Transitions happen only inside [transition],
+     * so discovery, pairing and Retry can't run the sequence twice at once.
+     * RECOVERY_REQUIRED stops automatic attempts until the user retries.
+     */
+    enum class Phase { IDLE, SEARCHING, PAIRING, CONNECTING, SWITCHING, VERIFYING_TCP, READY, RECOVERY_REQUIRED }
+
     data class State(
+        val phase: Phase = Phase.IDLE,
         val supported: Boolean = Build.VERSION.SDK_INT >= 30,
         val pairingPort: Int? = null,
         val connectPort: Int? = null,
@@ -55,6 +65,8 @@ object LocalWirelessAdb {
     @Volatile private var emptySearches = 0
     @Volatile private var nextAutoSearchAt = 0L
     @Volatile private var searchSession = 0
+    /** Single flight for connect → UID 2000 → TCP switch → helper. */
+    private val transition = Mutex()
     private const val MAX_EMPTY_SEARCHES = 5
     private const val AUTO_SEARCH_MS = 60_000L
     private const val USER_SEARCH_MS = 5 * 60_000L
@@ -104,7 +116,7 @@ object LocalWirelessAdb {
                 acquire()
             }
         }.getOrNull()
-        status.value = State(scanning = true,
+        status.value = State(scanning = true, phase = Phase.SEARCHING,
             paired = ExperimentalRecording.wirelessWasPaired(app),
             message = "Searching for this phone's Wireless debugging service…")
         val session = ++searchSession
@@ -126,31 +138,38 @@ object LocalWirelessAdb {
                 Log.i("Wireless ADB discovery: nothing found (empty search $emptySearches)")
             }
         }
-        pairingDiscovery = discover(app, service, "_adb-tls-pairing._tcp", true)
-        connectDiscovery = discover(app, service, "_adb-tls-connect._tcp", false)
+        pairingDiscovery = discover(app, service, "_adb-tls-pairing._tcp", true, session)
+        connectDiscovery = discover(app, service, "_adb-tls-connect._tcp", false, session)
     }
 
     private fun discover(
-        app: Context, nsdManager: NsdManager, type: String, pairing: Boolean,
+        app: Context, nsdManager: NsdManager, type: String, pairing: Boolean, session: Int,
     ): NsdManager.DiscoveryListener {
+        // Android may deliver found/resolved/lost callbacks after stop(); a
+        // callback from an older search must not change state or connect.
+        fun stale() = session != searchSession || !attached
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(type: String) = Unit
             override fun onDiscoveryStopped(type: String) = Unit
             override fun onStartDiscoveryFailed(type: String, code: Int) {
+                if (stale()) return
                 status.value = status.value.copy(scanning = false,
                     message = "Wireless discovery unavailable ($code). Use USB bootstrap or open Developer options.")
             }
             override fun onStopDiscoveryFailed(type: String, code: Int) = Unit
             override fun onServiceLost(info: NsdServiceInfo) {
                 // Service may stop when the Android pairing-code dialog closes.
+                if (stale()) return
                 status.value = if (pairing) status.value.copy(pairingPort = null)
                     else status.value.copy(connectPort = null)
             }
             @Suppress("DEPRECATION")
             override fun onServiceFound(info: NsdServiceInfo) {
+                if (stale()) return
                 nsdManager.resolveService(info, object : NsdManager.ResolveListener {
                     override fun onResolveFailed(service: NsdServiceInfo, code: Int) = Unit
                     override fun onServiceResolved(service: NsdServiceInfo) {
+                        if (stale()) return
                         val host = service.host ?: return
                         // Don't accept another device found on a shared Wi-Fi LAN.
                         if (!belongsToThisPhone(host) || service.port !in 1..65535) return
@@ -170,13 +189,18 @@ object LocalWirelessAdb {
                                 // mDNS re-announces; one automatic attempt per port per 30 s.
                                 (port != lastAutoPort || now - lastAutoAttemptMs > 30_000L) &&
                                 !ExperimentalRecording.awaitingManualRetry &&
+                                status.value.phase != Phase.RECOVERY_REQUIRED &&
+                                !transition.isLocked &&
                                 !ExperimentalRecording.status.value.connected &&
                                 !ExperimentalRecording.status.value.busy) {
                                 lastAutoPort = port
                                 lastAutoAttemptMs = now
                                 scope.launch {
-                                    val result = ExperimentalRecording.connectWireless(app, port, automatic = true)
-                                    if (result.isSuccess) switchToLocalTcp(app)
+                                    // Skip if pairing or Retry got there first.
+                                    if (!transition.tryLock()) return@launch
+                                    try {
+                                        if (!stale()) connectAndSwitch(app, port, automatic = true)
+                                    } finally { transition.unlock() }
                                 }
                             }
                         }
@@ -211,8 +235,9 @@ object LocalWirelessAdb {
                 message = "Open Android's 'Pair device with pairing code' first.")
             return
         }
-        status.value = status.value.copy(pairing = true, message = "Pairing with Android…")
-        scope.launch {
+        status.value = status.value.copy(pairing = true, phase = Phase.PAIRING,
+            message = "Pairing with Android…")
+        scope.launch { transition.withLock {
             val outcome = withTimeoutOrNull(30_000L) {
                 AdbTransport.pairLocal(app, pairingPort, code)
             } ?: Result.failure(IllegalStateException("Pairing timed out"))
@@ -221,15 +246,15 @@ object LocalWirelessAdb {
             status.value = if (outcome.isSuccess) status.value.copy(
                 pairing = false, paired = true,
                 message = "Paired. Connecting to the Android shell…")
-            else status.value.copy(
-                pairing = false, message = "Pairing failed: ${outcome.exceptionOrNull()?.message}")
+            else status.value.copy(pairing = false, phase = Phase.RECOVERY_REQUIRED,
+                message = "Pairing failed: ${outcome.exceptionOrNull()?.message}")
             if (outcome.isSuccess) {
                 val port = status.value.connectPort
                 if (port != null) {
-                    val result = ExperimentalRecording.connectWireless(app, port)
-                    if (result.isSuccess) switchToLocalTcp(app)
-                    if (result.isFailure) status.value = status.value.copy(message =
-                        "Paired, but could not connect. Retry from Home.")
+                    if (!connectAndSwitch(app, port, automatic = false) &&
+                        !ExperimentalRecording.status.value.connected)
+                        status.value = status.value.copy(message =
+                            "Paired, but could not connect. Retry from Home.")
                 } else {
                     status.value = status.value.copy(message =
                         "Paired successfully. Waiting for Android Wireless debugging connection service…")
@@ -237,18 +262,41 @@ object LocalWirelessAdb {
             }
             (app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .cancel(NOTIFICATION_ID)
-        }
+        } }
     }
 
-    private suspend fun switchToLocalTcp(context: Context) {
+    /**
+     * Must be called while holding [transition]. Re-checks state first, so a
+     * Retry that waited behind an automatic attempt doesn't connect twice.
+     */
+    private suspend fun connectAndSwitch(app: Context, port: Int, automatic: Boolean): Boolean {
+        val link = ExperimentalRecording.status.value
+        if (link.connected && link.shellUid == 2000 &&
+            ExperimentalRecording.tcpPortListening()) {
+            status.value = status.value.copy(phase = Phase.READY)
+            return true
+        }
+        status.value = status.value.copy(phase = Phase.CONNECTING)
+        val result = ExperimentalRecording.connectWireless(app, port, automatic = automatic)
+        if (result.isFailure) {
+            status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED,
+                message = "Wireless ADB connect failed: ${result.exceptionOrNull()?.message}")
+            return false
+        }
+        return switchToLocalTcp(app)
+    }
+
+    private suspend fun switchToLocalTcp(context: Context): Boolean {
         // The shell itself changes adbd transport. It may drop the TLS connection.
         // Only report readiness after reconnecting and rechecking UID 2000.
+        status.value = status.value.copy(phase = Phase.SWITCHING)
         val switched = AdbTransport.switchToTcpip(5555)
         if (switched.isFailure) {
-            status.value = status.value.copy(message =
+            status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
                 "Wireless shell verified, but TCP/5555 switch failed: ${switched.exceptionOrNull()?.message}")
-            return
+            return false
         }
+        status.value = status.value.copy(phase = Phase.VERIFYING_TCP)
         // adbd restarts on tcpip: wait for the listener instead of a fixed pause,
         // then reconnect with retries for transient resets.
         var listening = false
@@ -256,29 +304,35 @@ object LocalWirelessAdb {
         repeat(20) { if (!listening) { kotlinx.coroutines.delay(750L)
             listening = ExperimentalRecording.tcpPortListening() } }
         if (!listening) {
-            status.value = status.value.copy(message =
+            status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
                 "TCP/5555 did not come up after Android restarted ADB. Retry from Home.")
-            return
+            return false
         }
         val restored = com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
             .reconnectTcpWithRetry(context, automatic = false)
         if (restored) {
             stop(context)
-            status.value = status.value.copy(message =
+            status.value = status.value.copy(phase = Phase.READY, message =
                 "TCP/5555 verified. Wireless discovery stopped; recording helper monitored normally.")
-        } else status.value = status.value.copy(message =
-            "TCP/5555 enabled, but localhost reconnection needs attention: " +
-                ExperimentalRecording.status.value.message)
+        } else {
+            // Wireless discovery has nothing more to do; background TCP recovery
+            // (with backoff) or the user's Retry takes it from here.
+            stop(context)
+            status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
+                "TCP/5555 enabled, but localhost reconnection needs attention: " +
+                    ExperimentalRecording.status.value.message)
+        }
+        return restored
     }
 
     fun retry(context: Context) {
         val port = status.value.connectPort
         if (port != null) scope.launch {
-            ExperimentalRecording.allowManualRetry()
-            val result = ExperimentalRecording.connectWireless(context.applicationContext, port)
-            if (result.isSuccess) switchToLocalTcp(context.applicationContext)
-            else status.value = status.value.copy(message =
-                "Wireless ADB connect failed: ${result.exceptionOrNull()?.message}")
+            // Waits for an automatic attempt in flight, then re-checks state.
+            transition.withLock {
+                ExperimentalRecording.allowManualRetry()
+                connectAndSwitch(context.applicationContext, port, automatic = false)
+            }
         }
         else status.value = status.value.copy(
             message = "Enable Wireless debugging and return here. Listening for the Android service.")
@@ -334,8 +388,12 @@ object LocalWirelessAdb {
         runCatching { multicastLock?.release() }
         multicastLock = null
         attached = false
+        searchSession++
         pairedInThisSession = false
-        status.value = status.value.copy(scanning = false, pairingPort = null, connectPort = null)
+        val phase = status.value.phase.let {
+            if (it == Phase.SEARCHING || it == Phase.PAIRING) Phase.IDLE else it }
+        status.value = status.value.copy(scanning = false, pairingPort = null, connectPort = null,
+            phase = phase)
     }
 }
 
