@@ -92,7 +92,8 @@ fun SettingsScreen(
     var recordingMethod by remember(resumeTick) { mutableStateOf(ExperimentalRecording.method(context)) }
     val captureState by com.vrec.app.recording.RecordingService.state.collectAsState()
     val shellRecording by com.vrec.app.recording.AdbFallbackNotice.enhancedActive.collectAsState()
-    val methodLocked = !com.vrec.app.recording.RecordingMethodPolicy.canChange(\n        captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
+    val methodLocked = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
+        captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
     val connection by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
@@ -255,7 +256,8 @@ fun SettingsScreen(
                 val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
                 if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
                     SettingCard("Access still requiring attention") {
-                        Text(bootstrap.unavailable.joinToString("\n"),
+                        Text(bootstrap.unavailable.joinToString("
+"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
