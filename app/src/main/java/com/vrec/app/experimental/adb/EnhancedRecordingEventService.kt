@@ -61,7 +61,7 @@ class EnhancedRecordingEventService : Service() {
                         }
                     }
                     "com.vrec.app.CALL_ENDED" -> {
-                        AdbFallbackNotice.shellRecordingEnded(applicationContext)
+                        AdbFallbackNotice.shellRecordingEnded(applicationContext,\n                            intent?.getStringExtra("recfile").orEmpty())
                         ExperimentalCaptureDaemon.collect(applicationContext)
                     }
                 }
