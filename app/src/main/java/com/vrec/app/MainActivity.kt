@@ -1,6 +1,8 @@
 package com.vrec.app
 
 import android.Manifest
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -405,10 +407,10 @@ private fun HomeScreen() {
     ) {
         Text("Recording dashboard", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold)
-        Text("Connect the verified Android shell, then enable automatic call recording.",
+        Text("Automatic call capture and ADB helper status in one place.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        RecordingMasterCard(enabled = recordingEnabled, ready = ready, onEnabledChange = { enabled ->
+        RecordingMasterCard(enabled = recordingEnabled, ready = ready, active = recording, onEnabledChange = { enabled ->
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
         })
@@ -421,48 +423,8 @@ private fun HomeScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer) {
-                        Icon(Icons.Rounded.Mic, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(14.dp).size(30.dp))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text("VREC", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary)
-                        Text(
-                            if (!recordingEnabled) "Recording is off"
-                            else if (recState is RecordingService.State.Stopping) "Saving recording"
-                            else if (enhancedActive) "Enhanced ADB recording"
-                            else if (recording) "Recording in progress"
-                            else if (ready) "Ready to record"
-                            else "Complete setup",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            if (!recordingEnabled) "Enable recording above to capture calls"
-                            else if (enhancedActive)
-                                "Independent ADB helper is recording"
-                            else if (ready) "Keep your calls saved privately on this device"
-                            else "Authorize Android shell UID 2000 to begin",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                if (recordingEnabled) {
-                    (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-                }
-            }
+        if (recordingEnabled) {
+            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
         }
     }
 }
@@ -470,12 +432,22 @@ private fun HomeScreen() {
 
 /** Prominent, stable-compatible master toggle shown even before permissions are granted. */
 @Composable
-private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, onEnabledChange: (Boolean) -> Unit) {
+private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    val cardColor by animateColorAsState(
+        targetValue = if (enabled) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        label = "Recording master card color",
+    )
+    val badge = when {
+        !enabled -> "OFF"
+        active -> "RECORDING"
+        ready -> "READY"
+        else -> "SETUP NEEDED"
+    }
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = if (enabled) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
+        color = cardColor,
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
     ) {
         Row(
             Modifier.fillMaxWidth().clickable { onEnabledChange(!enabled) }
@@ -498,7 +470,18 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, onEnabledChang
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            RadioButton(selected = enabled, onClick = { onEnabledChange(!enabled) })
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Surface(shape = RoundedCornerShape(50),
+                    color = if (enabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant) {
+                    Text(badge, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (enabled) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                RadioButton(selected = enabled, onClick = { onEnabledChange(!enabled) })
+            }
         }
     }
 }
