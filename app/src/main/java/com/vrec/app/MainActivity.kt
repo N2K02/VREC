@@ -424,6 +424,24 @@ private fun HomeScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (recordingEnabled && ready) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth().animateContentSize(),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Manual recording", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold)
+                    Text("Start or stop a recording manually while the ADB helper is connected.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!enhancedActive) ManualRecordButton(recState)
+                    else Text("Shell recording is active. Finish the current call before starting another.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         if (recordingEnabled) {
             (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
         }
