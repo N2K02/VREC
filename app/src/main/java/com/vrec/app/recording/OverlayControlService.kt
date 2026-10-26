@@ -62,6 +62,11 @@ class OverlayControlService : Service() {
         override fun run() {
             val state = RecordingService.state.value
             val elapsed = stoppingSince?.let { SystemClock.elapsedRealtime() - it }
+            if (AdbFallbackNotice.enhancedActive.value && state is RecordingService.State.Idle) {
+                renderEnhancedShell()
+                handler.postDelayed(this, 500L)
+                return
+            }
             when (state) {
                 is RecordingService.State.Recording, is RecordingService.State.Paused ->
                     if (stoppingSince != null) renderStopping() else render(state)
@@ -319,6 +324,25 @@ class OverlayControlService : Service() {
                 }
             }
             else -> Unit
+        }
+    }
+
+    /** Shell owns the capture. App-side pause/stop commands must not target MediaRecorder. */
+    private fun renderEnhancedShell() {
+        statusDot?.apply {
+            setStatusColor(Color.RED)
+            contentDescription = "Enhanced shell recording active. Drag controls"
+        }
+        startBlinking()
+        pauseButton?.apply {
+            isEnabled = false
+            alpha = 0.45f
+            contentDescription = "Pause unavailable for shell recording"
+        }
+        stopButton?.apply {
+            isEnabled = false
+            alpha = 0.45f
+            contentDescription = "Stop using call controls; shell capture is independent"
         }
     }
 
