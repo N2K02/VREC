@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,7 +42,10 @@ fun WirelessAdbSetupCard() {
     val context = LocalContext.current
     val wireless by LocalWirelessAdb.status.collectAsState()
     val adb by ExperimentalRecording.status.collectAsState()
-    var expanded by remember { mutableStateOf(true) }
+    var expanded by remember { mutableStateOf(false) }
+    LaunchedEffect(wireless.connectPort, wireless.pairingPort) {
+        if (wireless.connectPort != null || wireless.pairingPort != null) expanded = true
+    }
     var code by remember { mutableStateOf("") }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()

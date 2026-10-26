@@ -68,8 +68,9 @@ fun LocalAdbHomeCard() {
         LocalWirelessAdb.start(context)
         LocalAdbMiddleware.setup(context, userInitiated = false)
     }
-    LaunchedEffect(needsUsbBootstrap) {
-        if (needsUsbBootstrap) instructionsExpanded = true
+    LaunchedEffect(needsUsbBootstrap, wireless.connectPort, wireless.pairingPort) {
+        instructionsExpanded = needsUsbBootstrap &&
+            wireless.connectPort == null && wireless.pairingPort == null
     }
 
     val healthy = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING

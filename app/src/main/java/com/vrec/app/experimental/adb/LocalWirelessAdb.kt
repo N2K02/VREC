@@ -10,6 +10,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
@@ -47,6 +48,7 @@ object LocalWirelessAdb {
     private var pairingDiscovery: NsdManager.DiscoveryListener? = null
     private var connectDiscovery: NsdManager.DiscoveryListener? = null
     private var nsd: NsdManager? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
     @Volatile private var attached = false
     @Volatile private var pairedInThisSession = false
 
@@ -68,6 +70,16 @@ object LocalWirelessAdb {
             return
         }
         nsd = service
+        // OEMs may suppress mDNS multicast in background while Android's
+        // code-entry dialog or Settings has focus. Keep multicast reception
+        // available for the short first-time pairing workflow.
+        multicastLock = runCatching {
+            val wifi = app.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifi.createMulticastLock("vrec-wireless-adb").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.getOrNull()
         status.value = State(scanning = true,
             paired = ExperimentalRecording.wirelessWasPaired(app),
             message = "Searching for this phone's Wireless debugging service…")
@@ -241,6 +253,8 @@ object LocalWirelessAdb {
         pairingDiscovery = null
         connectDiscovery = null
         nsd = null
+        runCatching { multicastLock?.release() }
+        multicastLock = null
         attached = false
         pairedInThisSession = false
     }
