@@ -105,8 +105,10 @@ class RecordingService : Service() {
                     sdk = Build.VERSION.SDK_INT,
                     appPackage = appPackage,
                 )
+            Log.i("Capture diagnostic: request direction=$direction adb=$adbSelected helperReady=$helperReady voipArmed=${ExperimentalCaptureDaemon.voipArmed.value} shellCellular=$shellOwnsCellular shellVoip=$shellOwnsVoip")
             if (adbSelected && helperReady && !forceStandardFallback &&
                 (shellOwnsCellular || shellOwnsVoip)) {
+                Log.i("Capture diagnostic: delegated to shell helper; app recorder not started; audio/file verification pending")
                 // The independent shell recorder owns this call. Do not start a
                 // second microphone capture that could silence the call app.
                 return
@@ -114,7 +116,7 @@ class RecordingService : Service() {
             if (adbSelected) {
                 // ADB-only mode: never silently fall back to capturing the microphone.
                 // A missing or unsupported shell source must stay unavailable.
-                Log.w("ADB-only capture not available for this call; no standard microphone fallback")
+                Log.w("Capture diagnostic: unsupported or unavailable ADB source direction=$direction helperReady=$helperReady voipArmed=${ExperimentalCaptureDaemon.voipArmed.value}; no file started and no microphone fallback")
                 return
             }
             val standardFallback = false
@@ -336,12 +338,14 @@ class RecordingService : Service() {
                 }
                 if (source == null) {
                     engine = null
+                    Log.w("Capture diagnostic: standard audio engine failed to initialize; no recording started")
                     _state.value = State.Idle
                     finishAdbFallback()
                     CallMonitor.onRecordingFinalized(this)
                     stopSelfAndForeground()
                     return@post
                 }
+                Log.i("Capture diagnostic: standard audio engine initialized source=${source.label}; recording started, audio content not yet verified")
                 _state.value = State.Recording(source.label, peer, silentSoFar = true)
                 update(recordingNotification(source.label))
                 if (adbFallback) {
