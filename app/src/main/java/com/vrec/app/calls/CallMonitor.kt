@@ -98,7 +98,13 @@ object CallMonitor {
         session.direction = if (voip) CallDirection.VOIP else flow
         session.flowDirection = flow
         session.accountId = accountId ?: session.accountId
-        if (!number.isNullOrBlank()) {
+        val privateLabel = CallMetadataResolver.privateCallerLabel(number)
+            ?: CallMetadataResolver.privateCallerLabel(name)
+        if (privateLabel != null && session.name == null) {
+            session.name = privateLabel
+            session.nameSource = "telecom-private"
+        }
+        if (!number.isNullOrBlank() && privateLabel == null) {
             session.number = number
             session.numberSource = "telecom"
         }
@@ -207,7 +213,12 @@ object CallMonitor {
                         if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING)
                 }
                 if (!number.isNullOrBlank()) pendingIncomingNumber = number
-                if (session.number == null) session.number = pendingIncomingNumber
+                val withheld = CallMetadataResolver.privateCallerLabel(pendingIncomingNumber)
+                if (withheld != null && session.name == null) {
+                    session.name = withheld
+                    session.nameSource = "phone-state-private"
+                }
+                if (session.number == null && withheld == null) session.number = pendingIncomingNumber
                 if (session.number != null) session.numberSource = "phone-state"
                 if (session.name == null) {
                     session.name = CallInfo.describe(context, session.number)
