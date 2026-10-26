@@ -150,34 +150,6 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         }
     }
 
-    // Keep helper health visible, but avoid disruptive setup/reconnect actions
-    // during an active capture. Never describe microphone capture as shell capture.
-    if (AdbHomeDisplayPolicy.compact(recordingActive, healthy)) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Rounded.CheckCircle, contentDescription = null,
-                    tint = Color(0xFF4CAF50))
-                Column {
-                    Text("ADB helper connected", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold)
-                    Text(
-                        AdbHomeDisplayPolicy.subtitle(standardRecording),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        return
-    }
-
     AdbDashboard(
         healthy = healthy,
         verified = verified,
@@ -193,6 +165,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             else -> "Computer"
         },
         onStart = { runSetup() },
+        recordingActive = recordingActive,
     )
 
     if (healthy) {
