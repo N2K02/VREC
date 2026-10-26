@@ -51,9 +51,33 @@ object LocalWirelessAdb {
     private var multicastLock: WifiManager.MulticastLock? = null
     @Volatile private var attached = false
     @Volatile private var pairedInThisSession = false
+    @Volatile private var lastAutoPort = -1
+    @Volatile private var emptySearches = 0
+    @Volatile private var nextAutoSearchAt = 0L
+    @Volatile private var searchSession = 0
+    private const val MAX_EMPTY_SEARCHES = 5
+    private const val AUTO_SEARCH_MS = 60_000L
+    private const val USER_SEARCH_MS = 5 * 60_000L
+    private const val AUTO_RETRY_BASE_MS = 30_000L
+    private const val AUTO_RETRY_MAX_MS = 10 * 60_000L
+    @Volatile private var lastAutoAttemptMs = 0L
 
-    fun start(context: Context) {
+    /**
+     * Automatic searches are bounded: each stops after 60 s without finding
+     * a service, the next waits 30 s doubling to 10 min, and after
+     * [MAX_EMPTY_SEARCHES] empty searches automatic discovery pauses until
+     * the user acts. A user-initiated search resets this and runs 5 min so a
+     * first-time pairing in Settings isn't cut off.
+     */
+    fun start(context: Context, userInitiated: Boolean = false) {
         val app = context.applicationContext
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (userInitiated) {
+            emptySearches = 0
+            nextAutoSearchAt = 0L
+        } else if (emptySearches >= MAX_EMPTY_SEARCHES || now < nextAutoSearchAt) {
+            return
+        }
         if (Build.VERSION.SDK_INT < 30) {
             status.value = State(supported = false,
                 message = "Wireless debugging requires Android 11+. Use USB ADB bootstrap.")
@@ -83,6 +107,25 @@ object LocalWirelessAdb {
         status.value = State(scanning = true,
             paired = ExperimentalRecording.wirelessWasPaired(app),
             message = "Searching for this phone's Wireless debugging service…")
+        val session = ++searchSession
+        scope.launch {
+            kotlinx.coroutines.delay(if (userInitiated) USER_SEARCH_MS else AUTO_SEARCH_MS)
+            val st = status.value
+            if (session == searchSession && attached && st.pairingPort == null &&
+                st.connectPort == null && !st.pairing &&
+                !ExperimentalRecording.status.value.connected) {
+                emptySearches++
+                nextAutoSearchAt = android.os.SystemClock.elapsedRealtime() +
+                    (AUTO_RETRY_BASE_MS shl (emptySearches - 1).coerceAtMost(10))
+                        .coerceAtMost(AUTO_RETRY_MAX_MS)
+                stop(app)
+                status.value = status.value.copy(message =
+                    if (emptySearches >= MAX_EMPTY_SEARCHES)
+                        "Wireless debugging not found. Search paused to save battery; tap Set up to search again."
+                    else "Wireless debugging not found. VRec will look again later.")
+                Log.i("Wireless ADB discovery: nothing found (empty search $emptySearches)")
+            }
+        }
         pairingDiscovery = discover(app, service, "_adb-tls-pairing._tcp", true)
         connectDiscovery = discover(app, service, "_adb-tls-connect._tcp", false)
     }
@@ -112,6 +155,7 @@ object LocalWirelessAdb {
                         // Don't accept another device found on a shared Wi-Fi LAN.
                         if (!belongsToThisPhone(host) || service.port !in 1..65535) return
                         val port = service.port
+                        emptySearches = 0
                         if (pairing) {
                             status.value = status.value.copy(pairingPort = port, scanning = false,
                                 message = "Pairing code detected. Enter the six-digit code from Android.")
@@ -120,11 +164,16 @@ object LocalWirelessAdb {
                             status.value = status.value.copy(connectPort = port, scanning = false,
                                 message = "This phone's Wireless debugging is available.",
                                 paired = ExperimentalRecording.wirelessWasPaired(app))
+                            val now = android.os.SystemClock.elapsedRealtime()
                             if ((ExperimentalRecording.wirelessRecoveryAllowed(app) ||
                                     pairedInThisSession) &&
+                                // mDNS re-announces; one automatic attempt per port per 30 s.
+                                (port != lastAutoPort || now - lastAutoAttemptMs > 30_000L) &&
                                 !ExperimentalRecording.awaitingManualRetry &&
                                 !ExperimentalRecording.status.value.connected &&
                                 !ExperimentalRecording.status.value.busy) {
+                                lastAutoPort = port
+                                lastAutoAttemptMs = now
                                 scope.launch {
                                     val result = ExperimentalRecording.connectWireless(app, port, automatic = true)
                                     if (result.isSuccess) switchToLocalTcp(app)
@@ -200,14 +249,26 @@ object LocalWirelessAdb {
                 "Wireless shell verified, but TCP/5555 switch failed: ${switched.exceptionOrNull()?.message}")
             return
         }
-        kotlinx.coroutines.delay(900L)
-        val restored = ExperimentalRecording.connect(context, automatic = false)
-        if (restored.isSuccess) {
+        // adbd restarts on tcpip: wait for the listener instead of a fixed pause,
+        // then reconnect with retries for transient resets.
+        var listening = false
+        // Bounded window (15 s) for phones that restart adbd slowly.
+        repeat(20) { if (!listening) { kotlinx.coroutines.delay(750L)
+            listening = ExperimentalRecording.tcpPortListening() } }
+        if (!listening) {
+            status.value = status.value.copy(message =
+                "TCP/5555 did not come up after Android restarted ADB. Retry from Home.")
+            return
+        }
+        val restored = com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+            .reconnectTcpWithRetry(context, automatic = false)
+        if (restored) {
             stop(context)
             status.value = status.value.copy(message =
                 "TCP/5555 verified. Wireless discovery stopped; recording helper monitored normally.")
         } else status.value = status.value.copy(message =
-            "TCP/5555 enabled, but localhost reconnection needs attention: ${restored.exceptionOrNull()?.message}")
+            "TCP/5555 enabled, but localhost reconnection needs attention: " +
+                ExperimentalRecording.status.value.message)
     }
 
     fun retry(context: Context) {
@@ -224,6 +285,8 @@ object LocalWirelessAdb {
     }
 
     fun openSettings(context: Context) {
+        // The user is heading to Wireless debugging: search for its pairing service.
+        start(context, userInitiated = true)
         // No public Wireless debugging action; highlight its row in Developer options.
         AdbSelfRecovery.openWirelessDebugging(context)
     }

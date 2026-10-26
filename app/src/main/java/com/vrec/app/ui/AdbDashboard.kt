@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.QuitResult
 import kotlinx.coroutines.launch
@@ -58,6 +60,7 @@ fun AdbDashboard(
     var acting by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     val busy = working || acting
+    val lastRecovery by AdbHelperAutoRecovery.lastResult.collectAsState()
 
     fun describe(result: QuitResult): String? = when (result) {
         QuitResult.STOPPED, QuitResult.NOT_RUNNING -> null
@@ -154,6 +157,10 @@ fun AdbDashboard(
         }
         note?.let {
             Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        lastRecovery?.let {
+            Text("Last automatic recovery: $it", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

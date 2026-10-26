@@ -8,7 +8,10 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.os.SystemClock
 import com.vrec.app.Log
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import kotlinx.coroutines.delay
 
 /**
  * Setup blockers a simple user can't see, and restore-after-restart.
@@ -55,22 +58,46 @@ object AdbSelfRecovery {
         Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0) == 1
     }.getOrDefault(false)
 
+    enum class RestoreOutcome { NOT_ELIGIBLE, NO_WIFI, SETTING_REJECTED, NOT_VERIFIED, RESTORED }
+
     /**
      * After a restart: switch Wireless debugging back on and let the paired
-     * discovery reconnect. Returns true when a restore attempt was started.
+     * discovery reconnect. Never trusts the setting write: the value is read
+     * back, and success requires the recording helper itself to answer.
+     * A failed attempt stops discovery so it doesn't keep running.
      */
-    fun restoreWireless(context: Context): Boolean {
+    suspend fun restoreWireless(context: Context, verifyTimeoutMs: Long = 25_000L): RestoreOutcome {
         val app = context.applicationContext
-        if (!canSelfRestore(app) || !onWifi(app)) return false
+        if (!canSelfRestore(app)) return RestoreOutcome.NOT_ELIGIBLE
+        if (!onWifi(app)) return RestoreOutcome.NO_WIFI
         if (!wirelessDebuggingOn(app)) {
-            val ok = runCatching {
-                Settings.Global.putInt(app.contentResolver, ADB_WIFI_ENABLED, 1)
-            }.getOrDefault(false)
-            if (!ok) return false
-            Log.i("ADB: Wireless debugging re-enabled for automatic helper restore")
+            runCatching { Settings.Global.putInt(app.contentResolver, ADB_WIFI_ENABLED, 1) }
+            delay(500L)
+            if (!wirelessDebuggingOn(app)) {
+                Log.w("ADB restore: Android did not accept turning Wireless debugging on")
+                return RestoreOutcome.SETTING_REJECTED
+            }
+            Log.i("ADB restore: Wireless debugging re-enabled; waiting for verified reconnect")
         }
-        LocalWirelessAdb.start(app)
-        return true
+        // Restore has its own backoff, so bypass the discovery throttle here.
+        LocalWirelessAdb.start(app, userInitiated = true)
+        val deadline = SystemClock.elapsedRealtime() + verifyTimeoutMs
+        while (SystemClock.elapsedRealtime() < deadline) {
+            delay(1_000L)
+            if (ExperimentalCaptureDaemon.probe(app)) {
+                Log.i("ADB restore: helper verified after restart")
+                return RestoreOutcome.RESTORED
+            }
+        }
+        val link = ExperimentalRecording.status.value
+        val stage = when {
+            link.connected && link.shellUid == 2000 -> "shell verified, helper did not answer"
+            LocalWirelessAdb.status.value.connectPort != null -> "service found, shell not verified"
+            else -> "no Wireless debugging service found"
+        }
+        Log.w("ADB restore: not verified ($stage)")
+        if (!link.connected) LocalWirelessAdb.stop(app)
+        return RestoreOutcome.NOT_VERIFIED
     }
 
     /** Opens Developer options with the Wireless debugging row highlighted where supported. */

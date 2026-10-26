@@ -26,8 +26,25 @@ class AdbSelfRestoreContractTest {
         assertFalse(restore.contains("ADB_ENABLED"))
         assertFalse(restore.contains("\"adb_enabled\""))
         val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(recovery.contains("!ExperimentalRecording.awaitingManualRetry"))
+        assertTrue(recovery.contains("ExperimentalRecording.awaitingManualRetry ||"))
         assertTrue(recovery.contains("AdbSelfRecovery.restoreWireless(app)"))
+        assertTrue(recovery.contains("wirelessBackoff.allowed(now)"))
+        assertTrue(recovery.contains("tcpBackoff.allowed(now)"))
+    }
+
+    @Test fun restoreVerifiesSettingAndHelperInsteadOfAssuming() {
+        val restore = read("app/src/main/java/com/vrec/app/experimental/adb/AdbSelfRecovery.kt")
+        assertTrue(restore.contains("RestoreOutcome.SETTING_REJECTED"))
+        assertTrue(restore.indexOf("putInt(app.contentResolver") <
+            restore.lastIndexOf("if (!wirelessDebuggingOn(app))"))
+        assertTrue(restore.contains("ExperimentalCaptureDaemon.probe(app)"))
+        assertTrue(restore.contains("LocalWirelessAdb.stop(app)"))
+    }
+
+    @Test fun authorizationTimeoutIsNeverRetriedAutomatically() {
+        val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        assertTrue(recovery.contains("if (lastFailureWasAuthTimeout || reason.contains(\"stopped\""))
+        assertTrue(recovery.contains("awaitingManualRetry && !lastFailureWasAuthTimeout"))
     }
 
     @Test fun dashboardStopIsRefusedMidCallAndRestartChecksAdbFirst() {

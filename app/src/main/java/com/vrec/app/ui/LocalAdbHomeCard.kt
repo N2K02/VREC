@@ -89,7 +89,13 @@ fun LocalAdbHomeCard() {
             delay(3_000L)
             recordingOn = Prefs.recordingEnabled(context)
             onWifi = AdbSelfRecovery.onWifi(context)
-            if (!ExperimentalRecording.tcpPortListening() &&
+            // Discovery only helps on Wi-Fi while the helper is down; don't
+            // keep restarting it otherwise.
+            val helperUp = ExperimentalCaptureDaemon.ready.value &&
+                AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING
+            if (helperUp && LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.stop(context)
+            if (!helperUp && onWifi &&
+                !ExperimentalRecording.tcpPortListening() &&
                 !ExperimentalRecording.status.value.connected &&
                 !LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.start(context)
             if (ExperimentalRecording.tcpPortListening() &&
@@ -127,7 +133,7 @@ fun LocalAdbHomeCard() {
         else scope.launch {
             val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
             if (!restored && !ExperimentalRecording.tcpPortListening())
-                LocalWirelessAdb.start(context)
+                LocalWirelessAdb.start(context, userInitiated = true)
         }
     }
 
