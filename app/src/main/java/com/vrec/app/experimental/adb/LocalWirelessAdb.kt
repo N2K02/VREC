@@ -224,11 +224,8 @@ object LocalWirelessAdb {
     }
 
     fun openSettings(context: Context) {
-        runCatching {
-            // Android has no public stable per-device Wireless debugging Settings action.
-            context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
+        // No public Wireless debugging action; highlight its row in Developer options.
+        AdbSelfRecovery.openWirelessDebugging(context)
     }
 
     private fun showPairingNotification(context: Context) {

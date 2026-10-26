@@ -294,6 +294,32 @@ object ExperimentalCaptureDaemon {
         }
     }
 
+    enum class QuitResult { STOPPED, BUSY, NOT_RUNNING, FAILED }
+
+    /**
+     * Ask the shell helper to exit ('Q'). The daemon answers BUSY during a call
+     * or an import, so Stop can never cut a recording short. Starting it again
+     * needs a verified ADB session.
+     */
+    suspend fun quit(context: Context): QuitResult = withContext(Dispatchers.IO) {
+        if (!probe(context)) return@withContext QuitResult.NOT_RUNNING
+        val reply = runCatching {
+            open(context, 'Q').use { it.getInputStream().bufferedReader().readLine()?.trim() }
+        }.getOrNull()
+        when (reply) {
+            "BUSY" -> QuitResult.BUSY
+            "BYE" -> {
+                var gone = false
+                repeat(10) { if (!gone) { delay(200); gone = !probe(context) } }
+                if (gone) {
+                    message.value = "Recording helper stopped."
+                    QuitResult.STOPPED
+                } else QuitResult.FAILED
+            }
+            else -> QuitResult.FAILED
+        }
+    }
+
     suspend fun stopRecording(context: Context) {
         voipArmed.value = false
         setMode(context, false)

@@ -64,6 +64,17 @@ object AdbPrivilegedApiHelper {
         Result.success(Unit)
     }
 
+    /** Stops the shell helper unless a call or import is in progress. */
+    suspend fun stop(context: Context): ExperimentalCaptureDaemon.QuitResult = lock.withLock {
+        val result = ExperimentalCaptureDaemon.quit(context.applicationContext)
+        if (result == ExperimentalCaptureDaemon.QuitResult.STOPPED ||
+            result == ExperimentalCaptureDaemon.QuitResult.NOT_RUNNING) {
+            ExperimentalCaptureDaemon.ready.value = false
+            state.value = State.STOPPED
+        }
+        result
+    }
+
     suspend fun checkHealth(context: Context): State = lock.withLock {
         val app = context.applicationContext
         val available = ExperimentalCaptureDaemon.probe(app)

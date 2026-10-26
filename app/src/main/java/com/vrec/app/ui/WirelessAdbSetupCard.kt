@@ -81,7 +81,8 @@ fun WirelessAdbSetupCard() {
             )
             if (adb.shellUid != 2000) {
                 Text(
-                    "1. Open Developer options and enable Wireless debugging (Wi-Fi required).\n" +
+                    "1. Open Developer options and enable Wireless debugging (Wi-Fi required). " +
+                        "If Android asks, tick \"Always allow on this network\".\n" +
                     "2. Tap 'Pair device with pairing code'. Keep that Android screen open.\n" +
                     "3. Enter its six-digit code using the VRec notification, or return here to enter it.\n" +
                     "4. VRec verifies UID 2000 and configures the recording helper automatically.",

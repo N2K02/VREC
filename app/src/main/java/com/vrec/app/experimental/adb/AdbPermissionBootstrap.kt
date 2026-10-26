@@ -56,6 +56,13 @@ object AdbPermissionBootstrap {
                 unavailable.add("$short (Android denied the grant)")
             }
         }
+        // Lets VRec turn Wireless debugging back on after a restart and reuse
+        // the existing pairing, so a reboot doesn't mean redoing setup.
+        if (Build.VERSION.SDK_INT >= 30) {
+            if (runCatching { AdbSelfRecovery.grantSecureSettings(app) }.getOrDefault(false))
+                granted.add("Automatic restore after restart")
+            else unavailable.add("Automatic restore after restart (Android denied the grant)")
+        }
         val telecom = runCatching { ExperimentalRecording.grantAdvancedDetection(app) }
             .getOrElse { Result.failure(it) }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {

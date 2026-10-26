@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Granted only through a verified ADB shell (pm grant), so VRec can switch
+         Wireless debugging back on after a restart and restore the helper. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Discover on-device Wireless debugging mDNS pairing and TLS services. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />

@@ -5,6 +5,7 @@ import android.os.SystemClock
 import com.vrec.app.Log
 import com.vrec.app.Prefs
 import com.vrec.app.experimental.adb.AdbRecoveryPolicy
+import com.vrec.app.experimental.adb.AdbSelfRecovery
 import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,21 @@ object AdbHelperAutoRecovery {
                 adbIdentityPresent = ExperimentalRecording.adbIdentityPresent(app),
                 tcpVerifiedBefore = saved.tcpVerified,
                 tcpPortListening = ExperimentalRecording.tcpPortListening(),
-            ))) return@withLock false
+            ))) {
+                // TCP/5555 is gone after a restart. If the user paired Wireless
+                // debugging and VRec holds the secure-settings grant, switch it
+                // back on; the paired discovery reconnects and restarts the helper.
+                val now = SystemClock.elapsedRealtime()
+                if (Prefs.recordingEnabled(app) && now >= retryAfterElapsedMs &&
+                    !ExperimentalRecording.status.value.connected &&
+                    !ExperimentalRecording.status.value.busy &&
+                    !ExperimentalRecording.awaitingManualRetry &&
+                    AdbSelfRecovery.restoreWireless(app)) {
+                    retryAfterElapsedMs = now + RETRY_INTERVAL_MS
+                    Log.i("Restoring helper through paired Wireless debugging")
+                }
+                return@withLock false
+            }
 
             val now = SystemClock.elapsedRealtime()
             if (now < retryAfterElapsedMs) return@withLock false

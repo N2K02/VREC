@@ -39,11 +39,13 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.experimental.adb.AdbBadgePolicy
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
+import com.vrec.app.experimental.adb.AdbSelfRecovery
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalAdbMiddleware
 import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.Prefs
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
@@ -67,6 +69,14 @@ fun LocalAdbHomeCard() {
     val tick = rememberOnResumeTick()
     val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
     var instructionsExpanded by remember { mutableStateOf(false) }
+    var recordingOn by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
+    var devOptionsOn by remember { mutableStateOf(true) }
+    var onWifi by remember { mutableStateOf(true) }
+    LaunchedEffect(tick) {
+        devOptionsOn = AdbSelfRecovery.developerOptionsEnabled(context)
+        onWifi = AdbSelfRecovery.onWifi(context)
+        recordingOn = Prefs.recordingEnabled(context)
+    }
     // Automatic first-open detection. No manual transport picker or repeated
     // background retries after a user-visible authorization failure.
     LaunchedEffect(Unit) {
@@ -77,6 +87,8 @@ fun LocalAdbHomeCard() {
         // Any actual authorization failure latches until the user presses Retry.
         while (true) {
             delay(3_000L)
+            recordingOn = Prefs.recordingEnabled(context)
+            onWifi = AdbSelfRecovery.onWifi(context)
             if (!ExperimentalRecording.tcpPortListening() &&
                 !ExperimentalRecording.status.value.connected &&
                 !LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.start(context)
@@ -108,6 +120,43 @@ fun LocalAdbHomeCard() {
         )
     )
 
+    fun runSetup() {
+        if (wireless.connectPort != null &&
+            ExperimentalRecording.wirelessWasPaired(context))
+            LocalWirelessAdb.retry(context)
+        else scope.launch {
+            val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
+            if (!restored && !ExperimentalRecording.tcpPortListening())
+                LocalWirelessAdb.start(context)
+        }
+    }
+
+    AdbDashboard(
+        healthy = healthy,
+        verified = verified,
+        working = busy || adbState.busy || helperState == AdbPrivilegedApiHelper.State.STARTING,
+        failed = helperState == AdbPrivilegedApiHelper.State.ERROR,
+        canReconnect = verified || adbState.tcpPortOpen,
+        recordingOn = recordingOn,
+        restore = when {
+            AdbSelfRecovery.canSelfRestore(context) -> "Automatic"
+            ExperimentalRecording.wirelessWasPaired(context) -> "Wi-Fi"
+            else -> "Computer"
+        },
+        onStart = { runSetup() },
+    )
+
+    if (healthy) {
+        if (!accessibilityOn) {
+            Text(
+                "Optional: Vrec call recording helper needs Android Accessibility approval for accessibility-based detection.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -128,6 +177,21 @@ fun LocalAdbHomeCard() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 AdbUidBadge(badge, needsUsbBootstrap)
+            }
+            if (!devOptionsOn) {
+                Text(
+                    "Developer options are off. In About phone, tap Build number 7 times, then come back.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(onClick = { AdbSelfRecovery.openDeviceInfo(context) },
+                    modifier = Modifier.fillMaxWidth()) { Text("Open About phone") }
+            } else if (wireless.supported && !onWifi && !verified) {
+                Text(
+                    "Connect to Wi-Fi to set up with Wireless debugging — no computer needed. " +
+                        "Without Wi-Fi, use the USB host instructions below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Text(
                 when {
@@ -155,16 +219,7 @@ fun LocalAdbHomeCard() {
             )
             if (!healthy) {
                 Button(
-                    onClick = {
-                        if (wireless.connectPort != null &&
-                            ExperimentalRecording.wirelessWasPaired(context))
-                            LocalWirelessAdb.retry(context)
-                        else scope.launch {
-                            val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
-                            if (!restored && !ExperimentalRecording.tcpPortListening())
-                                LocalWirelessAdb.start(context)
-                        }
-                    },
+                    onClick = { runSetup() },
                     enabled = !busy && !adbState.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -227,7 +282,7 @@ fun LocalAdbHomeCard() {
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("VRec USB ADB bootstrap",
-                        "adb devices\\nadb tcpip 5555"))
+                        "adb devices\nadb tcpip 5555"))
                 }, modifier = Modifier.fillMaxWidth()) { Text("Copy USB ADB commands") }
                 Text(
                     "1. Enable USB debugging in Android Developer options.\n" +
@@ -239,7 +294,13 @@ fun LocalAdbHomeCard() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "Android cannot authorize its own first USB ADB connection. " +
+                    "First complete the external USB bootstrap steps above; VRec continues automatically. " +
+                        "Tick \"Always allow\" on Android's authorization prompts so reconnecting doesn't ask again.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "Phones without Wireless debugging need the computer again after every restart. " +
+                        "Android cannot authorize its own first USB ADB connection. " +
                         "A reboot or debugging reset can disable TCP/5555 and require the external host again. " +
                         "TCP/5555 may also be accessible from your network while enabled.",
                     style = MaterialTheme.typography.bodySmall,
