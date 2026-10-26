@@ -12,6 +12,16 @@ class AdbRecoveryBackoffTest {
             (1..7).map { b.delayFor(it) })
     }
 
+    @Test fun deadlineDoesNotWrapNearMaximumTimestamp() {
+        val b = AdbRecoveryBackoff()
+        b.onFailure(Long.MAX_VALUE - 1)
+        assertFalse(b.allowed(0))
+        assertFalse(b.allowed(Long.MAX_VALUE - 1))
+        assertTrue(b.allowed(Long.MAX_VALUE))
+        b.onSuccess()
+        assertTrue(b.allowed(0))
+    }
+
     @Test fun blocksUntilDelayPassesAndResetsOnSuccess() {
         val b = AdbRecoveryBackoff()
         assertTrue(b.allowed(0))
