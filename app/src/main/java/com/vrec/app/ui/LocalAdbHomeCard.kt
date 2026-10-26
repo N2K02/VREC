@@ -158,6 +158,7 @@ fun LocalAdbHomeCard() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            TermuxTerminalCard()
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { instructionsExpanded = !instructionsExpanded }
                     .padding(vertical = 6.dp),

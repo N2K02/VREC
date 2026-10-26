@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Optional Termux command-console bridge. Android asks the user to grant this. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
     <!-- Recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -50,6 +56,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Explicit, non-exported callback target for results from Termux RUN_COMMAND. -->
+        <service
+            android:name=".experimental.adb.TermuxResultService"
+            android:exported="false" />
 
         <!-- Holds the mic and writes the file while a call is active. -->
         <service
