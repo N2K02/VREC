@@ -381,6 +381,9 @@ object CallMonitor {
         } ?: return
         autoAttempted.add(selected.id)
         recordingId = selected.id
+        Log.i("Capture diagnostic: call selected session=" + selected.id +
+            " direction=" + selected.direction + " recordingState=" + RecordingService.state.value.javaClass.simpleName +
+            "; dispatch requested, not proof of audio or saved file")
         Log.i("Start call recording via " + selected.source.name +
             " app=" + (selected.packageName ?: "phone") +
             " callerKnown=" + (selected.name != null || selected.number != null))
