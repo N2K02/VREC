@@ -448,7 +448,7 @@ private fun HomeScreen() {
             recordingEnabled = enabled
         })
         if (recordingEnabled) {
-            com.vrec.app.ui.LocalAdbHomeCard()
+            com.vrec.app.ui.LocalAdbHomeCard(\n                recordingActive = recState is RecordingService.State.Recording || enhancedActive,\n                standardRecording = recState is RecordingService.State.Recording && !enhancedActive,\n            )
         } else {
             Text(
                 "Enable Recording to access ADB setup and recording controls.",
