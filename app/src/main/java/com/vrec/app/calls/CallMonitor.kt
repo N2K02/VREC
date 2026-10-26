@@ -104,6 +104,10 @@ object CallMonitor {
         connectedAt: Long?,
     ) {
         if (!Prefs.experimentalCallDetection(context) || !Prefs.recordingEnabled(context)) return
+        if ((state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) && id !in sessions) {
+            Log.i("Capture diagnostic: duplicate Telecom termination ignored session=" + id)
+            return
+        }
         val session = sessions.getOrPut(id) { Session(id, Source.TELECOM) }
         session.packageName = packageName
         session.direction = if (voip) CallDirection.VOIP else flow
@@ -176,7 +180,13 @@ object CallMonitor {
     }
 
     @Synchronized
-    fun onTelecomRemoved(context: Context, id: String) = remove(context, id)
+    fun onTelecomRemoved(context: Context, id: String) {
+        if (id !in sessions) {
+            Log.i("Capture diagnostic: duplicate Telecom removal ignored session=" + id)
+            return
+        }
+        remove(context, id)
+    }
 
     @Synchronized
     fun onSimState(context: Context, state: String?, number: String?) {
