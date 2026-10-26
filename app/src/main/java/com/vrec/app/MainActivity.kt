@@ -488,6 +488,7 @@ private fun HomeScreen() {
                 }
             }
         }
+        com.vrec.app.ui.PermissionDashboardCard(selectedMethod)
         com.vrec.app.ui.LocalAdbHomeCard(
             recordingActive = recState is RecordingService.State.Recording || enhancedActive,
             standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
