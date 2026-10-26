@@ -408,11 +408,19 @@ private fun HomeScreen() {
         Text("Connect the verified Android shell, then enable automatic call recording.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        com.vrec.app.ui.LocalAdbHomeCard()
         RecordingMasterCard(enabled = recordingEnabled, ready = ready, onEnabledChange = { enabled ->
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
         })
+        if (recordingEnabled) {
+            com.vrec.app.ui.LocalAdbHomeCard()
+        } else {
+            Text(
+                "Enable Recording to access ADB setup and recording controls.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
