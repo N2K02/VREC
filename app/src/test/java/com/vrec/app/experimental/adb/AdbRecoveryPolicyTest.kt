@@ -9,7 +9,7 @@ class AdbRecoveryPolicyTest {
         adbMethodSelected = true, recordingEnabled = true,
         autoRecoveryAllowed = true, connectionBusy = false,
         adbIdentityPresent = true, tcpVerifiedBefore = true,
-        usbDebuggingEnabled = true, tcpPortListening = true,
+        tcpPortListening = true,
     )
 
     @Test fun restoresOnlyAlreadyAuthorizedUsbBootstrappedTcp() {
@@ -27,7 +27,6 @@ class AdbRecoveryPolicyTest {
             eligible().copy(adbMethodSelected = false),
             eligible().copy(recordingEnabled = false),
             eligible().copy(connectionBusy = true),
-            eligible().copy(usbDebuggingEnabled = false),
             eligible().copy(tcpPortListening = false),
         ).forEach { assertFalse(AdbRecoveryPolicy.shouldRetry(it)) }
     }

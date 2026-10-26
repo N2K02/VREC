@@ -9,11 +9,10 @@ internal object AdbRecoveryPolicy {
         val connectionBusy: Boolean,
         val adbIdentityPresent: Boolean,
         val tcpVerifiedBefore: Boolean,
-        val usbDebuggingEnabled: Boolean,
         val tcpPortListening: Boolean,
     )
     fun shouldRetry(c: Conditions): Boolean =
         c.adbMethodSelected && c.recordingEnabled && c.autoRecoveryAllowed &&
         !c.connectionBusy && c.adbIdentityPresent && c.tcpVerifiedBefore &&
-        c.usbDebuggingEnabled && c.tcpPortListening
+        c.tcpPortListening
 }

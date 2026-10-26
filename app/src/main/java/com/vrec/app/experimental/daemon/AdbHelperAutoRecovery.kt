@@ -34,7 +34,6 @@ object AdbHelperAutoRecovery {
                 connectionBusy = ExperimentalRecording.status.value.busy,
                 adbIdentityPresent = ExperimentalRecording.adbIdentityPresent(app),
                 tcpVerifiedBefore = saved.tcpVerified,
-                usbDebuggingEnabled = ExperimentalRecording.usbDebuggingFlag(app) == true,
                 tcpPortListening = ExperimentalRecording.tcpPortListening(),
             ))) return@withLock false
 

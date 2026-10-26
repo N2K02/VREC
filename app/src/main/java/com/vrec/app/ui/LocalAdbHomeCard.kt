@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,11 +55,14 @@ fun LocalAdbHomeCard() {
     val busy by LocalAdbMiddleware.busy.collectAsState()
     val setupMessage by LocalAdbMiddleware.message.collectAsState()
     val lastSetupFailed by LocalAdbMiddleware.lastSetupFailed.collectAsState()
+    val needsUsbBootstrap by LocalAdbMiddleware.needsUsbBootstrap.collectAsState()
     val permissions by AdbPermissionBootstrap.status.collectAsState()
     val tick = rememberOnResumeTick()
-    val usbDebugging = remember(tick) { ExperimentalRecording.usbDebuggingFlag(context) }
     val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
     var instructionsExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(needsUsbBootstrap) {
+        if (needsUsbBootstrap) instructionsExpanded = true
+    }
 
     val healthy = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
     val verified = adbState.connected && adbState.shellUid == 2000
@@ -66,10 +70,10 @@ fun LocalAdbHomeCard() {
         AdbBadgePolicy.Signals(
             busy = busy || adbState.busy,
             verifiedUid2000 = verified,
-            failed = lastSetupFailed ||
+            failed = !needsUsbBootstrap && (lastSetupFailed ||
                 adbState.message.contains("failed", ignoreCase = true) ||
                 adbState.message.contains("denied", ignoreCase = true) ||
-                setupMessage.contains("could not connect", ignoreCase = true),
+                setupMessage.contains("could not connect", ignoreCase = true)),
         )
     )
 
@@ -92,15 +96,16 @@ fun LocalAdbHomeCard() {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                AdbUidBadge(badge)
+                AdbUidBadge(badge, needsUsbBootstrap)
             }
             Text(
                 when {
                     healthy -> "Recording helper ready — nothing to set up"
                     verified -> "Android shell UID 2000 verified — preparing helper"
-                    busy || adbState.busy -> "Waiting for Android ADB authorization…"
+                    busy || adbState.busy -> "Checking ADB authorization…"
+                    needsUsbBootstrap -> "USB host bootstrap needed — not yet authorized"
                     lastSetupFailed || ExperimentalRecording.awaitingManualRetry ->
-                        "Connection stopped. Tap Retry to try again."
+                        "Authorization stopped. Tap Retry to try again."
                     else -> "Authorize ADB once to configure recording"
                 },
                 style = MaterialTheme.typography.bodyMedium,
@@ -122,13 +127,15 @@ fun LocalAdbHomeCard() {
                 ) {
                     Text(when {
                         busy || adbState.busy -> "Waiting for authorization…"
+                        needsUsbBootstrap -> "Check ADB connection"
                         lastSetupFailed || ExperimentalRecording.awaitingManualRetry -> "Retry ADB setup"
                         verified -> "Start recording helper"
                         else -> "Set up ADB recording"
                     })
                 }
                 Text(
-                    "Authorization times out after 15 seconds. No automatic retry after a failed attempt.",
+                    if (needsUsbBootstrap) "First complete the external USB bootstrap steps below. VRec will not repeatedly retry."
+                    else "Authorization times out after 15 seconds. No automatic retry after a failed attempt.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -164,11 +171,8 @@ fun LocalAdbHomeCard() {
             if (instructionsExpanded) {
                 Text("USB debugging", style = MaterialTheme.typography.labelLarge)
                 Text(
-                    when (usbDebugging) {
-                        true -> "Enabled"
-                        false -> "Disabled — turn it on in Developer options"
-                        null -> "Status unavailable"
-                    },
+                    "Open Android Developer options and confirm USB debugging is enabled. " +
+                        "VRec cannot reliably read this toggle because Android reports it disabled to third-party apps.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
@@ -204,7 +208,7 @@ fun LocalAdbHomeCard() {
 
 /** Badge represents a verified current shell session, not merely an open TCP socket. */
 @Composable
-private fun AdbUidBadge(state: AdbBadgePolicy.State) {
+private fun AdbUidBadge(state: AdbBadgePolicy.State, needsUsbBootstrap: Boolean) {
     val background = when (state) {
         AdbBadgePolicy.State.SUCCESS -> Color(0xFF2E7D32)
         AdbBadgePolicy.State.FAILED -> Color(0xFFC62828)
@@ -215,7 +219,7 @@ private fun AdbUidBadge(state: AdbBadgePolicy.State) {
         AdbBadgePolicy.State.SUCCESS -> "UID 2000 ✓"
         AdbBadgePolicy.State.FAILED -> "Failed"
         AdbBadgePolicy.State.IN_PROGRESS -> "Connecting…"
-        AdbBadgePolicy.State.DISCONNECTED -> "Connect"
+        AdbBadgePolicy.State.DISCONNECTED -> if (needsUsbBootstrap) "USB setup" else "Connect"
     }
     androidx.compose.material3.Surface(shape = RoundedCornerShape(50), color = background) {
         Text(

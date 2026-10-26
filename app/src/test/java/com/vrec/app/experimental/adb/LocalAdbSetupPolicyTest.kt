@@ -6,7 +6,7 @@ import org.junit.Test
 class LocalAdbSetupPolicyTest {
     private fun usbOnly() = LocalAdbSetupPolicy.Signals(
         adbModeSelected = true, helperHealthy = false, verifiedAdbSession = false,
-        usbDebugging = true, tcpPortListening = false,
+        tcpPortListening = false,
     )
 
     @Test fun usbDebuggingAloneCannotAuthorizeVrec() {
@@ -25,10 +25,10 @@ class LocalAdbSetupPolicyTest {
             LocalAdbSetupPolicy.next(usbOnly().copy(verifiedAdbSession = true)))
     }
 
-    @Test fun missingPermissionsAndModeAreHandled() {
+    @Test fun noLocalPortNeedsUsbHostNotUnreliableSystemSetting() {
         assertEquals(LocalAdbSetupPolicy.Next.SELECT_ADB_MODE,
             LocalAdbSetupPolicy.next(usbOnly().copy(adbModeSelected = false)))
-        assertEquals(LocalAdbSetupPolicy.Next.ENABLE_USB_DEBUGGING,
-            LocalAdbSetupPolicy.next(usbOnly().copy(usbDebugging = false)))
+        assertEquals(LocalAdbSetupPolicy.Next.NEED_USB_HOST,
+            LocalAdbSetupPolicy.next(usbOnly()))
     }
 }

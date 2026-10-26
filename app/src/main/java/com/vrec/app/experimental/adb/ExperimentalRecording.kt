@@ -2,10 +2,10 @@ package com.vrec.app.experimental.adb
 
 import android.content.Context
 import android.os.Build
-import android.provider.Settings
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.Prefs
+import com.vrec.app.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,10 +76,6 @@ object ExperimentalRecording {
 
     fun adbIdentityPresent(context: Context): Boolean = AdbIdentity.exists(context)
 
-    fun usbDebuggingFlag(context: Context): Boolean? = runCatching {
-        Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
-    }.getOrNull()
-
     /** A TCP listener is not evidence of ADB authorization. */
     fun tcpPortListening(): Boolean = tcpPresent()
 
@@ -127,6 +123,7 @@ object ExperimentalRecording {
             return Result.failure(IllegalStateException("ADB setup is already running"))
         status.value = status.value.copy(busy = true, connected = false, shellUid = null,
             message = "Checking USB-bootstrapped localhost ADB…")
+        Log.i("ADB: verifying localhost:5555 authorization (15-second limit)")
         val result: Result<Int> = try {
             withTimeout(15_000L) {
                 withContext(Dispatchers.IO) {
@@ -148,6 +145,7 @@ object ExperimentalRecording {
             Result.failure(IllegalStateException("ADB authorization timed out after 15 seconds. Tap Retry on Home."))
         }
         if (result.isFailure) {
+            Log.w("ADB: authorization failed — ${result.exceptionOrNull()?.message ?: "unknown error"}")
             awaitingManualRetry = true
             withContext(Dispatchers.IO) { AdbTransport.close() }
             status.value = status.value.copy(
@@ -157,6 +155,7 @@ object ExperimentalRecording {
             )
             return result
         }
+        Log.i("ADB: Android shell UID 2000 verified")
         rememberVerifiedTcp(context)
         status.value = status.value.copy(busy = true, connected = true,
             shellUid = 2000, tcpPortOpen = true,
@@ -166,7 +165,10 @@ object ExperimentalRecording {
         }.getOrElse { AdbPermissionBootstrap.ResultSummary(
             unavailable = listOf("Permission setup failed: ${it.message}"), finished = true)
         }
+        Log.i("ADB: supported permissions verified — ${permissionResult.granted.size} granted, ${permissionResult.unavailable.size} unavailable")
         val helper = AdbPrivilegedApiHelper.startWithAdb(context)
+        if (helper.isSuccess) Log.i("ADB: recording helper started and verified")
+        else Log.w("ADB: recording helper failed — ${helper.exceptionOrNull()?.message ?: "unknown error"}")
         status.value = status.value.copy(busy = false, message = when {
             helper.isFailure -> "Shell UID 2000 verified, but recorder helper failed: ${helper.exceptionOrNull()?.message}"
             permissionResult.unavailable.isNotEmpty() ->

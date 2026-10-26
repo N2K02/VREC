@@ -33,6 +33,8 @@ class AdbHomeNavigationContractTest {
         assertTrue(card.contains("instructionsExpanded = !instructionsExpanded"))
         assertTrue(card.contains("First-time USB instructions"))
         assertTrue(card.contains("Text(\"USB debugging\""))
+        assertTrue(card.contains("needsUsbBootstrap"))
+        assertTrue(card.contains("First complete the external USB bootstrap steps"))
         assertFalse(card.contains("One-time USB setup"))
         assertFalse(card.contains("Wireless debugging"))
     }
@@ -56,6 +58,12 @@ class AdbHomeNavigationContractTest {
         assertTrue(middleware.contains("ExperimentalRecording.connect(app, automatic = !userInitiated)"))
         val controller = read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         assertTrue(controller.contains("withTimeout(15_000L)"))
+        assertFalse(controller.contains("Settings.Global.ADB_ENABLED"))
+        assertFalse(controller.contains("usbDebuggingFlag("))
+        assertTrue(middleware.contains("Log.i(\"ADB setup: localhost TCP/5555 missing"))
+        assertFalse(middleware.contains("ENABLE_USB_DEBUGGING"))
+        val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        assertFalse(recovery.contains("usbDebuggingFlag("))
         assertTrue(controller.contains("awaitingManualRetry = true"))
         assertTrue(controller.contains("AdbPermissionBootstrap.grantEligible(context)"))
         assertTrue(controller.indexOf("check(uid == 2000)") <

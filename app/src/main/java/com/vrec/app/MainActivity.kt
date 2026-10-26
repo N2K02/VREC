@@ -402,7 +402,7 @@ private fun HomeScreen() {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         com.vrec.app.ui.LocalAdbHomeCard()
-        RecordingMasterCard(enabled = recordingEnabled, onEnabledChange = { enabled ->
+        RecordingMasterCard(enabled = recordingEnabled, ready = ready, onEnabledChange = { enabled ->
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
         })
@@ -455,7 +455,7 @@ private fun HomeScreen() {
 
 /** Prominent, stable-compatible master toggle shown even before permissions are granted. */
 @Composable
-private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, onEnabledChange: (Boolean) -> Unit) {
     Surface(
         shape = RoundedCornerShape(28.dp),
         color = if (enabled) MaterialTheme.colorScheme.primaryContainer
@@ -476,7 +476,8 @@ private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> 
                 Text("Recording", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (enabled) "On — auto-start once per call; use controls to pause, stop or record again."
+                    if (enabled && !ready) "On — waiting for ADB recording helper. Calls cannot be captured yet."
+                    else if (enabled) "On — auto-start once per call; use controls to pause, stop or record again."
                     else "Off — stops all recording and closes its controls.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
