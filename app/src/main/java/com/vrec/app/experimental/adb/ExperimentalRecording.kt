@@ -35,6 +35,18 @@ object ExperimentalRecording {
     private const val METHOD_KEY = "recorder_method"
     private const val AUTO_RECOVERY_KEY = "auto_reconnect_after_verified_adb"
     private const val VERIFIED_TCP_KEY = "verified_tcp_adb"
+    private const val VERIFIED_WIRELESS_KEY = "verified_wireless_adb"
+
+    fun wirelessWasPaired(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(VERIFIED_WIRELESS_KEY, false)
+
+    private fun rememberVerifiedWireless(context: Context) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putBoolean(AUTO_RECOVERY_KEY, true)
+            .putBoolean(VERIFIED_WIRELESS_KEY, true)
+            .apply()
+    }
 
     data class RecoveryAuthorization(
         val allowed: Boolean,
@@ -54,7 +66,6 @@ object ExperimentalRecording {
             .putBoolean(AUTO_RECOVERY_KEY, true)
             .putBoolean(VERIFIED_TCP_KEY, true)
             .remove("last_adb_transport")
-            .remove("verified_wireless_adb")
             .apply()
     }
 
@@ -178,6 +189,60 @@ object ExperimentalRecording {
         })
         return if (helper.isSuccess) result else Result.failure(
             helper.exceptionOrNull() ?: IllegalStateException("Enhanced helper failed"))
+    }
+
+    /** Completes setup only after the same UID 2000 check used for USB.
+     * Wireless connection has a separate dynamic Android TLS port. */
+    suspend fun connectWireless(context: Context, port: Int, automatic: Boolean = false): Result<Int> {
+        if (automatic && awaitingManualRetry)
+            return Result.failure(IllegalStateException("ADB authorization stopped; press Retry."))
+        if (status.value.busy)
+            return Result.failure(IllegalStateException("ADB setup is already running"))
+        if (!automatic) allowManualRetry()
+        status.value = status.value.copy(busy = true, connected = false, shellUid = null,
+            message = "Connecting to this phone's Wireless debugging TLS endpoint…")
+        val attempt: Result<Int> = try {
+            withTimeout(15_000L) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        AdbTransport.close()
+                        AdbTransport.connectLocalTls(context, port).getOrThrow()
+                        val uid = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow()
+                            .lineSequence().mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
+                            ?: error("ADB did not report a shell UID")
+                        check(uid == 2000) { "ADB UID $uid is not Android shell UID 2000" }
+                        uid
+                    }
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            Result.failure(IllegalStateException("Wireless ADB authorization timed out after 15 seconds"))
+        }
+        if (attempt.isFailure) {
+            awaitingManualRetry = true
+            AdbTransport.close()
+            status.value = status.value.copy(busy = false, connected = false, shellUid = null,
+                message = "Wireless ADB failed: ${attempt.exceptionOrNull()?.message}. Retry from Home.")
+            Log.w("ADB: Wireless connection failed — ${attempt.exceptionOrNull()?.message}")
+            return attempt
+        }
+        rememberVerifiedWireless(context)
+        Log.i("ADB: wireless TLS Android shell UID 2000 verified")
+        status.value = status.value.copy(busy = true, connected = true,
+            shellUid = 2000, message = "Wireless ADB UID 2000 verified; granting eligible permissions…")
+        val permissions = runCatching { AdbPermissionBootstrap.grantEligible(context) }
+            .getOrElse { AdbPermissionBootstrap.ResultSummary(unavailable =
+                listOf("Permission setup failed: ${it.message}"), finished = true) }
+        val helper = AdbPrivilegedApiHelper.startWithAdb(context)
+        Log.i("ADB: wireless setup ${if (helper.isSuccess) "helper ready" else "helper failed"}; ${permissions.unavailable.size} unavailable permissions")
+        status.value = status.value.copy(busy = false, message = when {
+            helper.isFailure -> "Wireless UID 2000 verified; helper failed: ${helper.exceptionOrNull()?.message}"
+            permissions.unavailable.isNotEmpty() ->
+                "Wireless UID 2000 verified; helper ready; permissions needing attention: ${permissions.unavailable.joinToString().take(160)}"
+            else -> "Wireless UID 2000 verified; recording helper ready; supported permissions configured"
+        })
+        return if (helper.isSuccess) attempt else Result.failure(
+            helper.exceptionOrNull() ?: IllegalStateException("Recording helper failed"))
     }
 
     /** Ends only VRec's ADB session. The detached shell recorder is not stopped. */

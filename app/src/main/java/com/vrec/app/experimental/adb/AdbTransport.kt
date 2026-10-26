@@ -121,6 +121,34 @@ object AdbTransport {
             }
         }
 
+    /** Pair only with this phone's Android TLS pairing endpoint.
+     * The six-digit code is supplied explicitly by the user and is never logged. */
+    suspend fun pairLocal(context: Context, port: Int, code: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                require(port in 1..65535 && code.matches(Regex("[0-9]{6}")))
+                val mgr = manager(context)
+                check(mgr.pair(LOOPBACK, port, code)) { "Android rejected pairing code" }
+                Unit
+            }
+        }
+
+    /** Dynamic TLS listener published by this phone's Wireless debugging settings.
+     * No arbitrary IP/device addresses are accepted. */
+    suspend fun connectLocalTls(context: Context, port: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                require(port in 1..65535)
+                val mgr = manager(context)
+                if (!mgr.isConnected) {
+                    check(mgr.connect(LOOPBACK, port) || mgr.isConnected) {
+                        "Android TLS debugging connection not authorized"
+                    }
+                }
+                Unit
+            }
+        }
+
     /**
      * Run one command and return everything it wrote.
      *

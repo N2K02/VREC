@@ -75,9 +75,8 @@ object LocalAdbMiddleware {
                 message.value = "Enhanced recording helper is connected and ready."
                 return@withLock true
             }
-            if (!userInitiated && (ExperimentalRecording.awaitingManualRetry ||
-                !ExperimentalRecording.recoveryAuthorization(app).tcpVerified)) {
-                message.value = "Open Home and tap Set up ADB recording to authorize this phone."
+            if (!userInitiated && ExperimentalRecording.awaitingManualRetry) {
+                message.value = "Authorization stopped; tap Retry on Home to try again."
                 return@withLock false
             }
             val session = ExperimentalRecording.status.value

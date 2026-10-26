@@ -7,6 +7,10 @@
         <package android:name="com.termux" />
     </queries>
 
+    <!-- Discover on-device Wireless debugging mDNS pairing and TLS services. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -56,6 +60,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Shizuku-style notification pairing code, handled only by this app. -->
+        <receiver android:name=".experimental.adb.VrecPairingReceiver" android:exported="false" />
 
         <!-- Explicit, non-exported callback target for results from Termux RUN_COMMAND. -->
         <service
