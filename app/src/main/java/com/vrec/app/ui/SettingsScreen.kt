@@ -92,7 +92,7 @@ fun SettingsScreen(
     var recordingMethod by remember(resumeTick) { mutableStateOf(ExperimentalRecording.method(context)) }
     val captureState by com.vrec.app.recording.RecordingService.state.collectAsState()
     val shellRecording by com.vrec.app.recording.AdbFallbackNotice.enhancedActive.collectAsState()
-    val methodLocked = captureState !is com.vrec.app.recording.RecordingService.State.Idle || shellRecording
+    val methodLocked = !com.vrec.app.recording.RecordingMethodPolicy.canChange(\n        captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
     val connection by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
