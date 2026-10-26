@@ -421,7 +421,8 @@ private fun HomeScreen() {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
-    val recording = !com.vrec.app.recording.RecordingMethodPolicy.canChange(\n        recState is RecordingService.State.Idle, enhancedActive)
+    val recording = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
+        recState is RecordingService.State.Idle, enhancedActive)
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
     var selectedMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
     val scope = rememberCoroutineScope()
@@ -488,7 +489,10 @@ private fun HomeScreen() {
             }
         }
         if (recordingEnabled) {
-            com.vrec.app.ui.LocalAdbHomeCard(\n                recordingActive = recState is RecordingService.State.Recording || enhancedActive,\n                standardRecording = recState is RecordingService.State.Recording && !enhancedActive,\n            )
+            com.vrec.app.ui.LocalAdbHomeCard(
+                recordingActive = recState is RecordingService.State.Recording || enhancedActive,
+                standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
+            )
         } else {
             Text(
                 "Enable Recording to access ADB setup and recording controls.",
