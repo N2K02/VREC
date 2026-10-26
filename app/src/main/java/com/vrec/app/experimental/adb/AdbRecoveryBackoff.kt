@@ -21,8 +21,9 @@ class AdbRecoveryBackoff(
         else (baseMs shl (failures - 1).coerceAtMost(20)).coerceAtMost(maxMs)
 
     fun onFailure(nowMs: Long) {
-        failures++
-        nextAllowedAt = nowMs + delayFor(failures)
+        if (failures < Int.MAX_VALUE) failures++
+        val delay = delayFor(failures)
+        nextAllowedAt = if (nowMs > Long.MAX_VALUE - delay) Long.MAX_VALUE else nowMs + delay
     }
 
     fun onSuccess() {
