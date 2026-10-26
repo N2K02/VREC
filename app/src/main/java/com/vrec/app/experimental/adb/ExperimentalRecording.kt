@@ -131,16 +131,16 @@ object ExperimentalRecording {
             withTimeout(15_000L) {
                 withContext(Dispatchers.IO) {
                     runCatching {
-                check(tcpPresent()) {
-                    "No local ADB endpoint. An authorized USB ADB host must first run adb tcpip 5555."
-                }
-                AdbTransport.close()
-                AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
-                val uid = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow().lineSequence()
-                    .mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
-                    ?: error("ADB returned no shell UID")
-                check(uid == 2000) { "ADB did not verify shell UID 2000 (received $uid)" }
-                uid
+                        check(tcpPresent()) {
+                            "No local ADB endpoint. An authorized USB ADB host must first run adb tcpip 5555."
+                        }
+                        AdbTransport.close()
+                        AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
+                        val uid = AdbTransport.exec("id -u", timeoutMs = 3_000).getOrThrow()
+                            .lineSequence().mapNotNull { it.trim().toIntOrNull() }.firstOrNull()
+                            ?: error("ADB returned no shell UID")
+                        check(uid == 2000) { "ADB did not verify shell UID 2000 (received $uid)" }
+                        uid
                     }
                 }
             }

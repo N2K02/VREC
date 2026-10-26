@@ -63,6 +63,7 @@ object LocalAdbMiddleware {
         busy.value = true
         lastSetupFailed.value = false
         try {
+            if (userInitiated) ExperimentalRecording.allowManualRetry()
             // Detached helper can survive ADB disconnect and needs no new bootstrap.
             if (AdbPrivilegedApiHelper.reconnect(app)) {
                 message.value = "Enhanced recording helper is connected and ready."
@@ -73,7 +74,6 @@ object LocalAdbMiddleware {
                 message.value = "Open Home and tap Set up ADB recording to authorize this phone."
                 return@withLock false
             }
-            if (userInitiated) ExperimentalRecording.allowManualRetry()
             val session = ExperimentalRecording.status.value
             val next = LocalAdbSetupPolicy.next(LocalAdbSetupPolicy.Signals(
                 adbModeSelected = true,

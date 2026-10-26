@@ -37,7 +37,7 @@ class RecordingsBottomNavigationContractTest {
         assertFalse(source.contains("private fun NavigationCard("))
         assertTrue(home.contains("RecordingMasterCard("))
         assertTrue(home.contains("Text(\"Recording dashboard\""))
-        assertTrue(home.contains("Text(\"ADB is not ready · Review USB setup\""))
-        assertTrue(home.contains("LocalAdbHomeCard(onOpenDetailedSetup = onOpenExperimental)"))
+        assertFalse(home.contains("Text(\"ADB is not ready · Review USB setup\""))
+        assertTrue(home.contains("LocalAdbHomeCard()"))
     }
 }
