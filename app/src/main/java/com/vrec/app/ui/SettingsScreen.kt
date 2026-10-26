@@ -249,8 +249,7 @@ fun SettingsScreen(
                 val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
                 if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
                     SettingCard("Access still requiring attention") {
-                        Text(bootstrap.unavailable.joinToString("
-"),
+                        Text(bootstrap.unavailable.joinToString("\n"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
