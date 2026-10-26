@@ -152,7 +152,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
 
     // Keep helper health visible, but avoid disruptive setup/reconnect actions
     // during an active capture. Never describe microphone capture as shell capture.
-    if (recordingActive && healthy) {
+    if (AdbHomeDisplayPolicy.compact(recordingActive, healthy)) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -168,8 +168,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
                     Text("ADB helper connected", style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (standardRecording) "Standard recording active · helper available"
-                        else "Enhanced recording active · helper healthy",
+                        AdbHomeDisplayPolicy.subtitle(standardRecording),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
