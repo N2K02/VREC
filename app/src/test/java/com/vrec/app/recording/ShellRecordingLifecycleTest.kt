@@ -40,6 +40,14 @@ class ShellRecordingLifecycleTest {
         assertFalse(lifecycle.started(""))
     }
 
+    @Test fun renamedFinalFileStillEndsOriginalCapture() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started("vrec_rec_100_in.dat"))
+        assertTrue(lifecycle.ended("vrec_rec_100_in_taken.dat"))
+        assertFalse(lifecycle.isActive())
+        assertFalse(lifecycle.started("vrec_rec_100_in.dat"))
+    }
+
     @Test fun subsequentCallWorks() {
         val lifecycle = ShellRecordingLifecycle()
         assertTrue(lifecycle.started(first))
