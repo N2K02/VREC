@@ -26,6 +26,7 @@ object AdbFallbackNotice {
     val active = MutableStateFlow(false)
     val handoffInProgress = MutableStateFlow(false)
     val enhancedActive = MutableStateFlow(false)
+    private val shellLifecycle = ShellRecordingLifecycle()
 
     /** Reserve before starting the standard recorder to prevent concurrent daemon arming. */
     fun reserve() {
@@ -46,7 +47,7 @@ object AdbFallbackNotice {
 
     /** Only a shell-authenticated STARTED event with a real recording file may show capture UI. */
     fun shellRecordingStarted(context: Context, file: String) {
-        if (!file.startsWith("vrec_rec_") || !file.endsWith(".dat")) return
+        if (!shellLifecycle.started(file)) return
         enhancedActive.value = true
         if (Prefs.showOverlay(context) && !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
             runCatching {
@@ -77,7 +78,8 @@ object AdbFallbackNotice {
             .onFailure { Log.w("Shell recording notification unavailable", it) }
     }
 
-    fun shellRecordingEnded(context: Context) {
+    fun shellRecordingEnded(context: Context, file: String) {
+        if (!shellLifecycle.ended(file)) return
         enhancedActive.value = false
         dismiss(context)
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
