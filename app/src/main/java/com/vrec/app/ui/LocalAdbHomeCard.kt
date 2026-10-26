@@ -55,7 +55,7 @@ import kotlinx.coroutines.delay
  * content, not a second setup wizard or a collection of competing buttons.
  */
 @Composable
-fun LocalAdbHomeCard() {
+fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val adbState by ExperimentalRecording.status.collectAsState()
@@ -148,6 +148,35 @@ fun LocalAdbHomeCard() {
                 setupTapInFlight = false
             }
         }
+    }
+
+    // Keep helper health visible, but avoid disruptive setup/reconnect actions
+    // during an active capture. Never describe microphone capture as shell capture.
+    if (recordingActive && healthy) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Rounded.CheckCircle, contentDescription = null,
+                    tint = Color(0xFF4CAF50))
+                Column {
+                    Text("ADB helper connected", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (standardRecording) "Standard recording active · helper available"
+                        else "Enhanced recording active · helper healthy",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        return
     }
 
     AdbDashboard(
