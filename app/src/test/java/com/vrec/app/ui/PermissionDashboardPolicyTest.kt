@@ -22,6 +22,11 @@ class PermissionDashboardPolicyTest {
         assertEquals("Not granted", PermissionDashboardPolicy.permissionBadge(false))
     }
 
+    @Test fun badgeColorsDistinguishGrantedAndDenied() {
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF2E7D32), PermissionDashboardPolicy.badgeColor(true))
+        assertEquals(androidx.compose.ui.graphics.Color(0xFFC62828), PermissionDashboardPolicy.badgeColor(false))
+    }
+
     @Test fun grantedCountDoesNotTreatMissingAsGranted() {
         assertEquals(2, PermissionDashboardPolicy.grantedCount(listOf(true, false, true, false)))
         assertEquals(0, PermissionDashboardPolicy.grantedCount(listOf(false, false)))
