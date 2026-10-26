@@ -488,18 +488,10 @@ private fun HomeScreen() {
                 }
             }
         }
-        if (recordingEnabled) {
-            com.vrec.app.ui.LocalAdbHomeCard(
-                recordingActive = recState is RecordingService.State.Recording || enhancedActive,
-                standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
-            )
-        } else {
-            Text(
-                "Enable Recording to access ADB setup and recording controls.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        com.vrec.app.ui.LocalAdbHomeCard(
+            recordingActive = recState is RecordingService.State.Recording || enhancedActive,
+            standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
+        )
         if (recordingEnabled && ready) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
