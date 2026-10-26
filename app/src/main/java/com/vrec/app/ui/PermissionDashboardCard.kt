@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vrec.app.calls.CallDetectionAccess
+import com.vrec.app.Prefs
 import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.experimental.adb.ExperimentalRecording
@@ -65,6 +67,11 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
             add("Call notification access" to VoipNotifListener.isEnabled(context))
             add("Floating controls" to (Build.VERSION.SDK_INT < 23 ||
                 Settings.canDrawOverlays(context)))
+            if (method == ExperimentalRecording.Method.BUILT_IN_ADB && Build.VERSION.SDK_INT >= 31) {
+                add("Advanced call detection" to
+                    (CallDetectionAccess.isGranted(context) &&
+                        Prefs.experimentalCallDetection(context)))
+            }
             if (method == ExperimentalRecording.Method.BUILT_IN_ADB)
                 add("ADB shell helper" to (ExperimentalCaptureDaemon.ready.value &&
                     AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING))
