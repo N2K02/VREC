@@ -2,9 +2,7 @@ package com.vrec.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,7 +19,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,31 +79,47 @@ fun AdbDashboard(
                 else MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(icon, contentDescription = null,
-                    tint = if (failed && !healthy) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(28.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(title, style = MaterialTheme.typography.titleLarge)
-                    Row(Modifier.height(IntrinsicSize.Min)) {
-                        Stat("Connection", when {
-                            verified -> "ADB"
-                            healthy -> "Detached"
-                            else -> "Off"
-                        }, Modifier.weight(1f))
-                        StatDivider()
-                        Stat("Restore", restore, Modifier.weight(1f))
-                        StatDivider()
-                        Stat("Recording", when {
-                            !healthy -> "—"
-                            recordingOn -> "Armed"
-                            else -> "Standby"
-                        }, Modifier.weight(1f))
-                        StatDivider()
-                        Stat("UID", if (verified || healthy) "2000" else "—", Modifier.weight(1f),
-                            hint = if (verified || healthy) "(shell)" else null)
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Icon(icon, contentDescription = null,
+                        tint = if (failed && !healthy) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(28.dp))
+                    Column {
+                        Text(title, style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold)
+                        Text(
+                            when {
+                                busy -> "Checking helper connection and readiness"
+                                healthy && verified -> "Helper active · ADB session verified"
+                                healthy -> "Helper active · ADB session detached"
+                                failed -> "Check ADB setup or diagnostics"
+                                else -> "Start the helper to prepare call capture"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
+                }
+                androidx.compose.material3.HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Stat("Connection", when {
+                        verified -> "Connected"
+                        healthy -> "Detached"
+                        else -> "Offline"
+                    }, Modifier.weight(1f))
+                    Stat("Recording", when {
+                        !recordingOn -> "Off"
+                        !healthy -> "Waiting"
+                        else -> "Armed"
+                    }, Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Stat("Recovery via", restore, Modifier.weight(1f))
+                    Stat("Shell identity", if (verified || healthy) "UID 2000" else "Not verified",
+                        Modifier.weight(1f))
                 }
             }
         }
@@ -167,19 +180,11 @@ fun AdbDashboard(
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier, hint: String? = null) {
-    Column(modifier.padding(horizontal = 6.dp)) {
+private fun Stat(label: String, value: String, modifier: Modifier) {
+    Column(modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-        hint?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
 
-@Composable
-private fun StatDivider() {
-    VerticalDivider(Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant)
-}
