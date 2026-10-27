@@ -454,21 +454,18 @@ private fun HomeScreen() {
             recordingActive = recState is RecordingService.State.Recording || enhancedActive,
             standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
         )
-        if (recordingEnabled && ready) {
+        if (recordingEnabled && !ready) {
             Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.fillMaxWidth().animateContentSize(),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Manual recording", style = MaterialTheme.typography.titleMedium,
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Enhanced recording unavailable",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold)
-                    Text("Start or stop a recording manually while the ADB helper is connected.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (!enhancedActive) ManualRecordButton(recState)
-                    else Text("Shell recording is active. Finish the current call before starting another.",
-                        style = MaterialTheme.typography.bodySmall)
+                    Text("The ADB shell helper is not ready. Calls will not be recorded until enhanced capture is restored. Reconnect ADB and check System Status.",
+                        style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
