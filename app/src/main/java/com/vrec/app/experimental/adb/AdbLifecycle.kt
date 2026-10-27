@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.vrec.app.Log
 import com.vrec.app.Prefs
+import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
@@ -83,7 +84,16 @@ object AdbLifecycle {
         try {
             recoveryMutex.withLock {
                 if (!quitting && kotlinx.coroutines.currentCoroutineContext().isActive) {
-                    AdbHelperAutoRecovery.check(app)
+                    val healthy = AdbHelperAutoRecovery.check(app)
+                    if (healthy && AdbFallbackNotice.enhancedActive.value) {
+                        // 'I' is an authenticated, read-only shell status query.
+                        // An unreachable helper is NOT evidence of idle capture.
+                        when (ExperimentalCaptureDaemon.captureControl(app, 'I')) {
+                            "IDLE" -> AdbFallbackNotice.reconcileAuthenticatedIdle(app)
+                            "PAUSED" -> AdbFallbackNotice.setEnhancedPaused(app, true)
+                            "RECORDING" -> AdbFallbackNotice.setEnhancedPaused(app, false)
+                        }
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
