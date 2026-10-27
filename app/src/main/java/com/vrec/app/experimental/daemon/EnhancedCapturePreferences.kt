@@ -47,7 +47,7 @@ object EnhancedCapturePreferences {
 
     fun voipPackages(context: Context): Set<String> = EnhancedVoipPolicy.packages(
         enabled = Prefs.recordVoip(context),
-        adbSelected = ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB,
+        adbSelected = true,
         sdk = Build.VERSION.SDK_INT,
     )
 }
