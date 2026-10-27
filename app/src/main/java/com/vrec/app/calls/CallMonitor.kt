@@ -396,12 +396,10 @@ object CallMonitor {
         } ?: return
         autoAttempted.add(selected.id)
         rememberShellIdentity(context, selected)
-        recordingId = selected.id
-        Log.i("Call selected for ADB capture: " + selected.source.name)
-        RecordingService.start(context.applicationContext, selected.direction,
-            selected.name ?: selected.number, selected.number, selected.connectedAt,
-            selected.packageName, selected.accountId, selected.numberSource,
-            selected.flowDirection.name)
+        // The shell watcher owns automatic capture. This is a metadata
+        // candidate, NOT a confirmed recording owner: the compatibility
+        // RecordingService.start() cannot start a shell recording.
+        Log.i("Call observed for shell capture: " + selected.source.name)
     }
 
     private fun rememberShellIdentity(context: Context, session: Session) {
