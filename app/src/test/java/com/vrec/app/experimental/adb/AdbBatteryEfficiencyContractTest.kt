@@ -85,6 +85,13 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
 
+    @Test fun activeCaptureGetsPeriodicReconciliationEvenWhenHelperIsHealthy() {
+        val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
+        assertTrue(lifecycle.contains("AdbFallbackNotice.enhancedActive.value ||"))
+        assertTrue(lifecycle.contains("captureControl(app, 'I')"))
+        assertTrue(lifecycle.contains("\"IDLE\" -> AdbFallbackNotice.reconcileAuthenticatedIdle(app)"))
+    }
+
     @Test fun resumeWaitsForAuthenticatedStartedWake() {
         val notice = source("app/src/main/java/com/vrec/app/recording/AdbFallbackNotice.kt")
         assertTrue(notice.contains("else if (!shellLifecycle.isActive())"))
