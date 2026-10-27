@@ -36,20 +36,23 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(home.contains(".distinctUntilChanged().collect"))
     }
 
-    @Test fun serviceCleanupAndNoLegacyHandoff() {
+    @Test fun microphoneEngineAndLegacyHandoffAreRemoved() {
         val service = source("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
-        assertTrue(service.contains("serviceScope.cancel()"))
-        assertTrue(service.contains("handler.removeCallbacks(sampler)"))
-        assertFalse(service.contains("private fun requestHandoff()"))
-        assertFalse(service.contains("recoverStandardAfterAdbHandoffFailure"))
-    }
-
-    @Test fun legacyFallbackStateAndHandoffAreGone() {
-        val service = source("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
+        assertFalse(service.contains("RecordingEngine("))
+        assertFalse(service.contains("MediaRecorder"))
+        assertFalse(service.contains("serviceScope"))
+        assertFalse(service.contains("requestAdbHandoff(context"))
         assertFalse(service.contains("private var adbFallback"))
         assertFalse(service.contains("EXTRA_ADB_FALLBACK"))
         assertFalse(service.contains("forceStandardFallback: Boolean"))
-        assertFalse(service.contains("requestAdbHandoff(context"))
+        assertTrue(service.contains("stopSelf(startId)"))
+    }
+
+    @Test fun loggingSuppressesRepeatedInfoBeforePersistence() {
+        val log = source("app/src/main/java/com/vrec/app/Log.kt")
+        assertTrue(log.contains("DUPLICATE_INFO_WINDOW_MS"))
+        assertTrue(log.contains("message == lastInfo"))
+        assertTrue(log.indexOf("message == lastInfo") < log.indexOf("AndroidLog.i(TAG, message)"))
     }
 
     @Test fun recoveryIsSerialized() {
