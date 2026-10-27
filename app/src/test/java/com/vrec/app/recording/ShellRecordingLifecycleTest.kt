@@ -102,6 +102,28 @@ class ShellRecordingLifecycleTest {
         assertTrue(lifecycle.isActive())
     }
 
+    @Test fun authenticatedSnapshotReplacesMissedEndAndStart() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.reconcileRecording(second))
+        assertFalse(lifecycle.ended(first))
+        assertFalse(lifecycle.started(first))
+        assertTrue(lifecycle.isActive())
+        assertFalse(lifecycle.reconcileRecording(second))
+        assertTrue(lifecycle.ended(second))
+    }
+
+    @Test fun authenticatedPausedSnapshotRetiresStaleRecordingIdentity() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        lifecycle.reconcilePaused()
+        assertFalse(lifecycle.isActive())
+        assertFalse(lifecycle.started(first))
+        assertFalse(lifecycle.ended(first))
+        assertTrue(lifecycle.started(second))
+        assertTrue(lifecycle.isActive())
+    }
+
     @Test fun processRestartSnapshotRehydratesAndResumesWithoutStaleWakes() {
         val lifecycle = ShellRecordingLifecycle() // fresh Android process
         val snapshot = ExperimentalCaptureDaemon.parseCaptureSnapshot("RECORDING vrec_rec_100.dat")
