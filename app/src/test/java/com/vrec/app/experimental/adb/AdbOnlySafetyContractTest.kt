@@ -14,7 +14,7 @@ class AdbOnlySafetyContractTest {
     @Test fun methodIsAdbOnlyAndStandardSelectorIsGone() {
         val controller = read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         val settings = read("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
-        assertTrue(controller.contains("fun method(context: Context): Method = Method.BUILT_IN_ADB"))
+        assertFalse(controller.contains("enum class Method"))
         assertFalse(settings.contains("RecordingMethodOption("))
         assertFalse(settings.contains("Permissions & setup"))
     }
@@ -22,9 +22,7 @@ class AdbOnlySafetyContractTest {
     @Test fun missingHelperCannotTriggerAutomaticStandardRecording() {
         val recorder = read("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
         assertTrue(recorder.contains("if (adbSelected) {"))
-        assertTrue(recorder.contains("no standard microphone fallback"))
-        assertTrue(recorder.indexOf("no standard microphone fallback") <
-            recorder.indexOf("val standardFallback = false"))
+        assertFalse(recorder.contains("val standardFallback = false"))
     }
 
     @Test fun shellPermissionCommandsRequireVerifiedUidAndAreCheckedAfterwards() {
