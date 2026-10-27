@@ -13,7 +13,10 @@ import java.io.File
 object ShellCallMetadataJournal {
     data class Match(val name: String?, val number: String?, val numberSource: String?, val packageName: String?)
     private fun file(context: Context) = File(context.filesDir, "shell_call_metadata.json")
-    private const val WINDOW_MS = 90_000L
+    internal const val WINDOW_MS = 90_000L
+    internal fun matches(startedAt: Long, observedAt: Long, recordedPackage: String?, candidatePackage: String?): Boolean =
+        kotlin.math.abs(observedAt - startedAt) <= WINDOW_MS &&
+            (recordedPackage.isNullOrBlank() || recordedPackage == candidatePackage)
     private const val RETENTION_MS = 48L * 60 * 60 * 1000
 
     @Synchronized fun remember(context: Context, key: String, startedAt: Long,
@@ -37,8 +40,7 @@ object ShellCallMetadataJournal {
         val matches = load(context).let { array ->
             (0 until array.length()).map { array.getJSONObject(it) }
         }.filter {
-            kotlin.math.abs(it.optLong("startedAt") - startedAt) <= WINDOW_MS &&
-                (appPackage.isNullOrBlank() || it.optString("appPackage") == appPackage)
+            matches(startedAt, it.optLong("startedAt"), appPackage, it.optString("appPackage"))
         }
         if (matches.size != 1) return null
         val entry = matches.single()
