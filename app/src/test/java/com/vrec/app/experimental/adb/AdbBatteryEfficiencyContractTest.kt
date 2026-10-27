@@ -53,7 +53,7 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(log.contains("DUPLICATE_INFO_WINDOW_MS"))
         assertTrue(log.contains("redact(message)"))
         assertTrue(log.contains("lastInfoTimes[safe]"))
-        assertTrue(log.indexOf("lastInfoTimes[safe]") < log.indexOf("AndroidLog.i(TAG, message)"))
+        assertTrue(log.indexOf("lastInfoTimes[safe]") < log.indexOf("AndroidLog.i(TAG, safe)"))
     }
 
     @Test fun recoveryStatusAndRoutineLogsDoNotChurn() {
