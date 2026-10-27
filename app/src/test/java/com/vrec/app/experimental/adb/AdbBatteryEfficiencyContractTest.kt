@@ -120,6 +120,16 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(notice.contains("fun reconcileAuthenticatedIdle(context: Context)"))
     }
 
+    @Test fun automaticCallObservationDoesNotInventRecordingOwnership() {
+        val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        val start = monitor.substringAfter("private fun reconcile(context: Context)")
+            .substringBefore("private fun rememberShellIdentity(")
+        assertFalse(start.contains("recordingId = selected.id"))
+        assertFalse(start.contains("RecordingService.start("))
+        assertTrue(start.contains("autoAttempted.add(selected.id)"))
+        assertTrue(start.contains("rememberShellIdentity(context, selected)"))
+    }
+
     @Test fun notificationReceiverHasBoundedExecutionAndAlwaysFinishes() {
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
         assertTrue(receiver.contains("withTimeout(8_000L)"))
