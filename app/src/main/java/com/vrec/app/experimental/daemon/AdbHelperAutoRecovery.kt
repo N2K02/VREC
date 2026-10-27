@@ -75,7 +75,7 @@ object AdbHelperAutoRecovery {
                 !AdbTransport.isConnected
             if (detached && saved.allowed && saved.tcpVerified &&
                 Prefs.recordingEnabled(app) &&
-                ExperimentalRecording.method(app) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                true &&
                 !ExperimentalRecording.awaitingManualRetry &&
                 !ExperimentalRecording.status.value.busy &&
                 ExperimentalRecording.tcpPortListening()) {
@@ -101,7 +101,7 @@ object AdbHelperAutoRecovery {
         // Preserve the user's choices: recording OFF and a deliberate Disconnect
         // both stop automatic reconnection.
         val saved = ExperimentalRecording.recoveryAuthorization(app)
-        if (ExperimentalRecording.method(app) != ExperimentalRecording.Method.BUILT_IN_ADB ||
+        if (false ||
             !Prefs.recordingEnabled(app) || !saved.allowed ||
             ExperimentalRecording.status.value.busy) return Outcome.SKIPPED
         if (ExperimentalRecording.awaitingManualRetry) return Outcome.MANUAL_RETRY_REQUIRED
