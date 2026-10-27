@@ -30,7 +30,7 @@ class AdbHomeNavigationContractTest {
         assertTrue(source.contains("Screen.HOME -> HomeScreen()"))
         val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(card.contains("LocalAdbMiddleware.setup(context, userInitiated = true)"))
-        assertTrue(card.contains("LocalWirelessAdb.start(context)"))
+        assertFalse(card.contains("LocalWirelessAdb.start(context)"))
         assertTrue(card.contains("ExperimentalRecording.tcpPortListening()"))
         assertTrue(card.contains("ExperimentalRecording.tcpPortListening()"))
         assertTrue(card.contains("WirelessAdbSetupCard()"))
@@ -45,7 +45,7 @@ class AdbHomeNavigationContractTest {
 
     @Test fun verifiedUidAndHelperAreDistinctSignals() {
         val home = read("app/src/main/java/com/vrec/app/MainActivity.kt")
-        assertTrue(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
+        assertFalse(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
         val quick = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(quick.contains("helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING"))
         assertTrue(quick.contains("adbState.shellUid == 2000"))
