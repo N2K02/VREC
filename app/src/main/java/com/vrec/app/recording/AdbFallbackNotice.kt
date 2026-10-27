@@ -16,8 +16,8 @@ import com.vrec.app.R
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
- * Per-recording standard fallback while the optional ADB helper is unavailable.
- * Never toggles the saved recorder method or enables Android debugging.
+ * Shell recording lifecycle and notification bridge. Capture is owned by the
+ * authenticated ADB helper, never by an Android microphone fallback.
  */
 object AdbFallbackNotice {
     private const val CHANNEL = "vrec_adb_fallback"
@@ -97,6 +97,7 @@ object AdbFallbackNotice {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     fun setEnhancedPaused(context: Context, paused: Boolean) {
+        if (!shellLifecycle.isActive()) return
         enhancedPaused.value = paused
         val manager = context.getSystemService(NotificationManager::class.java)
         val notice = NotificationCompat.Builder(context, CHANNEL)
@@ -115,6 +116,7 @@ object AdbFallbackNotice {
     }
 
     fun shellStoppedByUser(context: Context) {
+        if (!shellLifecycle.stoppedByUser()) return
         enhancedActive.value = false
         enhancedPaused.value = false
         dismiss(context)
