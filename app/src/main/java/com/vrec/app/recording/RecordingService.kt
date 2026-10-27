@@ -310,7 +310,7 @@ class RecordingService : Service() {
                 _state.value = State.Recording(source.label, peer, silentSoFar = true)
                 update(recordingNotification(source.label))
                 if (adbFallback) {
-                    Log.i("Enhanced ADB helper unavailable; recording this call via standard microphone")
+                    Log.w("Legacy microphone fallback was requested")
                     AdbFallbackNotice.notifyStandardStarted(applicationContext)
                 }
                 if (Prefs.showOverlay(this) && !CallMonitor.overlayWasDismissed()) {
