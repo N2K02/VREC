@@ -85,6 +85,31 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
 
+    @Test fun manualStartUsesConfirmedShellAndNeverLegacyFacade() {
+        val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        val section = monitor.substringAfter("private fun requestManualSegment")
+            .substringBefore("@Synchronized\\n    fun manualStop")
+        assertTrue(section.contains("startCurrentCellularCall(app)"))
+        assertTrue(section.contains("if (result.isSuccess)"))
+        assertFalse(section.contains("RecordingService.start("))
+        assertTrue(section.contains("candidates.singleOrNull()"))
+    }
+
+    @Test fun shellManualRestartWakesUiAndDoesNotAutoRestart() {
+        val shell = source("shellserver/src/com/vrec/app/shell/Main.java")
+        val command = shell.substringAfter("if (command == COMMAND_START)")
+            .substringBefore("if (command == COMMAND_SET_TRACKING)")
+        assertTrue(command.contains("userStoppedCapture = false"))
+        assertTrue(command.contains("wake(ACTION_CALL_STARTED"))
+        assertTrue(command.contains("activeRecording == null"))
+    }
+
+    @Test fun quitCancelsWifiRecoveryAndSerializesRecovery() {
+        val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
+        assertTrue(lifecycle.contains("recoveryMutex.withLock"))
+        assertTrue(lifecycle.contains("wifiRecoveryJobs.forEach { it.cancel() }"))
+    }
+
     @Test fun shellLifecycleFeedsLegacyUiAndControlsFailClosed() {
         val service = source("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
         assertTrue(service.contains("combine(AdbFallbackNotice.enhancedActive"))
