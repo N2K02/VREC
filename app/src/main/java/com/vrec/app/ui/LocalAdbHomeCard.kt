@@ -93,7 +93,8 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         // Any actual authorization failure latches until the user presses Retry.
         while (true) {
             // UI status is StateFlow-driven; this slower check only discovers external
-            // TCP/5555 changes that Android does not expose through a callback.\n            delay(if (ExperimentalCaptureDaemon.ready.value) 120_000L else 30_000L)
+            // TCP/5555 changes that Android does not expose through a callback.
+            delay(if (ExperimentalCaptureDaemon.ready.value) 120_000L else 30_000L)
             recordingOn = Prefs.recordingEnabled(context)
             onWifi = AdbSelfRecovery.onWifi(context)
             // Discovery only helps on Wi-Fi while the helper is down; don't
