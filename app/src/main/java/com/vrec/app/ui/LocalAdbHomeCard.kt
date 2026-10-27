@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VrecAccessibilityService
+import com.vrec.app.experimental.adb.AdbOnboardingPolicy
 import com.vrec.app.experimental.adb.AdbBadgePolicy
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.experimental.adb.AdbSelfRecovery
@@ -88,6 +89,16 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
 
     val healthy = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
     val verified = adbState.connected && adbState.shellUid == 2000
+    val onboarding = AdbOnboardingPolicy.next(AdbOnboardingPolicy.Signals(
+        helperHealthy = healthy,
+        tcpListening = adbState.tcpPortOpen,
+        shellUid = if (verified) adbState.shellUid else null,
+        paired = ExperimentalRecording.wirelessWasPaired(context),
+        pairingPortFound = wireless.pairingPort != null,
+        wirelessPortFound = wireless.connectPort != null,
+        tcpApproved = com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context),
+        awaitingManualRetry = ExperimentalRecording.awaitingManualRetry,
+    ))
     val badge = AdbBadgePolicy.resolve(
         AdbBadgePolicy.Signals(
             busy = busy || adbState.busy,
@@ -187,7 +198,8 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             }
             Text(
                 when {
-                    healthy -> "Recording helper ready — nothing to set up"
+                    onboarding == AdbOnboardingPolicy.Step.READY -> "Recording helper ready — nothing to set up"
+                    onboarding == AdbOnboardingPolicy.Step.SWITCH_TO_TCP -> "UID 2000 verified — switching to approved TCP/5555"
                     verified -> "Android shell UID 2000 verified — preparing helper"
                     busy || adbState.busy -> "Checking ADB authorization…"
                     wireless.pairingPort != null -> "Wireless pairing found — enter Android's six-digit code"
