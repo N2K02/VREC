@@ -1,6 +1,7 @@
 package com.vrec.app.recording
 
 import org.junit.Assert.*
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import org.junit.Test
 
 class ShellRecordingLifecycleTest {
@@ -88,6 +89,21 @@ class ShellRecordingLifecycleTest {
         assertTrue(lifecycle.isActive())
         assertTrue(lifecycle.stoppedByUser())
         assertFalse(lifecycle.started(second))
+    }
+
+    @Test fun processRestartSnapshotRehydratesAndResumesWithoutStaleWakes() {
+        val lifecycle = ShellRecordingLifecycle() // fresh Android process
+        val snapshot = ExperimentalCaptureDaemon.parseCaptureSnapshot("RECORDING vrec_rec_100.dat")
+        val file = (snapshot as ExperimentalCaptureDaemon.CaptureSnapshot.Recording).file
+        assertTrue(lifecycle.started(file))
+        assertFalse(lifecycle.started(file)) // duplicate wake from helper
+        assertTrue(lifecycle.pausedByUser())
+        assertFalse(lifecycle.started(file)) // delayed old wake
+        assertTrue(lifecycle.started(second)) // new resumed shell file
+        assertFalse(lifecycle.ended(file)) // delayed previous END
+        assertTrue(lifecycle.isActive())
+        assertTrue(lifecycle.ended(second))
+        assertFalse(lifecycle.isActive())
     }
 
     @Test fun subsequentCallWorks() {
