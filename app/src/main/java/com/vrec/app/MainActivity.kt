@@ -115,7 +115,6 @@ import com.vrec.app.update.UpdateScreen
 private enum class Screen { HOME, RECORDINGS, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
-    private var adbRecoveryJob: kotlinx.coroutines.Job? = null
 
     companion object {
         const val ACTION_OPEN_ADB_SETUP = "com.vrec.app.action.OPEN_ADB_SETUP"
@@ -148,20 +147,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         LiveUpdater.onResume(this)
-        adbRecoveryJob?.cancel()
-        adbRecoveryJob = lifecycleScope.launch {
-            while (isActive) {
-                runCatching { AdbHelperAutoRecovery.check(applicationContext) }
-                    .onFailure { Log.w("ADB helper recovery failed", it) }
-                delay(30_000L)
-            }
-        }
-    }
-
-    override fun onPause() {
-        adbRecoveryJob?.cancel()
-        adbRecoveryJob = null
-        super.onPause()
+        // AdbLifecycle owns recovery; do not launch a competing 30-second loop.
     }
 }
 
