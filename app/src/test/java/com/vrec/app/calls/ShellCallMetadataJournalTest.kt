@@ -6,12 +6,12 @@ import org.junit.Test
 
 class ShellCallMetadataJournalTest {
     @Test fun matchesCloseShellAndTelecomStarts() {
-        assertTrue(ShellCallMetadataJournal.matches(100_000L, 108_000L, null, "com.whatsapp"))
+        assertTrue(ShellCallMetadataJournal.matches(100_000L, 108_000L, "com.whatsapp", "com.whatsapp"))
     }
 
     @Test fun rejectsOldOrFutureCallMetadata() {
-        assertFalse(ShellCallMetadataJournal.matches(100_000L, 195_000L, null, "com.whatsapp"))
-        assertFalse(ShellCallMetadataJournal.matches(200_000L, 100_000L, null, "com.whatsapp"))
+        assertFalse(ShellCallMetadataJournal.matches(100_000L, 195_000L, "com.whatsapp", "com.whatsapp"))
+        assertFalse(ShellCallMetadataJournal.matches(200_000L, 100_000L, "com.whatsapp", "com.whatsapp"))
     }
 
     @Test fun rejectsDifferentVoipApp() {
