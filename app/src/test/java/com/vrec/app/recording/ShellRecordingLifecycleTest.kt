@@ -33,6 +33,15 @@ class ShellRecordingLifecycleTest {
         assertFalse(lifecycle.ended(first))
     }
 
+    @Test fun unrelatedEndCannotPoisonFutureRecordingIdentity() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertFalse(lifecycle.ended(second))
+        assertTrue(lifecycle.ended(first))
+        assertTrue(lifecycle.started(second))
+        assertTrue(lifecycle.isActive())
+    }
+
     @Test fun invalidFileRejected() {
         val lifecycle = ShellRecordingLifecycle()
         assertFalse(lifecycle.started("../vrec_rec_100.dat"))
