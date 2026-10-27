@@ -26,6 +26,8 @@ object AdbFallbackNotice {
     val active = MutableStateFlow(false)
     val handoffInProgress = MutableStateFlow(false)
     val enhancedActive = MutableStateFlow(false)
+    val enhancedPaused = MutableStateFlow(false)
+    private var currentShellFile: String = ""
     private val shellLifecycle = ShellRecordingLifecycle()
 
     /** Reserve before starting the standard recorder to prevent concurrent daemon arming. */
@@ -49,6 +51,8 @@ object AdbFallbackNotice {
     fun shellRecordingStarted(context: Context, file: String) {
         if (!shellLifecycle.started(file)) return
         enhancedActive.value = true
+        enhancedPaused.value = false
+        currentShellFile = file
         if (Prefs.showOverlay(context) && !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
             runCatching {
                 context.startService(Intent(context, OverlayControlService::class.java)
@@ -72,6 +76,8 @@ object AdbFallbackNotice {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .setOngoing(true)
+            .addAction(0, "Pause", controlIntent(context, 'P', 901))
+            .addAction(0, "Stop", controlIntent(context, 'S', 902))
             .setOnlyAlertOnce(true)
             .build()
         runCatching { manager.notify(NOTIFICATION_ID, notification) }
@@ -81,6 +87,40 @@ object AdbFallbackNotice {
     fun shellRecordingEnded(context: Context, file: String) {
         if (!shellLifecycle.ended(file)) return
         enhancedActive.value = false
+        enhancedPaused.value = false
+        currentShellFile = ""
+        dismiss(context)
+        runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
+    }
+
+    private fun controlIntent(context: Context, action: Char, requestCode: Int): PendingIntent =
+        PendingIntent.getBroadcast(context, requestCode,
+            Intent(context, EnhancedCaptureControlReceiver::class.java)
+                .setAction("com.vrec.app.SHELL_CONTROL")
+                .putExtra("control", action.toString()),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    fun setEnhancedPaused(context: Context, paused: Boolean) {
+        enhancedPaused.value = paused
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val notice = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(if (paused) "VRec · Recording paused" else "VRec · Shell recording")
+            .setContentText(if (paused) "Resume or stop enhanced capture" else "Enhanced call audio capture active")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(0, if (paused) "Resume" else "Pause",
+                controlIntent(context, if (paused) 'R' else 'P', 901))
+            .addAction(0, "Stop", controlIntent(context, 'S', 902))
+            .build()
+        if (Build.VERSION.SDK_INT < 33 ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+            manager.notify(NOTIFICATION_ID, notice)
+    }
+
+    fun shellStoppedByUser(context: Context) {
+        enhancedActive.value = false
+        enhancedPaused.value = false
         dismiss(context)
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
     }
