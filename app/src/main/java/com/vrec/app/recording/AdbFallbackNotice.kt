@@ -134,6 +134,9 @@ object AdbFallbackNotice {
     /** Paused captures have no active file, but still expose Resume and Stop. */
     fun reconcileAuthenticatedPaused(context: Context) {
         if (!enhancedActive.value) enhancedActive.value = true
+        // No local file identity survives process death. This flag is set only
+        // after an authenticated PAUSED reply from the helper.
+        enhancedPaused.value = true
         setEnhancedPaused(context, true)
     }
 
