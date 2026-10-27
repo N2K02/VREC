@@ -122,6 +122,21 @@ object AdbFallbackNotice {
             manager.notify(NOTIFICATION_ID, notice)
     }
 
+    /** Rebuild Android's transient UI after a process restart. */
+    fun reconcileAuthenticatedRecording(context: Context, file: String) {
+        // A duplicate STARTED is harmless; it must not recreate the overlay.
+        shellRecordingStarted(context, file)
+        if (shellLifecycle.isActive() && enhancedPaused.value) {
+            setEnhancedPaused(context, false)
+        }
+    }
+
+    /** Paused captures have no active file, but still expose Resume and Stop. */
+    fun reconcileAuthenticatedPaused(context: Context) {
+        if (!enhancedActive.value) enhancedActive.value = true
+        setEnhancedPaused(context, true)
+    }
+
     /**
      * Reconcile only an authenticated idle reply. Network failures and
      * unavailable helpers must never be interpreted as a stopped recording.
