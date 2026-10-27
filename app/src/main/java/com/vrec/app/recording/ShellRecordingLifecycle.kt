@@ -46,6 +46,7 @@ internal class ShellRecordingLifecycle {
 
     /** A confirmed user stop ends the current generation even if END is delayed. */
     @Synchronized fun stoppedByUser(): Boolean {
+        recentlyEnded = false
         val file = current ?: return false
         ended.add(identity(file))
         while (ended.size > 64) ended.remove(ended.first())
