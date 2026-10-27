@@ -424,18 +424,23 @@ object CallMonitor {
     @Synchronized
     fun userStop(context: Context) {
         if (!AdbFallbackNotice.enhancedActive.value) return
-        val id = recordingId
-        if (id != null) {
-            suppressed.add(id)
-            recordingId = null
-            if (id == "manual") sessions.remove(id)
-        } else {
-            Log.w("User stopped a recorder with no tracked call session")
-        }
-        Log.i("User stopped recording; an explicit Record is required to restart")
+        val app = context.applicationContext
         modeScope.launch {
-            val result = ExperimentalCaptureDaemon.captureControl(context.applicationContext, 'S')
-            if (result == "STOPPED") AdbFallbackNotice.shellStoppedByUser(context.applicationContext)
+            val result = ExperimentalCaptureDaemon.captureControl(app, 'S')
+            if (result == "STOPPED") {
+                synchronized(this@CallMonitor) {
+                    val id = recordingId
+                    if (id != null) {
+                        suppressed.add(id)
+                        recordingId = null
+                        if (id == "manual") sessions.remove(id)
+                    }
+                }
+                AdbFallbackNotice.shellStoppedByUser(app)
+                Log.i("User stopped shell recording")
+            } else {
+                Log.w("Shell recording stop was not confirmed")
+            }
         }
     }
 
