@@ -29,7 +29,7 @@ object ShellCallMetadataJournal {
         val filtered = (0 until entries.length()).map { entries.getJSONObject(it) }
             .filter { now - it.optLong("startedAt") in 0..RETENTION_MS && it.optString("key") != key }
         val result = JSONArray()
-        filtered.takeLast(100).forEach(result::put)
+        filtered.takeLast(100).forEach { result.put(it) }
         result.put(JSONObject().put("key", key).put("startedAt", startedAt)
             .put("appPackage", appPackage ?: "").put("name", name ?: "")
             .put("number", number ?: "").put("numberSource", numberSource ?: ""))
