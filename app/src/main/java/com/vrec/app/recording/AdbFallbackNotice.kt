@@ -97,7 +97,11 @@ object AdbFallbackNotice {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     fun setEnhancedPaused(context: Context, paused: Boolean) {
-        if (!shellLifecycle.isActive()) return
+        if (paused) {
+            if (!shellLifecycle.pausedByUser() && !enhancedPaused.value) return
+        } else if (!enhancedActive.value) {
+            return
+        }
         enhancedPaused.value = paused
         val manager = context.getSystemService(NotificationManager::class.java)
         val notice = NotificationCompat.Builder(context, CHANNEL)
@@ -129,7 +133,7 @@ object AdbFallbackNotice {
     }
 
     fun shellStoppedByUser(context: Context) {
-        if (!shellLifecycle.stoppedByUser()) return
+        if (!shellLifecycle.stoppedByUser() && !enhancedPaused.value) return
         enhancedActive.value = false
         enhancedPaused.value = false
         dismiss(context)
