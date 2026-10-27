@@ -83,51 +83,9 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         onWifi = AdbSelfRecovery.onWifi(context)
         recordingOn = Prefs.recordingEnabled(context)
     }
-    // Automatic first-open detection. No manual transport picker or repeated
-    // background retries after a user-visible authorization failure.
-    LaunchedEffect(Unit) {
-        LocalAdbMiddleware.setup(context, userInitiated = false)
-        if (!ExperimentalRecording.tcpPortListening()) LocalWirelessAdb.start(context)
-        // Passive wait only: don't solicit a new ADB authorization while no host
-        // exists. Once a trusted USB host enables TCP/5555, continue automatically.
-        // Any actual authorization failure latches until the user presses Retry.
-        while (true) {
-            // UI status is StateFlow-driven; this slower check only discovers external
-            // TCP/5555 changes that Android does not expose through a callback.
-            delay(if (ExperimentalCaptureDaemon.ready.value) 120_000L else 30_000L)
-            recordingOn = Prefs.recordingEnabled(context)
-            onWifi = AdbSelfRecovery.onWifi(context)
-            // Discovery only helps on Wi-Fi while the helper is down; don't
-            // keep restarting it otherwise.
-            val helperUp = ExperimentalCaptureDaemon.ready.value &&
-                AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING
-            if (helperUp && LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.stop(context)
-            if (!helperUp && onWifi &&
-                !ExperimentalRecording.tcpPortListening() &&
-                !ExperimentalRecording.status.value.connected &&
-                !LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.start(context)
-            if (ExperimentalRecording.tcpPortListening() &&
-                LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.stop(context)
-            if (LocalAdbMiddleware.needsUsbBootstrap.value &&
-                !ExperimentalRecording.awaitingManualRetry &&
-                !LocalAdbMiddleware.busy.value &&
-                ExperimentalRecording.tcpPortListening()) {
-                LocalAdbMiddleware.setup(context, userInitiated = false)
-            }
-        }
-    }
-    // Observe helper readiness immediately rather than waiting for the fallback timer.
-    LaunchedEffect(Unit) {
-        combine(ExperimentalCaptureDaemon.ready, AdbPrivilegedApiHelper.state,
-            ExperimentalRecording.status) { ready, state, adb ->
-            Triple(ready, state, adb.connected)
-        }.distinctUntilChanged().collect { (ready, state, connected) ->
-            if (ready && state == AdbPrivilegedApiHelper.State.RUNNING &&
-                LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.stop(context)
-            if (connected && LocalWirelessAdb.status.value.scanning)
-                LocalWirelessAdb.stop(context)
-        }
-    }
+    // Home renders shared state; background recovery owns connection monitoring.
+    // A setup attempt is explicit, via the user action below. Navigation between
+    // screens must never initiate ADB operations or wireless discovery.
     LaunchedEffect(needsUsbBootstrap, wireless.connectPort, wireless.pairingPort) {
         instructionsExpanded = needsUsbBootstrap &&
             wireless.connectPort == null && wireless.pairingPort == null
