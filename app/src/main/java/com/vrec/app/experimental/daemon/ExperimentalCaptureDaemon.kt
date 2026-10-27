@@ -146,9 +146,7 @@ object ExperimentalCaptureDaemon {
 
     private fun shouldArmForNextCall(context: Context): Boolean =
         Prefs.recordingEnabled(context) &&
-            !AdbFallbackNotice.active.value &&
-            !AdbFallbackNotice.handoffInProgress.value &&
-            RecordingService.state.value is RecordingService.State.Idle
+            true
 
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
@@ -226,12 +224,7 @@ object ExperimentalCaptureDaemon {
         modeMutex.withLock {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
-            val allowed = enabled && Prefs.recordingEnabled(context) &&
-                true &&
-                if (forVerifiedHandoff)
-                    AdbFallbackNotice.handoffInProgress.value &&
-                        RecordingService.state.value is RecordingService.State.Idle
-                else shouldArmForNextCall(context)
+            val allowed = enabled && shouldArmForNextCall(context)
             val verified = runCatching {
                 val waitForAnswer = allowed && requireOutgoingAnswer(context)
                 open(context, 'E', byteArrayOf(
@@ -366,9 +359,7 @@ object ExperimentalCaptureDaemon {
      */
     suspend fun canHandoffCurrentCellularCall(context: Context): Boolean =
         withContext(Dispatchers.IO) {
-            if (!Prefs.recordingEnabled(context) ||
-                false
-            ) return@withContext false
+            if (!Prefs.recordingEnabled(context)) return@withContext false
             runCatching {
                 open(context, 'W').use { socket ->
                     val line = socket.getInputStream().bufferedReader().readLine().orEmpty()
@@ -389,7 +380,6 @@ object ExperimentalCaptureDaemon {
     suspend fun confirmOutgoingAnswered(context: Context): Boolean =
         withContext(Dispatchers.IO) {
             if (!Prefs.recordingEnabled(context) ||
-                false ||
                 !requireOutgoingAnswer(context)) return@withContext false
             runCatching {
                 open(context, 'C').use { socket ->
@@ -402,8 +392,7 @@ object ExperimentalCaptureDaemon {
     suspend fun startCurrentCellularCall(context: Context): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
-                check(Prefs.recordingEnabled(context) &&
-                    true) {
+                check(Prefs.recordingEnabled(context)) {
                     "Recording was disabled before ADB handoff."
                 }
                 open(context, 'S').use { socket ->
@@ -424,7 +413,7 @@ object ExperimentalCaptureDaemon {
             var failures = 0
             val waiting = pending(context)
             if (waiting.isEmpty()) {
-                com.vrec.app.Log.i("Capture diagnostic: shell import found no finished recordings; check whether the helper captured and finalized the call")
+                // No completed recordings is normal during periodic collection.
             } else {
                 com.vrec.app.Log.i("Capture diagnostic: shell import found " + waiting.size + " pending recording(s)")
             }
