@@ -17,7 +17,10 @@ object ShellCallMetadataJournal {
     internal const val WINDOW_MS = 90_000L
     internal fun matches(startedAt: Long, observedAt: Long, recordedPackage: String?, candidatePackage: String?): Boolean =
         kotlin.math.abs(observedAt - startedAt) <= WINDOW_MS &&
-            (recordedPackage.isNullOrBlank() || recordedPackage == candidatePackage)
+            // Never attach another application's caller identity when the
+            // recording has no verified VoIP package. A unique timestamp
+            // alone is not sufficient during call waiting.
+            (!recordedPackage.isNullOrBlank() && recordedPackage == candidatePackage)
     private const val RETENTION_MS = 48L * 60 * 60 * 1000
 
     @Synchronized fun remember(context: Context, key: String, startedAt: Long,
