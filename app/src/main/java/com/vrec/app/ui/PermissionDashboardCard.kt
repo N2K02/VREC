@@ -121,9 +121,21 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
             scope.launch {
                 working = true
                 val result = com.vrec.app.experimental.adb.AdbPermissionBootstrap.grantEligible(context)
+                val stillDenied = runtime != null &&
+                    context.checkSelfPermission(runtime) != PackageManager.PERMISSION_GRANTED
                 actionMessage = if (result.unavailable.isEmpty()) "ADB access checks completed."
                     else result.unavailable.joinToString("; ")
                 working = false
+                // READ_CALL_LOG is restricted on some Android installers. ADB
+                // shell UID 2000 does not override installer allowlisting.
+                // Offer Android's supported runtime request as a fallback.
+                if (stillDenied) {
+                    actionMessage = "Android refused the ADB grant. Requesting $label directly."
+                    launcher.launch(runtime!!)
+                } else if (label == "Advanced detection" &&
+                    !CallDetectionAccess.isGranted(context)) {
+                    actionMessage = "Android refused advanced Telecom access. Check app permissions and ADB authorization."
+                }
                 tick++
             }
         } else if (runtime != null) {
