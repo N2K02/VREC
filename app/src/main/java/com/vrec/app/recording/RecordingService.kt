@@ -370,7 +370,6 @@ class RecordingService : Service() {
                 if (!safeToSwitch || handoffRequested || finalizing || stopPending ||
                     !adbFallback || _state.value !is State.Recording ||
                     !Prefs.recordingEnabled(this@RecordingService) ||
-                    false ||
                     !CallMonitor.canHandoffToAdb()) {
                     if (!safeToSwitch) Log.i(
                         "ADB helper has not verified the live cellular call; keeping standard audio")
