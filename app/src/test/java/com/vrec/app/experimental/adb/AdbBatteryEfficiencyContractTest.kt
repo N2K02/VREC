@@ -85,11 +85,24 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
 
+    @Test fun processRestartRecoversAuthenticatedRecordingIdentityAndPausedState() {
+        val helper = source("shellserver/src/com/vrec/app/shell/Main.java")
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
+        val notice = source("app/src/main/java/com/vrec/app/recording/AdbFallbackNotice.kt")
+        assertTrue(helper.contains("\"RECORDING \" + activeRecording.name"))
+        assertTrue(daemon.contains("fun parseCaptureSnapshot(reply: String)"))
+        assertTrue(daemon.contains("file.matches(Regex("))
+        assertTrue(lifecycle.contains("AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)"))
+        assertTrue(lifecycle.contains("AdbFallbackNotice.reconcileAuthenticatedPaused(app)"))
+        assertTrue(notice.contains("fun reconcileAuthenticatedPaused(context: Context)"))
+    }
+
     @Test fun activeCaptureGetsPeriodicReconciliationEvenWhenHelperIsHealthy() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         assertTrue(lifecycle.contains("AdbFallbackNotice.enhancedActive.value ||"))
-        assertTrue(lifecycle.contains("captureControl(app, 'I')"))
-        assertTrue(lifecycle.contains("\"IDLE\" -> AdbFallbackNotice.reconcileAuthenticatedIdle(app)"))
+        assertTrue(lifecycle.contains("ExperimentalCaptureDaemon.captureSnapshot(app)"))
+        assertTrue(lifecycle.contains("AdbFallbackNotice.reconcileAuthenticatedIdle(app)"))
     }
 
     @Test fun resumeWaitsForAuthenticatedStartedWake() {
@@ -101,9 +114,9 @@ class AdbBatteryEfficiencyContractTest {
     @Test fun shellStateReconciliationRequiresAuthenticatedIdle() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         val notice = source("app/src/main/java/com/vrec/app/recording/AdbFallbackNotice.kt")
-        assertTrue(lifecycle.contains("if (healthy && AdbFallbackNotice.enhancedActive.value)"))
-        assertTrue(lifecycle.contains("captureControl(app, 'I')"))
-        assertTrue(lifecycle.contains("\"IDLE\" -> AdbFallbackNotice.reconcileAuthenticatedIdle(app)"))
+        assertTrue(lifecycle.contains("if (healthy && !quitting)"))
+        assertTrue(lifecycle.contains("ExperimentalCaptureDaemon.captureSnapshot(app)"))
+        assertTrue(lifecycle.contains("AdbFallbackNotice.reconcileAuthenticatedIdle(app)"))
         assertTrue(notice.contains("fun reconcileAuthenticatedIdle(context: Context)"))
     }
 
