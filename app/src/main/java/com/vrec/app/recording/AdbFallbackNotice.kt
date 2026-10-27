@@ -46,8 +46,9 @@ object AdbFallbackNotice {
     }
 
     /** Only a shell-authenticated STARTED event with a real recording file may show capture UI. */
-    fun shellRecordingStarted(context: Context, file: String) {
-        if (!shellLifecycle.started(file)) return
+    fun shellRecordingStarted(context: Context, file: String, reconciled: Boolean = false) {
+        if (!(if (reconciled) shellLifecycle.reconcileRecording(file)
+                else shellLifecycle.started(file))) return
         enhancedActive.value = true
         enhancedPaused.value = false
         if (Prefs.showOverlay(context) && !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
@@ -125,7 +126,7 @@ object AdbFallbackNotice {
     /** Rebuild Android's transient UI after a process restart. */
     fun reconcileAuthenticatedRecording(context: Context, file: String) {
         // A duplicate STARTED is harmless; it must not recreate the overlay.
-        shellRecordingStarted(context, file)
+        shellRecordingStarted(context, file, reconciled = true)
         if (shellLifecycle.isActive() && enhancedPaused.value) {
             setEnhancedPaused(context, false)
         }
@@ -133,6 +134,7 @@ object AdbFallbackNotice {
 
     /** Paused captures have no active file, but still expose Resume and Stop. */
     fun reconcileAuthenticatedPaused(context: Context) {
+        shellLifecycle.reconcilePaused()
         if (!enhancedActive.value) enhancedActive.value = true
         // No local file identity survives process death. This flag is set only
         // after an authenticated PAUSED reply from the helper.
