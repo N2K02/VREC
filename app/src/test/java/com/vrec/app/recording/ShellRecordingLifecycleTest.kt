@@ -68,6 +68,19 @@ class ShellRecordingLifecycleTest {
         assertFalse(lifecycle.stoppedByUser())
     }
 
+    @Test fun pauseAllowsFreshResumeFileAndRejectsLateOldWake() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.pausedByUser())
+        assertFalse(lifecycle.isActive())
+        assertFalse(lifecycle.started(first))
+        assertTrue(lifecycle.started(second))
+        assertFalse(lifecycle.ended(first))
+        assertTrue(lifecycle.isActive())
+        assertTrue(lifecycle.stoppedByUser())
+        assertFalse(lifecycle.started(second))
+    }
+
     @Test fun subsequentCallWorks() {
         val lifecycle = ShellRecordingLifecycle()
         assertTrue(lifecycle.started(first))
