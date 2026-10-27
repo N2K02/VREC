@@ -1,6 +1,7 @@
 package com.vrec.app
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log as AndroidLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,9 @@ object Log {
     val lines: StateFlow<List<String>> = _lines
     private var context: Context? = null
     private var day = ""
+    private var lastInfo: String? = null
+    private var lastInfoAt = 0L
+    private const val DUPLICATE_INFO_WINDOW_MS = 30_000L
     private fun today() = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
     private fun time() = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
 
@@ -45,7 +49,14 @@ object Log {
         }
     }
 
+    @Synchronized
     fun i(message: String) {
+        // Routine health checks can repeat indefinitely. Suppress identical
+        // informational messages before Android logcat and disk persistence.
+        val now = SystemClock.elapsedRealtime()
+        if (message == lastInfo && now - lastInfoAt in 0 until DUPLICATE_INFO_WINDOW_MS) return
+        lastInfo = message
+        lastInfoAt = now
         AndroidLog.i(TAG, message)
         add(message)
     }
@@ -72,6 +83,8 @@ object Log {
     fun clear() {
         rollDay()
         _lines.value = emptyList()
+        lastInfo = null
+        lastInfoAt = 0L
         persist()
     }
 }
