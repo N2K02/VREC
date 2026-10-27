@@ -76,6 +76,8 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
             android:foregroundServiceType="dataSync" />
 
+        <receiver android:name=".recording.EnhancedCaptureControlReceiver" android:exported="false" />
+
         <!-- Optional floating Record/Pause/Stop and Close controls. -->
         <service
             android:name=".recording.OverlayControlService"
