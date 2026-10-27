@@ -111,10 +111,8 @@ object AdbTransport {
                 }
                 val mgr = manager(context)
                 if (mgr.isConnected) {
-                    Log.i(TAG, "connect: already connected")
                     return@runCatching
                 }
-                Log.i(TAG, "connect: $host:$port")
                 val ok = mgr.connect(host, port)
                 check(ok || mgr.isConnected) { "connect refused by adbd at $host:$port" }
                 Log.i(TAG, "connect: established")
