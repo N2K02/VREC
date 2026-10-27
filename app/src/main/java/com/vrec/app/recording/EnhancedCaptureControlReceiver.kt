@@ -7,6 +7,7 @@ import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import com.vrec.app.Log
 import com.vrec.app.calls.CallMonitor
 
@@ -20,7 +21,11 @@ class EnhancedCaptureControlReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val result = ExperimentalCaptureDaemon.captureControl(context.applicationContext, action)
+                // goAsync receivers have a limited execution window. Never
+                // leave a broadcast pending indefinitely on a stalled socket.
+                val result = withTimeout(8_000L) {
+                    ExperimentalCaptureDaemon.captureControl(context.applicationContext, action)
+                }
                 when (result) {
                     "PAUSED" -> AdbFallbackNotice.setEnhancedPaused(context, true)
                     "RECORDING" -> AdbFallbackNotice.setEnhancedPaused(context, false)
