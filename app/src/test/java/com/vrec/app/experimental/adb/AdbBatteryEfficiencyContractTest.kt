@@ -44,6 +44,14 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(service.contains("recoverStandardAfterAdbHandoffFailure"))
     }
 
+    @Test fun legacyFallbackStateAndHandoffAreGone() {
+        val service = source("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
+        assertFalse(service.contains("private var adbFallback"))
+        assertFalse(service.contains("EXTRA_ADB_FALLBACK"))
+        assertFalse(service.contains("forceStandardFallback: Boolean"))
+        assertFalse(service.contains("requestAdbHandoff(context"))
+    }
+
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
