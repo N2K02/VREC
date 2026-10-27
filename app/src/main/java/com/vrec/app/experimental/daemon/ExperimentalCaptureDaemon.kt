@@ -12,6 +12,7 @@ import com.vrec.app.recording.RecordingType
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.calls.CallDetectionAccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -428,11 +429,20 @@ object ExperimentalCaptureDaemon {
                     context, started, identity.appPackage)
                 val direction = if (caller != null) CallDirection.VOIP else identity.direction
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
-                if (dest.exists() && dest.length() > 100L) {
+                if (dest.exists() && dest.length() > 100L &&
+                    File(dest.parentFile, dest.name + ".json").exists()) {
+                    // A completed import already has audio AND metadata.
+                    // Preserve the shell original if a prior import crashed
+                    // after publishing audio but before metadata was written.
                     delete(context, name)
                     continue
                 }
                 val temp = File(dest.parentFile, dest.name + ".tmp")
+                // Never leave a stale partial import as a valid recording.
+                if (dest.exists() && !File(dest.parentFile, dest.name + ".json").exists()) {
+                    check(dest.delete()) { "Cannot remove incomplete previous import" }
+                }
+                temp.delete()
                 var packets = 0L
                 try {
                     open(context, 'F', nameBytes(name)).use { sock ->
@@ -501,6 +511,7 @@ object ExperimentalCaptureDaemon {
                     RecordingStore.notifySaved()
                     collected++
                 } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
                     // One bad or truncated shell file must not block later
                     // recordings in the list. Preserve the shell original;
                     // only temporary app-side output is discarded.
