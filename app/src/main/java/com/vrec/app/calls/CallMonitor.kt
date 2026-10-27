@@ -421,6 +421,22 @@ object CallMonitor {
             session.flowDirection.name)
     }
 
+    /** A confirmed user Stop must suppress automatic capture, including notification Stop. */
+    @Synchronized
+    fun onShellStopConfirmed(context: Context) {
+        val id = recordingId
+        if (id != null) {
+            suppressed.add(id)
+            recordingId = null
+            if (id == "manual") sessions.remove(id)
+        }
+        // The shell may have started autonomously, without a legacy session owner.
+        // Suppress every active session until its real call ends.
+        sessions.values.filter { it.active }.forEach { suppressed.add(it.id) }
+        AdbFallbackNotice.shellStoppedByUser(context.applicationContext)
+        if (hasLiveCall() && canRecordAgain()) showCallControls(context)
+    }
+
     /** A user Stop suppresses automatic restart for the remainder of the live call. */
     @Synchronized
     fun userStop(context: Context) {
@@ -429,15 +445,7 @@ object CallMonitor {
         modeScope.launch {
             val result = ExperimentalCaptureDaemon.captureControl(app, 'S')
             if (result == "STOPPED") {
-                synchronized(this@CallMonitor) {
-                    val id = recordingId
-                    if (id != null) {
-                        suppressed.add(id)
-                        recordingId = null
-                        if (id == "manual") sessions.remove(id)
-                    }
-                }
-                AdbFallbackNotice.shellStoppedByUser(app)
+                onShellStopConfirmed(app)
                 Log.i("User stopped shell recording")
             } else {
                 Log.w("Shell recording stop was not confirmed")
