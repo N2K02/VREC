@@ -524,30 +524,6 @@ object CallMonitor {
         Log.i("Switched active cellular call from standard to enhanced capture")
     }
 
-    /**
-     * Enhanced mid-call start failed after the standard file was finalized.
-     * Re-enter standard fallback only if that very call is still active.
-     * This is a new file, never a resumed MediaRecorder instance.
-     */
-    @Synchronized
-    fun recoverStandardAfterAdbHandoffFailure(context: Context) {
-        val activeCall = recordingId?.let(sessions::get)
-        if (!Prefs.recordingEnabled(context) ||
-            activeCall == null || !activeCall.active || activeCall.isVoip ||
-            RecordingService.state.value !is RecordingService.State.Idle) {
-            onRecordingFinalized(context)
-            return
-        }
-        Log.w("Enhanced handoff failed; starting a new standard call segment")
-        RecordingService.start(
-            context.applicationContext, activeCall.direction,
-            activeCall.name ?: activeCall.number, activeCall.number,
-            activeCall.connectedAt, activeCall.packageName, activeCall.accountId,
-            activeCall.numberSource, activeCall.flowDirection.name,
-            forceStandardFallback = true,
-        )
-    }
-
     @Synchronized
     fun canRecordAgain(): Boolean = recordingId == null && sessions.values.any {
         it.active && it.source != Source.MANUAL && it.id in suppressed
