@@ -22,8 +22,11 @@ internal class ShellRecordingLifecycle {
      * Retire the previous identity so delayed wakes cannot resurrect it.
      */
     @Synchronized fun reconcileRecording(file: String): Boolean {
-        if (!valid(file) || identity(file) in ended) return false
+        if (!valid(file)) return false
         if (current == file) return false
+        // A status snapshot is newer and more authoritative than a wake.
+        // A reordered END may have prematurely retired this very identity.
+        ended.remove(identity(file))
         current?.let { previous ->
             ended.add(identity(previous))
             while (ended.size > 64) ended.remove(ended.first())
