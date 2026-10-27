@@ -291,6 +291,32 @@ object ExperimentalCaptureDaemon {
         }
     }
 
+    /** Typed, authenticated snapshot for recovery after the Android process dies.
+     * Only the shell can assert a recording filename. Malformed replies fail
+     * closed and never create an apparent recording.
+     */
+    sealed class CaptureSnapshot {
+        data class Recording(val file: String) : CaptureSnapshot()
+        object Paused : CaptureSnapshot()
+        object Idle : CaptureSnapshot()
+        object Unavailable : CaptureSnapshot()
+    }
+
+    internal fun parseCaptureSnapshot(reply: String): CaptureSnapshot = when {
+        reply == "IDLE" -> CaptureSnapshot.Idle
+        reply == "PAUSED" -> CaptureSnapshot.Paused
+        reply.startsWith("RECORDING ") -> {
+            val file = reply.removePrefix("RECORDING ")
+            if (file.matches(Regex("vrec_rec_[A-Za-z0-9_.-]+[.]dat")))
+                CaptureSnapshot.Recording(file)
+            else CaptureSnapshot.Unavailable
+        }
+        else -> CaptureSnapshot.Unavailable
+    }
+
+    suspend fun captureSnapshot(context: Context): CaptureSnapshot =
+        parseCaptureSnapshot(captureControl(context, 'I'))
+
     enum class QuitResult { STOPPED, BUSY, NOT_RUNNING, FAILED }
 
     /**
