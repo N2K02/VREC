@@ -68,7 +68,33 @@ object AdbHelperAutoRecovery {
         if (AdbLifecycle.quitting) return Outcome.SKIPPED
         if (AdbPrivilegedApiHelper.reconnect(app)) {
             ExperimentalCaptureDaemon.collect(app)
-            tcpBackoff.onSuccess(); wirelessBackoff.onSuccess()
+            // The shell helper survives an ADB transport detach. Restore the
+            // authorized transport opportunistically without restarting capture.
+            val saved = ExperimentalRecording.recoveryAuthorization(app)
+            val detached = !ExperimentalRecording.status.value.connected ||
+                !AdbTransport.isConnected
+            if (detached && saved.allowed && saved.tcpVerified &&
+                Prefs.recordingEnabled(app) &&
+                ExperimentalRecording.method(app) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                !ExperimentalRecording.awaitingManualRetry &&
+                !ExperimentalRecording.status.value.busy &&
+                ExperimentalRecording.tcpPortListening()) {
+                val now = SystemClock.elapsedRealtime()
+                if (tcpBackoff.allowed(now)) {
+                    val failure = reconnectTcp(app, automatic = true)
+                    if (failure == null) {
+                        tcpBackoff.onSuccess()
+                        record(Outcome.RESTORED_TCP, "ADB transport reattached; running helper preserved")
+                        return Outcome.RESTORED_TCP
+                    }
+                    if (AdbFailurePolicy.requiresManualRetry(failure)) {
+                        record(Outcome.MANUAL_RETRY_REQUIRED, "ADB transport needs user authorization")
+                        return Outcome.MANUAL_RETRY_REQUIRED
+                    }
+                    tcpBackoff.onFailure(SystemClock.elapsedRealtime())
+                }
+            }
+            wirelessBackoff.onSuccess()
             lastOutcome.value = Outcome.HELPER_RUNNING
             return Outcome.HELPER_RUNNING
         }
