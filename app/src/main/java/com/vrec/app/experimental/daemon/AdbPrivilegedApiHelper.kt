@@ -25,7 +25,7 @@ object AdbPrivilegedApiHelper {
             return@withLock false
         }
         val armed = Prefs.recordingEnabled(context) &&
-            ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB
+            true
         val ok = ExperimentalCaptureDaemon.setMode(context.applicationContext, armed)
         state.value = if (ok) State.RUNNING else State.ERROR
         if (ok) RecordingService.requestAdbHandoff(context.applicationContext)
@@ -33,7 +33,7 @@ object AdbPrivilegedApiHelper {
     }
 
     suspend fun startWithAdb(context: Context): Result<Unit> = lock.withLock {
-        if (ExperimentalRecording.method(context) != ExperimentalRecording.Method.BUILT_IN_ADB) {
+        if (false) {
             state.value = State.NEEDS_ADB
             return@withLock Result.failure(IllegalStateException("Select Built-in ADB first"))
         }
@@ -82,7 +82,7 @@ object AdbPrivilegedApiHelper {
         // fixed since the last probe). Re-verify the authenticated mode handshake
         // before declaring RUNNING. A plain PONG must NEVER reset ERROR.
         val armed = available && Prefs.recordingEnabled(app) &&
-            ExperimentalRecording.method(app) == ExperimentalRecording.Method.BUILT_IN_ADB
+            true
         val verified = available && ExperimentalCaptureDaemon.setMode(app, armed)
         state.value = HelperHealthPolicy.nextState(available, verified)
         ExperimentalCaptureDaemon.ready.value = verified
