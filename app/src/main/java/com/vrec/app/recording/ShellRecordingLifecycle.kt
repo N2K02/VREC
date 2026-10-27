@@ -18,9 +18,12 @@ internal class ShellRecordingLifecycle {
 
     @Synchronized fun ended(file: String): Boolean {
         if (!valid(file)) return false
+        // A stale END for another recording must not poison a future
+        // STARTED event for that identity while this capture is active.
+        if (current != null && identity(current!!) != identity(file)) return false
         ended.add(identity(file))
         while (ended.size > 64) ended.remove(ended.first())
-        if (current == null || identity(current!!) != identity(file)) return false
+        if (current == null) return false
         current = null
         return true
     }
