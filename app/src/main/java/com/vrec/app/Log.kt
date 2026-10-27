@@ -18,9 +18,13 @@ object Log {
     val lines: StateFlow<List<String>> = _lines
     private var context: Context? = null
     private var day = ""
-    private var lastInfo: String? = null
-    private var lastInfoAt = 0L
+    private val lastInfoTimes = LinkedHashMap<String, Long>()
+    private const val MAX_DEDUP_KEYS = 128
     private const val DUPLICATE_INFO_WINDOW_MS = 30_000L
+    private fun redact(message: String): String = message
+        .replace(Regex("(?<![A-Za-z0-9])\\+?[0-9][0-9 ()-]{6,}[0-9]"), "[redacted-number]")
+        .replace(Regex("(?i)(token|password|secret|authorization|auth_key)=([^\\s,;]+)"), "$1=[redacted]")
+
     private fun today() = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
     private fun time() = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
 
@@ -54,16 +58,19 @@ object Log {
         // Routine health checks can repeat indefinitely. Suppress identical
         // informational messages before Android logcat and disk persistence.
         val now = SystemClock.elapsedRealtime()
-        if (message == lastInfo && now - lastInfoAt in 0 until DUPLICATE_INFO_WINDOW_MS) return
-        lastInfo = message
-        lastInfoAt = now
-        AndroidLog.i(TAG, message)
-        add(message)
+        val safe = redact(message)
+        val previous = lastInfoTimes[safe]
+        if (previous != null && now - previous in 0 until DUPLICATE_INFO_WINDOW_MS) return
+        lastInfoTimes[safe] = now
+        if (lastInfoTimes.size > MAX_DEDUP_KEYS) lastInfoTimes.remove(lastInfoTimes.keys.first())
+        AndroidLog.i(TAG, safe)
+        add(safe)
     }
 
     fun w(message: String, error: Throwable? = null) {
-        AndroidLog.w(TAG, message, error)
-        add("⚠ $message" + (error?.let { " (${it.javaClass.simpleName})" } ?: ""))
+        val safe = redact(message)
+        AndroidLog.w(TAG, safe)
+        add("⚠ $safe" + (error?.let { " (${it.javaClass.simpleName})" } ?: ""))
     }
 
     @Synchronized
@@ -83,8 +90,7 @@ object Log {
     fun clear() {
         rollDay()
         _lines.value = emptyList()
-        lastInfo = null
-        lastInfoAt = 0L
+        lastInfoTimes.clear()
         persist()
     }
 }
