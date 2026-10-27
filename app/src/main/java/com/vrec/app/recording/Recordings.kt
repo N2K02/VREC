@@ -73,6 +73,13 @@ data class Recording(
  * Old sidecars and recordings without metadata remain readable.
  */
 object RecordingStore {
+    /** Notifies visible recording lists when a completed file is available. */
+    val revision = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
+    fun notifySaved() {
+        revision.value = revision.value + 1L
+    }
+
     private val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
     fun dir(context: Context): File =
