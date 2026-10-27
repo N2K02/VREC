@@ -60,7 +60,6 @@ internal class AdbIdentity private constructor(
 
             val loaded = tryLoad(keyFile, certFile)
             if (loaded != null) {
-                Log.i(TAG, "ADB identity: loaded existing keypair")
                 cached = loaded
                 return loaded
             }
