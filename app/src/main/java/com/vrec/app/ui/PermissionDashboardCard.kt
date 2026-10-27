@@ -213,7 +213,8 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                 }
             }
             if (count != permissions.size) {
-                Text(if (working) "Checking ADB grants…" else "Tap a red tile to request access.",
+                Text(if (working) "Checking ADB grants…" else
+                    "Tap any red ✕ permission badge to request access manually. VRec automatically tries supported grants when ADB shell UID 2000 connects; Android may still require your approval.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
