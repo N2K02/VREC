@@ -38,6 +38,6 @@ class RecordingsBottomNavigationContractTest {
         assertTrue(home.contains("RecordingMasterCard("))
         assertTrue(home.contains("Text(\"Recording dashboard\""))
         assertFalse(home.contains("Text(\"ADB is not ready · Review USB setup\""))
-        assertTrue(home.contains("LocalAdbHomeCard()"))
+        assertTrue(home.contains("com.vrec.app.ui.LocalAdbHomeCard("))
     }
 }
