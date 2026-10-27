@@ -6,6 +6,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.vrec.app.Log
+import com.vrec.app.Prefs
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +45,11 @@ object AdbLifecycle {
                 recover(app, "process start")
                 delay(45_000L)
                 while (isActive) {
-                    recover(app, "background check")
+                    if (Prefs.recordingEnabled(app) &&
+                        (!ExperimentalCaptureDaemon.ready.value ||
+                            AdbPrivilegedApiHelper.state.value != AdbPrivilegedApiHelper.State.RUNNING)) {
+                        recover(app, "background check")
+                    }
                     delay(120_000L)
                 }
             }
