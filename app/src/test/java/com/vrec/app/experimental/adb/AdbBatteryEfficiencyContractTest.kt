@@ -19,7 +19,7 @@ class AdbBatteryEfficiencyContractTest {
     @Test fun homeDoesNotPollEveryThreeSeconds() {
         val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertFalse(home.contains("delay(3_000L)"))
-        assertTrue(home.contains("120_000L else 30_000L"))
+        assertFalse(home.contains("LocalAdbMiddleware.setup(context, userInitiated = false)"))
     }
 
     @Test fun lifecycleSkipsHealthyHelperAndQuitStopsListeners() {
@@ -32,8 +32,8 @@ class AdbBatteryEfficiencyContractTest {
 
     @Test fun helperReadinessUsesReactiveState() {
         val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
-        assertTrue(home.contains("combine(ExperimentalCaptureDaemon.ready, AdbPrivilegedApiHelper.state"))
-        assertTrue(home.contains(".distinctUntilChanged().collect"))
+        assertTrue(home.contains("ExperimentalCaptureDaemon.ready.collectAsState()"))
+        assertTrue(home.contains("AdbPrivilegedApiHelper.state.collectAsState()"))
     }
 
     @Test fun microphoneEngineAndLegacyHandoffAreRemoved() {
