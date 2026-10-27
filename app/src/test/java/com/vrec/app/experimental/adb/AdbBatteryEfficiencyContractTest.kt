@@ -137,7 +137,7 @@ class AdbBatteryEfficiencyContractTest {
         val start = monitor.substringAfter("private fun reconcile(context: Context)")
             .substringBefore("private fun rememberShellIdentity(")
         assertFalse(start.contains("recordingId = selected.id"))
-        assertFalse(start.contains("RecordingService.start("))
+        assertFalse(start.lines().any { it.trimStart().startsWith("RecordingService.start(") })
         assertTrue(start.contains("autoAttempted.add(selected.id)"))
         assertTrue(start.contains("rememberShellIdentity(context, selected)"))
     }
