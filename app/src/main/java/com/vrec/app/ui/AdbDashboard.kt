@@ -127,7 +127,7 @@ fun AdbDashboard(
                 }
             }
         }
-        if (!recordingActive) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
                 onClick = {
                     note = null
@@ -138,7 +138,7 @@ fun AdbDashboard(
                         acting = false
                     } else onStart()
                 },
-                enabled = !busy && !healthy,
+                enabled = !busy && !recordingActive && !healthy,
                 modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Start") }
             Button(
@@ -149,7 +149,7 @@ fun AdbDashboard(
                         acting = false
                     }
                 },
-                enabled = !busy && healthy,
+                enabled = !busy && !recordingActive && healthy,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -168,10 +168,12 @@ fun AdbDashboard(
                         acting = false
                     }
                 },
-                enabled = !busy && healthy && canReconnect,
+                enabled = !busy && !recordingActive && healthy && canReconnect,
                 modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Restart") }
         }
+        if (recordingActive) Text("Helper controls are temporarily disabled during an active recording.",
+            style = MaterialTheme.typography.bodySmall)
         note?.let {
             Text(it, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
