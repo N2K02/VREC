@@ -20,7 +20,9 @@ class CaptureSnapshotTest {
 
     @Test fun malformedOrLegacyResponsesNeverClaimRecording() {
         listOf("RECORDING", "RECORDING ../bad.dat", "RECORDING vrec_rec_1.dat extra",
-            "RECORDING vrec_rec_1.mp3", "UNAVAILABLE", "").forEach { reply ->
+            "RECORDING vrec_rec_1.mp3",
+            "RECORDING vrec_rec_" + "a".repeat(200) + ".dat",
+            "UNAVAILABLE", "").forEach { reply ->
             assertTrue(reply, ExperimentalCaptureDaemon.parseCaptureSnapshot(reply) ===
                 ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable)
         }
