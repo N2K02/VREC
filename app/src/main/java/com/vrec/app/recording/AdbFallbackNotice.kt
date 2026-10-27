@@ -86,6 +86,7 @@ object AdbFallbackNotice {
 
     fun shellRecordingEnded(context: Context, file: String) {
         if (!shellLifecycle.ended(file)) return
+        if (enhancedPaused.value) return
         enhancedActive.value = false
         enhancedPaused.value = false
         currentShellFile = ""
