@@ -110,22 +110,20 @@ fun AdbDashboard(
                 }
                 androidx.compose.material3.HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Stat("Connection", when {
                         verified -> "Connected"
                         healthy -> "Detached"
                         else -> "Offline"
-                    }, Modifier.weight(1f), badge = true)
+                    }, Modifier.weight(1f))
                     Stat("Recording", when {
                         !recordingOn -> "Off"
                         !healthy -> "Waiting"
                         else -> "Armed"
-                    }, Modifier.weight(1f), badge = true)
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Stat("Recovery via", restore, Modifier.weight(1f), badge = true)
-                    Stat("Shell identity", if (verified || healthy) "UID 2000" else "Not verified",
-                        Modifier.weight(1f), badge = true)
+                    }, Modifier.weight(1f))
+                    Stat("Recovery", restore, Modifier.weight(1f))
+                    Stat("Shell UID", if (verified || healthy) "2000" else "Unknown",
+                        Modifier.weight(1f))
                 }
             }
         }
@@ -186,7 +184,7 @@ fun AdbDashboard(
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier, badge: Boolean = false) {
+private fun Stat(label: String, value: String, modifier: Modifier) {
     val accent = when (label) {
         "Connection" -> when (value) {
             "Connected" -> Color(0xFF43A66A)
@@ -198,25 +196,25 @@ private fun Stat(label: String, value: String, modifier: Modifier, badge: Boolea
             "Waiting" -> Color(0xFFE2B448)
             else -> Color(0xFF929AA5)
         }
-        "Recovery via" -> when (value) {
+        "Recovery" -> when (value) {
             "Wi-Fi" -> Color(0xFF43A66A)
             "Computer" -> Color(0xFF4BA6DD)
             "Automatic" -> Color(0xFFB27DDA)
             else -> Color(0xFF929AA5)
         }
-        else -> if (value == "UID 2000") Color(0xFFB27DDA) else Color(0xFFCF5454)
+        else -> if (value == "2000") Color(0xFFB27DDA) else Color(0xFFCF5454)
     }
-    Surface(modifier = modifier, shape = RoundedCornerShape(16.dp),
+    Surface(modifier = modifier, shape = RoundedCornerShape(12.dp),
         color = accent.copy(alpha = 0.13f),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.65f))) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+        Column(Modifier.padding(horizontal = 3.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium,
-                textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
-            Text(value, style = MaterialTheme.typography.bodyMedium,
+            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center, fontWeight = FontWeight.Bold,
-                color = accent)
+                color = accent, maxLines = 1)
         }
     }
 }
