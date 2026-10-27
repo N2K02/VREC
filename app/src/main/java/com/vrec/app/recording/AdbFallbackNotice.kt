@@ -108,6 +108,10 @@ object AdbFallbackNotice {
         }
         enhancedPaused.value = paused
         val manager = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
+            manager.createNotificationChannel(NotificationChannel(
+                CHANNEL, "ADB recording status", NotificationManager.IMPORTANCE_LOW))
+        }
         val notice = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(if (paused) "VRec · Recording paused" else "VRec · Shell recording")
