@@ -9,6 +9,11 @@ import com.vrec.app.Log
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 /**
  * Compatibility facade for the ADB-only recording architecture.
@@ -55,6 +60,21 @@ class RecordingService : Service() {
 
         private val _state = MutableStateFlow<State>(State.Idle)
         val state: StateFlow<State> = _state
+        private val observer = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+        init {
+            // Shell STARTED/PAUSED/ENDED events own capture status.
+            observer.launch {
+                combine(AdbFallbackNotice.enhancedActive,
+                    AdbFallbackNotice.enhancedPaused) { active, paused ->
+                    when {
+                        !active -> State.Idle
+                        paused -> State.Paused("ADB shell", null, false, 0L)
+                        else -> State.Recording("ADB shell", null, false, 0L)
+                    }
+                }.collect { _state.value = it }
+            }
+        }
         private val _level = MutableStateFlow(0)
         val level: StateFlow<Int> = _level
 
