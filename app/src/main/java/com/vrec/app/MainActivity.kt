@@ -412,15 +412,8 @@ private fun HomeScreen() {
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
     val scope = rememberCoroutineScope()
 
-    // Observe connection changes while Home is visible. This does not connect,
-    // enable TCP debugging, or start the privileged helper without user consent.
-    LaunchedEffect(Unit) {
-        while (true) {
-            ExperimentalRecording.refreshConnectionStatus()
-            AdbPrivilegedApiHelper.checkHealth(context)
-            delay(8_000L)
-        }
-    }
+    // Helper recovery and connection checks belong to AdbLifecycle, not
+    // a screen-scoped polling coroutine that restarts on every navigation.
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
