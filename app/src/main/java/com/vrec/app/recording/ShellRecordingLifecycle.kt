@@ -7,12 +7,14 @@ package com.vrec.app.recording
 internal class ShellRecordingLifecycle {
     private val ended = LinkedHashSet<String>()
     private var current: String? = null
+    private var recentlyEnded: Boolean = false
 
     @Synchronized fun started(file: String): Boolean {
         if (!valid(file) || identity(file) in ended) return false
         if (current == file) return false
         if (current != null) return false
         current = file
+        recentlyEnded = false
         return true
     }
 
@@ -25,15 +27,20 @@ internal class ShellRecordingLifecycle {
         while (ended.size > 64) ended.remove(ended.first())
         if (current == null) return false
         current = null
+        recentlyEnded = true
         return true
     }
 
     /** Pause closes the current file; Resume must accept a fresh STARTED file. */
     @Synchronized fun pausedByUser(): Boolean {
-        val file = current ?: return false
+        val file = current ?: return if (recentlyEnded) {
+            recentlyEnded = false
+            true
+        } else false
         ended.add(identity(file))
         while (ended.size > 64) ended.remove(ended.first())
         current = null
+        recentlyEnded = false
         return true
     }
 
@@ -48,6 +55,7 @@ internal class ShellRecordingLifecycle {
 
     @Synchronized fun reset() {
         current = null
+        recentlyEnded = false
         ended.clear()
     }
 
