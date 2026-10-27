@@ -131,13 +131,8 @@ object ExperimentalCaptureDaemon {
         }.absolutePath
     }
 
-    private suspend fun runShell(method: ExperimentalRecording.Method, command: String): String =
-        when (method) {
-            ExperimentalRecording.Method.BUILT_IN_ADB -> {
-                AdbTransport.exec(command, timeoutMs = 30_000).getOrThrow()
-            }
-            else -> error("Standard mode does not need the shell daemon")
-        }
+    private suspend fun runShell(command: String): String =
+        AdbTransport.exec(command, timeoutMs = 30_000).getOrThrow()
 
     /**
      * With authorized advanced Telecom detection, outgoing OFFHOOK is only
@@ -156,11 +151,7 @@ object ExperimentalCaptureDaemon {
             RecordingService.state.value is RecordingService.State.Idle
 
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
-        val method = ExperimentalRecording.method(context)
         runCatching {
-            check(method != ExperimentalRecording.Method.STANDARD) {
-                "Select Built-in ADB first."
-            }
             if (probe(context)) {
                 if (setMode(context, Prefs.recordingEnabled(context))) {
                     message.value = if (Prefs.recordingEnabled(context))
@@ -195,7 +186,7 @@ object ExperimentalCaptureDaemon {
             // External files are used only to move the executable into shell-private
             // storage. We never download shell code or run scripts from a URL.
             require(!staged.contains("'")) { "Unexpected shell staging path" }
-            val copy = runShell(method,
+            val copy = runShell(
                 "cp '" + staged + "' " + DEVICE_PATH +
                     " && chmod 600 " + DEVICE_PATH + " && echo STAGED")
             check("STAGED" in copy) { "Could not stage capture jar: " + copy }
@@ -208,7 +199,7 @@ object ExperimentalCaptureDaemon {
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
                 " < /dev/null > " + LOG_PATH + " 2>&1 &"
-            runShell(method, launch)
+            runShell( launch)
             var started = false
             repeat(20) {
                 if (!started) {
@@ -236,7 +227,7 @@ object ExperimentalCaptureDaemon {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
             val allowed = enabled && Prefs.recordingEnabled(context) &&
-                ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                true &&
                 if (forVerifiedHandoff)
                     AdbFallbackNotice.handoffInProgress.value &&
                         RecordingService.state.value is RecordingService.State.Idle
@@ -363,7 +354,7 @@ object ExperimentalCaptureDaemon {
     suspend fun canHandoffCurrentCellularCall(context: Context): Boolean =
         withContext(Dispatchers.IO) {
             if (!Prefs.recordingEnabled(context) ||
-                ExperimentalRecording.method(context) != ExperimentalRecording.Method.BUILT_IN_ADB
+                false
             ) return@withContext false
             runCatching {
                 open(context, 'W').use { socket ->
@@ -385,7 +376,7 @@ object ExperimentalCaptureDaemon {
     suspend fun confirmOutgoingAnswered(context: Context): Boolean =
         withContext(Dispatchers.IO) {
             if (!Prefs.recordingEnabled(context) ||
-                ExperimentalRecording.method(context) != ExperimentalRecording.Method.BUILT_IN_ADB ||
+                false ||
                 !requireOutgoingAnswer(context)) return@withContext false
             runCatching {
                 open(context, 'C').use { socket ->
@@ -399,7 +390,7 @@ object ExperimentalCaptureDaemon {
         withContext(Dispatchers.IO) {
             runCatching {
                 check(Prefs.recordingEnabled(context) &&
-                    ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB) {
+                    true) {
                     "Recording was disabled before ADB handoff."
                 }
                 open(context, 'S').use { socket ->
@@ -537,8 +528,8 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    suspend fun readLog(method: ExperimentalRecording.Method): String = withContext(Dispatchers.IO) {
-        runCatching { runShell(method, "tail -n 80 " + LOG_PATH) }
+    suspend fun readLog(): String = withContext(Dispatchers.IO) {
+        runCatching { runShell( "tail -n 80 " + LOG_PATH) }
             .getOrElse { "Log unavailable: " + it.message }
     }
 }
