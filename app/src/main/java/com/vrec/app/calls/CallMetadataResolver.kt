@@ -27,6 +27,14 @@ object CallMetadataResolver {
         "signal", "messenger", "viber", "end call", "answer", "decline",
     )
 
+    private val privateLabels = setOf(
+        "private number", "private caller", "no caller id", "withheld",
+        "restricted", "anonymous", "unknown caller id",
+    )
+
+    fun privateCallerLabel(text: String?): Boolean =
+        text != null && normalize(text) in privateLabels
+
     fun cleanName(text: String?): String? {
         val value = text?.trim()?.replace(Regex("\\s+"), " ")?.take(120) ?: return null
         if (value.length < 2 || normalize(value) in placeholders) return null
@@ -58,11 +66,27 @@ object CallMetadataResolver {
             ?.substring(4)
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
             ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
-        val number = listOf(uriNumber, person?.name?.toString(), compat?.getCharSequence("name")?.toString(),
-            title, extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
-            .firstNotNullOfOrNull(::directNumber)
-        val name = listOf(person?.name?.toString(), compat?.getCharSequence("name")?.toString(),
-            title).firstNotNullOfOrNull(::cleanName)
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+        val people = runCatching {
+            if (Build.VERSION.SDK_INT >= 28) {
+                if (Build.VERSION.SDK_INT >= 33)
+                    extras.getParcelableArrayList(Notification.EXTRA_PEOPLE_LIST, Person::class.java)
+                else {
+                    @Suppress("DEPRECATION")
+                    extras.getParcelableArrayList<Person>(Notification.EXTRA_PEOPLE_LIST)
+                }
+            } else null
+        }.getOrNull().orEmpty()
+        val names = listOf(person?.name?.toString(), compat?.getCharSequence("name")?.toString()) +
+            people.map { it.name?.toString() } + listOf(title, text, bigText)
+        val numbers = listOf(uriNumber, person?.name?.toString(),
+            compat?.getCharSequence("name")?.toString()) +
+            people.flatMap { listOf(it.uri?.removePrefix("tel:"), it.name?.toString()) } +
+            listOf(title, text, bigText)
+        val number = numbers.firstNotNullOfOrNull(::directNumber)
+        val name = names.firstNotNullOfOrNull(::cleanName)
+            ?: if (number == null && names.any(::privateCallerLabel)) "Private number" else null
         if (number == null && name == null) return null
         return resolve(context, CallerMetadata(name, number, "notification"))
     }
