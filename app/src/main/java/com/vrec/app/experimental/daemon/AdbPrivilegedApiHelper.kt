@@ -2,7 +2,6 @@ package com.vrec.app.experimental.daemon
 
 import android.content.Context
 import com.vrec.app.Prefs
-import com.vrec.app.recording.RecordingService
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -24,19 +23,13 @@ object AdbPrivilegedApiHelper {
             state.value = State.NEEDS_ADB
             return@withLock false
         }
-        val armed = Prefs.recordingEnabled(context) &&
-            true
+        val armed = Prefs.recordingEnabled(context)
         val ok = ExperimentalCaptureDaemon.setMode(context.applicationContext, armed)
         state.value = if (ok) State.RUNNING else State.ERROR
-        if (ok) RecordingService.requestAdbHandoff(context.applicationContext)
         ok
     }
 
     suspend fun startWithAdb(context: Context): Result<Unit> = lock.withLock {
-        if (false) {
-            state.value = State.NEEDS_ADB
-            return@withLock Result.failure(IllegalStateException("Select Built-in ADB first"))
-        }
         // No auto-bootstrap from the background or from an unverified TCP port.
         // Only the explicit ADB connection flow, after verifying shell UID 2000,
         // can launch a new shell Java process.
@@ -60,7 +53,6 @@ object AdbPrivilegedApiHelper {
             ))
         }
         state.value = State.RUNNING
-        RecordingService.requestAdbHandoff(context.applicationContext)
         Result.success(Unit)
     }
 
@@ -81,12 +73,10 @@ object AdbPrivilegedApiHelper {
         // A process-level ERROR may be stale (permission or Telecom mode was
         // fixed since the last probe). Re-verify the authenticated mode handshake
         // before declaring RUNNING. A plain PONG must NEVER reset ERROR.
-        val armed = available && Prefs.recordingEnabled(app) &&
-            true
+        val armed = available && Prefs.recordingEnabled(app)
         val verified = available && ExperimentalCaptureDaemon.setMode(app, armed)
         state.value = HelperHealthPolicy.nextState(available, verified)
         ExperimentalCaptureDaemon.ready.value = verified
-        if (verified) RecordingService.requestAdbHandoff(app)
         state.value
     }
 }
