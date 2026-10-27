@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.vrec.app.experimental.adb.ExperimentalRecording
@@ -212,6 +213,14 @@ class RecordingService : Service() {
             }
             handler.postDelayed(this, 1000)
         }
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(sampler)
+        // Finalization uses its own completion thread; service-owned jobs must
+        // not retain this destroyed Service or post late handoff actions.
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
