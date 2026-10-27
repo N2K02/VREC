@@ -139,7 +139,7 @@ fun AdbDashboard(
                     } else onStart()
                 },
                 enabled = !busy && !healthy,
-                modifier = Modifier.weight(1f).height(52.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Start") }
             Button(
                 onClick = {
@@ -154,7 +154,7 @@ fun AdbDashboard(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 ),
-                modifier = Modifier.weight(1f).height(52.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Stop") }
             Button(
                 onClick = {
@@ -169,7 +169,7 @@ fun AdbDashboard(
                     }
                 },
                 enabled = !busy && healthy && canReconnect,
-                modifier = Modifier.weight(1f).height(52.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Restart") }
         }
         note?.let {
