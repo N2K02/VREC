@@ -110,21 +110,6 @@ class RecordingService : Service() {
             // Supported calls are captured by the independent shell helper.
         }
 
-        /**
-         * Called after the enhanced helper has been verified, not on mere ADB
-         * pairing. The active standard segment remains untouched unless the
-         * helper itself confirms it sees this cellular call.
-         */
-        fun requestAdbHandoff(context: Context) {
-            if (!AdbFallbackNotice.active.value ||
-                _state.value !is State.Recording ||
-                !CallMonitor.canHandoffToAdb()) return
-            runCatching {
-                context.startService(
-                    Intent(context, RecordingService::class.java).setAction(ACTION_ADB_HANDOFF))
-            }.onFailure { Log.w("Could not request ADB recording handoff", it) }
-        }
-
         fun updateMetadata(context: Context, direction: CallDirection, peer: String?,
                            number: String?, appPackage: String?, accountId: String?,
                            numberSource: String?, callFlow: String?) {
@@ -203,7 +188,7 @@ class RecordingService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(sampler)
         // Finalization uses its own completion thread; service-owned jobs must
-        // not retain this destroyed Service or post late handoff actions.
+        // not retain this destroyed Service or post late recording actions.
         serviceScope.cancel()
         super.onDestroy()
     }
