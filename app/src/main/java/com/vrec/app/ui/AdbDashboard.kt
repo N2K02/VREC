@@ -15,6 +15,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.Button
@@ -71,12 +72,9 @@ fun AdbDashboard(
         QuitResult.FAILED -> "The helper didn't confirm it stopped."
     }
 
-    val (icon, title) = when {
-        busy -> Icons.Rounded.Info to "Working…"
-        healthy -> Icons.Rounded.CheckCircle to "Running"
-        failed -> Icons.Rounded.ErrorOutline to "Needs attention"
-        else -> Icons.Rounded.Info to "Not running"
-    }
+    // Green only when the helper is active, ADB has verified UID 2000,
+    // and recording is armed. A working/recovery state is not fully ready.
+    val allReady = healthy && verified && recordingOn && !busy
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
@@ -88,9 +86,9 @@ fun AdbDashboard(
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Icon(icon, contentDescription = null,
-                        tint = if (failed && !healthy) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSecondaryContainer,
+                    Icon(if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
+                        contentDescription = if (allReady) "System ready" else "System not ready",
+                        tint = if (allReady) Color(0xFF43A66A) else MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(28.dp))
                     Column {
                         Text("System Status", style = MaterialTheme.typography.titleLarge,
