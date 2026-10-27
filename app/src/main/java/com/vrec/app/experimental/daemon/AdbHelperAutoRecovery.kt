@@ -53,6 +53,10 @@ object AdbHelperAutoRecovery {
     val lastResult = MutableStateFlow<String?>(null)
 
     private fun record(outcome: Outcome, text: String) {
+        // Healthy periodic probes are not new events: avoid changing Home state
+        // and persisting identical diagnostics every recovery interval.
+        if (lastOutcome.value == outcome &&
+            lastResult.value?.substringAfter(" · ") == text) return
         lastOutcome.value = outcome
         lastResult.value = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()) + " · " + text
         Log.i("ADB auto-recovery: $outcome — $text")
