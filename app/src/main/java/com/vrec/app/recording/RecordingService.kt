@@ -532,6 +532,7 @@ class RecordingService : Service() {
                             numberSource = numberSource, callFlowDirection = callFlow,
                             simLabel = sim?.label, simSlot = sim?.slot,
                             carrier = sim?.carrier)
+                        RecordingStore.notifySaved()
                         Log.i("Saved recording (${result.durationMs / 1000}s, ${result.source.label}${if (result.silent) ", silent" else ""})")
                     } else {
                         RecordingStore.delete(RecordingToDelete(result.file))
