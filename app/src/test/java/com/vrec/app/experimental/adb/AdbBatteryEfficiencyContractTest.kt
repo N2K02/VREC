@@ -85,6 +85,15 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
 
+    @Test fun notificationStopSuppressesAutomaticRestart() {
+        val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
+        val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        assertTrue(receiver.contains("\"STOPPED\" -> CallMonitor.onShellStopConfirmed(context)"))
+        assertTrue(monitor.contains("fun onShellStopConfirmed(context: Context)"))
+        assertTrue(monitor.contains("sessions.values.filter { it.active }.forEach { suppressed.add(it.id) }"))
+        assertTrue(receiver.contains("pending.finish()"))
+    }
+
     @Test fun interruptedShellImportIsRetriedWithoutDeletingOriginal() {
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
         assertTrue(daemon.contains("File(dest.parentFile, dest.name + \".json\").exists()"))
