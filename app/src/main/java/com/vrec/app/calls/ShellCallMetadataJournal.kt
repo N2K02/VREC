@@ -1,6 +1,7 @@
 package com.vrec.app.calls
 
 import android.content.Context
+import android.util.AtomicFile
 import com.vrec.app.recording.CallDirection
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,14 +27,19 @@ object ShellCallMetadataJournal {
             (name.isNullOrBlank() && number.isNullOrBlank())) return
         val entries = load(context)
         val now = System.currentTimeMillis()
+        val existing = (0 until entries.length()).map { entries.getJSONObject(it) }
+            .firstOrNull { it.optString("key") == key }
         val filtered = (0 until entries.length()).map { entries.getJSONObject(it) }
             .filter { now - it.optLong("startedAt") in 0..RETENTION_MS && it.optString("key") != key }
         val result = JSONArray()
         filtered.takeLast(100).forEach { result.put(it) }
+        fun preferred(value: String?, old: String?): String = value?.takeIf { it.isNotBlank() } ?: old.orEmpty()
         result.put(JSONObject().put("key", key).put("startedAt", startedAt)
-            .put("appPackage", appPackage ?: "").put("name", name ?: "")
-            .put("number", number ?: "").put("numberSource", numberSource ?: ""))
-        runCatching { file(context).writeText(result.toString()) }
+            .put("appPackage", preferred(appPackage, existing?.optString("appPackage")))
+            .put("name", preferred(name, existing?.optString("name")))
+            .put("number", preferred(number, existing?.optString("number")))
+            .put("numberSource", preferred(numberSource, existing?.optString("numberSource"))))
+        save(context, result)
     }
 
     @Synchronized fun find(context: Context, startedAt: Long, appPackage: String?): Match? {
@@ -50,6 +56,35 @@ object ShellCallMetadataJournal {
             entry.optString("appPackage").ifBlank { null })
     }
 
-    private fun load(context: Context): JSONArray =
-        runCatching { JSONArray(file(context).readText()) }.getOrDefault(JSONArray())
+    @Synchronized fun consume(context: Context, startedAt: Long, appPackage: String?) {
+        val entries = load(context)
+        val matched = (0 until entries.length()).map { entries.getJSONObject(it) }.filter {
+            matches(startedAt, it.optLong("startedAt"), appPackage, it.optString("appPackage"))
+        }
+        if (matched.size != 1) return
+        val key = matched.single().optString("key")
+        val remaining = JSONArray()
+        for (i in 0 until entries.length()) {
+            val entry = entries.getJSONObject(i)
+            if (entry.optString("key") != key) remaining.put(entry)
+        }
+        save(context, remaining)
+    }
+
+    private fun save(context: Context, entries: JSONArray) {
+        val atomic = AtomicFile(file(context))
+        var stream: java.io.FileOutputStream? = null
+        try {
+            stream = atomic.startWrite()
+            stream.write(entries.toString().toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(stream)
+        } catch (failure: Exception) {
+            if (stream != null) atomic.failWrite(stream)
+            com.vrec.app.Log.w("Could not persist call metadata journal", failure)
+        }
+    }
+
+    private fun load(context: Context): JSONArray = runCatching {
+        JSONArray(AtomicFile(file(context)).openRead().bufferedReader().use { it.readText() })
+    }.getOrDefault(JSONArray())
 }
