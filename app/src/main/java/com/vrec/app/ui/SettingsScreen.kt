@@ -394,7 +394,7 @@ private fun AdbSecurityChoices() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Keep ADB without Wi-Fi (TCP/5555)", style = MaterialTheme.typography.bodyLarge)
-                Text("Moves ADB to port 5555 so the helper can restart without Wi-Fi. Other devices " +
+                Text("After one-time approval, automatically switches verified Wireless ADB to TCP/5555 on first setup, repair and reconnection. Other devices " +
                     "on your network may reach ADB while it is on. Off keeps the encrypted Wireless " +
                     "debugging connection.",
                     style = MaterialTheme.typography.bodySmall,
@@ -439,7 +439,7 @@ private fun AdbSecurityChoices() {
                     confirmTcp = false
                     tcp = true
                     com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, true)
-                    note = "TCP/5555 mode applies the next time VRec connects over Wireless debugging."
+                    note = "TCP/5555 approved. VRec will switch automatically after verified Wireless ADB setup or repair, then reconnect and verify UID 2000."
                 }) { Text("Allow") }
             },
             dismissButton = { TextButton(onClick = { confirmTcp = false }) { Text("Cancel") } },
