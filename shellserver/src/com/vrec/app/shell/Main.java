@@ -1913,7 +1913,7 @@ public final class Main {
                     reply = "UNAVAILABLE";
                 }
             }
-            client.getOutputStream().write((reply + "\\n").getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().write((reply + "\n").getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             return;
         }
