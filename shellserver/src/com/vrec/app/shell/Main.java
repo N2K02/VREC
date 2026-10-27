@@ -2004,8 +2004,13 @@ public final class Main {
             String name = null;
             // Locked against onCallEnd - see there.
             synchronized (Main.class) {
-                if (callActive && recordingMode != MODE_OFF) {
+                if (callActive && recordingMode != MODE_OFF && activeRecording == null) {
+                    // A fresh explicit user request may restart after Stop.
+                    // Automatic watcher events still honor userStoppedCapture.
+                    userStoppedCapture = false;
+                    userPausedCapture = false;
                     name = beginRecording(callIncoming, callVoipApp);
+                    if (name == null) userStoppedCapture = true;
                 }
             }
             if (name != null) {
