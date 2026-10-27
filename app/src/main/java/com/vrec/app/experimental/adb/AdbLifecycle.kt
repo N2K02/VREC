@@ -51,7 +51,8 @@ object AdbLifecycle {
                 delay(45_000L)
                 while (isActive) {
                     if (Prefs.recordingEnabled(app) &&
-                        (!ExperimentalCaptureDaemon.ready.value ||
+                        (AdbFallbackNotice.enhancedActive.value ||
+                            !ExperimentalCaptureDaemon.ready.value ||
                             AdbPrivilegedApiHelper.state.value != AdbPrivilegedApiHelper.State.RUNNING)) {
                         recover(app, "background check")
                     }
