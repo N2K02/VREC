@@ -75,6 +75,16 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(daemon.contains("RecordingService.state.value is RecordingService.State.Idle"))
     }
 
+    @Test fun callMonitorAndOverlayNeverDependOnPermanentlyIdleLegacyState() {
+        val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        assertFalse(monitor.contains("RecordingService.state.value"))
+        assertTrue(monitor.contains("ExperimentalCaptureDaemon.captureControl"))
+        val overlay = source("app/src/main/java/com/vrec/app/recording/OverlayControlService.kt")
+        assertTrue(overlay.contains("ExperimentalCaptureDaemon.captureControl"))
+        assertFalse(overlay.contains(".setAction(RecordingService.ACTION_PAUSE)"))
+        assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
+    }
+
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
