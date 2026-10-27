@@ -307,7 +307,8 @@ object ExperimentalCaptureDaemon {
         reply == "PAUSED" -> CaptureSnapshot.Paused
         reply.startsWith("RECORDING ") -> {
             val file = reply.removePrefix("RECORDING ")
-            if (file.matches(Regex("vrec_rec_[A-Za-z0-9_.-]+[.]dat")))
+            if (file.length <= 200 &&
+                file.matches(Regex("vrec_rec_[A-Za-z0-9_.-]+[.]dat")))
                 CaptureSnapshot.Recording(file)
             else CaptureSnapshot.Unavailable
         }
