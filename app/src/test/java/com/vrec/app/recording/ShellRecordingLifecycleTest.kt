@@ -102,6 +102,20 @@ class ShellRecordingLifecycleTest {
         assertTrue(lifecycle.isActive())
     }
 
+    @Test fun authenticatedLiveSnapshotRepairsPrematureEndWake() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.ended(first))
+        assertFalse(lifecycle.started(first))
+        // The shell still reports this file actively recording. Its
+        // authenticated status supersedes the reordered END notification.
+        assertTrue(lifecycle.reconcileRecording(first))
+        assertTrue(lifecycle.isActive())
+        assertFalse(lifecycle.started(first))
+        assertTrue(lifecycle.ended(first))
+        assertFalse(lifecycle.isActive())
+    }
+
     @Test fun authenticatedSnapshotReplacesMissedEndAndStart() {
         val lifecycle = ShellRecordingLifecycle()
         assertTrue(lifecycle.started(first))
