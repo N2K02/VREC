@@ -17,7 +17,6 @@ import java.net.Socket
 
 /** Privilege/setup controller, intentionally independent from the standard audio recorder. */
 object ExperimentalRecording {
-    enum class Method { STANDARD, BUILT_IN_ADB }
     data class Status(
         val message: String = "ADB recording requires an authorized shell connection.",
         val shellUid: Int? = null,
@@ -87,19 +86,10 @@ object ExperimentalRecording {
         } else current.copy(tcpPortOpen = tcpListening)
     }
 
-    /** ADB-only recording. Legacy Standard preferences are ignored and migrated. */
-    fun method(context: Context): Method {
-        val prefs = context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
-        if (prefs.getString("method", null) != Method.BUILT_IN_ADB.name) {
-            prefs.edit().putString("method", Method.BUILT_IN_ADB.name).apply()
-        }
-        return Method.BUILT_IN_ADB
-    }
-
-    /** Retained for compatibility with existing callers; Standard cannot be selected. */
-    fun setMethod(context: Context, selected: Method) {
+    /** Migrate obsolete method selections; ADB is the only supported engine. */
+    fun migrateLegacyMethod(context: Context) {
         context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
-            .edit().putString("method", Method.BUILT_IN_ADB.name).apply()
+            .edit().remove("method").apply()
     }
 
     fun adbIdentityPresent(context: Context): Boolean = AdbIdentity.exists(context)
@@ -120,7 +110,7 @@ object ExperimentalRecording {
      * shell/recording-helper authorization.
      */
     suspend fun grantAdvancedDetection(context: Context): Result<Unit> {
-        if (method(context) != Method.BUILT_IN_ADB) {
+        if (false) {
             return Result.failure(IllegalStateException("Select the ADB recording method first."))
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return Result.success(Unit)
