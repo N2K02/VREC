@@ -139,6 +139,8 @@ object AdbFallbackNotice {
     /** Paused captures have no active file, but still expose Resume and Stop. */
     fun reconcileAuthenticatedPaused(context: Context) {
         shellLifecycle.reconcilePaused()
+        // A missed END wake may leave the active overlay on screen.
+        runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
         if (!enhancedActive.value) enhancedActive.value = true
         // No local file identity survives process death. This flag is set only
         // after an authenticated PAUSED reply from the helper.
