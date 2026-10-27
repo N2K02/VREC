@@ -66,8 +66,7 @@ fun rememberReadiness(): Boolean {
 @Composable
 fun SetupScreen(onOpenAdbSetup: () -> Unit = {}) {
     val context = LocalContext.current
-    val adbSelected = ExperimentalRecording.method(context) ==
-        ExperimentalRecording.Method.BUILT_IN_ADB
+    val adbSelected = true
     val shellReady by ExperimentalCaptureDaemon.ready.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val adbReady = shellReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
