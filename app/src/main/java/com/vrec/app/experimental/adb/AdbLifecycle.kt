@@ -86,13 +86,17 @@ object AdbLifecycle {
             recoveryMutex.withLock {
                 if (!quitting && kotlinx.coroutines.currentCoroutineContext().isActive) {
                     val healthy = AdbHelperAutoRecovery.check(app)
-                    if (healthy && AdbFallbackNotice.enhancedActive.value) {
-                        // 'I' is an authenticated, read-only shell status query.
-                        // An unreachable helper is NOT evidence of idle capture.
-                        when (ExperimentalCaptureDaemon.captureControl(app, 'I')) {
-                            "IDLE" -> AdbFallbackNotice.reconcileAuthenticatedIdle(app)
-                            "PAUSED" -> AdbFallbackNotice.setEnhancedPaused(app, true)
-                            "RECORDING" -> AdbFallbackNotice.setEnhancedPaused(app, false)
+                    if (healthy && !quitting) {
+                        // Rebuild transient UI on process start, and reconcile
+                        // later. Unavailable/malformed replies never clear state.
+                        when (val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)) {
+                            is ExperimentalCaptureDaemon.CaptureSnapshot.Recording ->
+                                AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)
+                            ExperimentalCaptureDaemon.CaptureSnapshot.Paused ->
+                                AdbFallbackNotice.reconcileAuthenticatedPaused(app)
+                            ExperimentalCaptureDaemon.CaptureSnapshot.Idle ->
+                                AdbFallbackNotice.reconcileAuthenticatedIdle(app)
+                            ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> Unit
                         }
                     }
                 }
