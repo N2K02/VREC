@@ -2015,6 +2015,7 @@ public final class Main {
             }
             if (name != null) {
                 Ln.i("session: on-demand start -> " + name);
+                wake(ACTION_CALL_STARTED, callIncoming, name, callVoipApp);
             } else {
                 Ln.w("session: on-demand start refused (no call in progress, or it could not start)");
             }
