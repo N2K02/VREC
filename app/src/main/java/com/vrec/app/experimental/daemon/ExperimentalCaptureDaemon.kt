@@ -341,7 +341,10 @@ object ExperimentalCaptureDaemon {
                 it.getInputStream().bufferedReader().readLines()
                     .filter { n -> n.matches(Regex("vrec_rec_[A-Za-z0-9_.-]+[.]dat")) }
             }
-        }.getOrDefault(emptyList())
+        }.getOrElse { failure ->
+            com.vrec.app.Log.w("Capture diagnostic: unable to list shell recordings; helper may be detached", failure)
+            throw failure
+        }
     }
 
     private fun nameBytes(name: String): ByteArray {
