@@ -174,6 +174,7 @@ object CallMonitor {
                 Log.w("Outgoing Telecom answer was not acknowledged by the shell helper")
             }
         }
+        rememberShellIdentity(context, session)
         Log.i("Telecom call state=$state voip=$voip app=" + (packageName ?: "unknown") +
             " namePresent=" + (session.name != null) + " numberPresent=" + (session.number != null))
         reconcile(context)
@@ -341,7 +342,10 @@ object CallMonitor {
         val removed = sessions.remove(id)
         suppressed.remove(id)
         autoAttempted.remove(id)
-        if (removed != null) Log.i("Call ended; closing session " + id)
+        if (removed != null) {
+            rememberShellIdentity(context, removed)
+            Log.i("Call ended; closing session " + id)
+        }
         if (recordingId == id) {
             recordingId = null
             RecordingService.stop(context.applicationContext, System.currentTimeMillis())
@@ -390,6 +394,7 @@ object CallMonitor {
                 (!it.isVoip || Prefs.recordVoip(context))
         } ?: return
         autoAttempted.add(selected.id)
+        rememberShellIdentity(context, selected)
         recordingId = selected.id
         Log.i("Capture diagnostic: call selected session=" + selected.id +
             " direction=" + selected.direction + " recordingState=" + RecordingService.state.value.javaClass.simpleName +
@@ -403,7 +408,17 @@ object CallMonitor {
             selected.flowDirection.name)
     }
 
+    private fun rememberShellIdentity(context: Context, session: Session) {
+        if (session.isVoip && session.connectedAt != null) {
+            ShellCallMetadataJournal.remember(context.applicationContext,
+                session.id + ":" + session.connectedAt, session.connectedAt!!,
+                CallDirection.VOIP, session.packageName, session.name, session.number,
+                session.numberSource)
+        }
+    }
+
     private fun updateRecording(context: Context, session: Session) {
+        rememberShellIdentity(context, session)
         RecordingService.updateMetadata(context.applicationContext,
             session.direction, session.name ?: session.number, session.number,
             session.packageName, session.accountId, session.numberSource,
