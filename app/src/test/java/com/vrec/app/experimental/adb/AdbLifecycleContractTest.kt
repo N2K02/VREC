@@ -41,7 +41,7 @@ class AdbLifecycleContractTest {
     @Test fun permissionBootstrapIsSerializedAndReverifiesUidLive() {
         val boot = read("app/src/main/java/com/vrec/app/experimental/adb/AdbPermissionBootstrap.kt")
         assertTrue(boot.contains("suspend fun grantEligible(context: Context): ResultSummary = mutex.withLock {"))
-        assertTrue(boot.indexOf("AdbTransport.exec(\"id -u\"") in 0 until boot.indexOf("pm grant"))
+        assertTrue(boot.indexOf("AdbTransport.exec(\"id -u\"") in 0 until boot.indexOf("AdbTransport.exec(\"pm grant"))
         assertFalse(boot.contains("runCatching"))
         assertTrue(boot.contains("unavailable.add(\"\$short (Android denied the grant)\")"))
     }
