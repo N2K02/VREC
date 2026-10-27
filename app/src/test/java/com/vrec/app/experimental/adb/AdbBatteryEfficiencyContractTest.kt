@@ -142,18 +142,28 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(start.contains("rememberShellIdentity(context, selected)"))
     }
 
+    @Test fun notificationControlsAreSerializedAcrossReceiverInstances() {
+        val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
+        assertTrue(receiver.contains("private val controlMutex = Mutex()"))
+        assertTrue(receiver.contains("controlMutex.withLock {"))
+        assertTrue(receiver.contains("if (!AdbFallbackNotice.enhancedActive.value) return@withLock"))
+        assertTrue(receiver.contains("if (action == 'P') AdbFallbackNotice.setEnhancedPaused(context, true)"))
+        assertTrue(receiver.contains("if (action == 'R') AdbFallbackNotice.setEnhancedPaused(context, false)"))
+        assertTrue(receiver.contains("if (action == 'S') CallMonitor.onShellStopConfirmed(context)"))
+    }
+
     @Test fun notificationReceiverHasBoundedExecutionAndAlwaysFinishes() {
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
         assertTrue(receiver.contains("withTimeout(8_000L)"))
         assertTrue(receiver.contains("finally {"))
         assertTrue(receiver.contains("pending.finish()"))
-        assertTrue(receiver.contains("\"STOPPED\" -> CallMonitor.onShellStopConfirmed(context)"))
+        assertTrue(receiver.contains("if (action == 'S') CallMonitor.onShellStopConfirmed(context)"))
     }
 
     @Test fun notificationStopSuppressesAutomaticRestart() {
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
         val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
-        assertTrue(receiver.contains("\"STOPPED\" -> CallMonitor.onShellStopConfirmed(context)"))
+        assertTrue(receiver.contains("if (action == 'S') CallMonitor.onShellStopConfirmed(context)"))
         assertTrue(monitor.contains("fun onShellStopConfirmed(context: Context)"))
         assertTrue(monitor.contains("sessions.values.filter { it.active }.forEach { suppressed.add(it.id) }"))
         assertTrue(receiver.contains("pending.finish()"))
