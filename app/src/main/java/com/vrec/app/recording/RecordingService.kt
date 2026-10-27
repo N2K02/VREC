@@ -92,8 +92,7 @@ class RecordingService : Service() {
             // One recording per call: the enhanced helper owns cellular calls
             // only while ready; otherwise reserve an immediate standard fallback.
             // Keep the user's selected ADB mode for the NEXT call.
-            val adbSelected = ExperimentalRecording.method(context) ==
-                ExperimentalRecording.Method.BUILT_IN_ADB
+            val adbSelected = true
             val helperReady = ExperimentalCaptureDaemon.ready.value
             val shellOwnsCellular = direction == CallDirection.INCOMING ||
                 direction == CallDirection.OUTGOING
@@ -206,7 +205,7 @@ class RecordingService : Service() {
         // When ADB is restored mid-call it stays in standby, avoiding duplicate
         // files. After standard finalization, rearm it only for future calls.
         if (Prefs.recordingEnabled(applicationContext) &&
-            ExperimentalRecording.method(applicationContext) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+            true &&
             ExperimentalCaptureDaemon.ready.value) {
             CoroutineScope(Dispatchers.IO).launch {
                 ExperimentalCaptureDaemon.setMode(applicationContext, true)
@@ -379,8 +378,7 @@ class RecordingService : Service() {
                 if (!safeToSwitch || handoffRequested || finalizing || stopPending ||
                     !adbFallback || _state.value !is State.Recording ||
                     !Prefs.recordingEnabled(this@RecordingService) ||
-                    ExperimentalRecording.method(this@RecordingService) !=
-                        ExperimentalRecording.Method.BUILT_IN_ADB ||
+                    false ||
                     !CallMonitor.canHandoffToAdb()) {
                     if (!safeToSwitch) Log.i(
                         "ADB helper has not verified the live cellular call; keeping standard audio")
@@ -420,7 +418,7 @@ class RecordingService : Service() {
             val stillLive = CallMonitor.canHandoffToAdb() &&
                 Prefs.recordingEnabled(app) &&
                 ExperimentalCaptureDaemon.ready.value &&
-                ExperimentalRecording.method(app) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+                true &&
                 ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
             val started = if (stillLive) {
                 val armed = ExperimentalCaptureDaemon.setMode(
