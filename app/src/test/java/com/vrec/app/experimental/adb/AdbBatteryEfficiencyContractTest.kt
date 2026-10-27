@@ -65,6 +65,16 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(transport.contains("connect: already connected"))
     }
 
+    @Test fun shellStateControlsUpdaterAndPausedFinalization() {
+        val updater = source("app/src/main/java/com/vrec/app/LiveUpdater.kt")
+        assertTrue(updater.contains("AdbFallbackNotice.enhancedActive.value"))
+        assertTrue(updater.contains("CallMonitor.hasLiveCall()"))
+        val notice = source("app/src/main/java/com/vrec/app/recording/AdbFallbackNotice.kt")
+        assertFalse(notice.contains("if (enhancedPaused.value) return"))
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        assertFalse(daemon.contains("RecordingService.state.value is RecordingService.State.Idle"))
+    }
+
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
