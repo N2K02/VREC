@@ -72,9 +72,9 @@ fun AdbDashboard(
         QuitResult.FAILED -> "The helper didn't confirm it stopped."
     }
 
-    // Green only when the helper is active, ADB has verified UID 2000,
-    // and recording is armed. A working/recovery state is not fully ready.
-    val allReady = healthy && verified && recordingOn && !busy
+    // The detached helper can keep recording without an active ADB transport.
+    // Readiness is based on helper health and the armed recording state.
+    val allReady = healthy && recordingOn && !busy
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
@@ -97,7 +97,7 @@ fun AdbDashboard(
                             when {
                                 busy -> "Working · Checking helper connection and readiness"
                                 healthy && verified -> "Connected · Helper active · ADB verified"
-                                healthy -> "Helper active · ADB session detached"
+                                healthy -> "Ready · Helper active · ADB session detached"
                                 failed -> "Check ADB setup or diagnostics"
                                 else -> "Start the helper to prepare call capture"
                             },
@@ -120,7 +120,7 @@ fun AdbDashboard(
                         else -> "Armed"
                     }, Modifier.weight(1f))
                     Stat("Recovery", restore, Modifier.weight(1f))
-                    Stat("Shell UID", if (verified || healthy) "2000" else "Unknown",
+                    Stat("Shell UID", if (verified) "2000" else "Detached",
                         Modifier.weight(1f))
                 }
             }
