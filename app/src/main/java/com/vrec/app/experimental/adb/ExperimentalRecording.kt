@@ -19,7 +19,7 @@ import java.net.Socket
 object ExperimentalRecording {
     enum class Method { STANDARD, BUILT_IN_ADB }
     data class Status(
-        val message: String = "Standard recording available.",
+        val message: String = "ADB recording requires an authorized shell connection.",
         val shellUid: Int? = null,
         val connected: Boolean = false,
         /** Socket presence only; never grants access to the shell helper. */
@@ -87,15 +87,19 @@ object ExperimentalRecording {
         } else current.copy(tcpPortOpen = tcpListening)
     }
 
-    /** Shared Home/Settings capture method. Default retains existing ADB behavior. */
-    fun method(context: Context): Method =
-        if (context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
-                .getString("method", Method.BUILT_IN_ADB.name) == Method.STANDARD.name)
-            Method.STANDARD else Method.BUILT_IN_ADB
+    /** ADB-only recording. Legacy Standard preferences are ignored and migrated. */
+    fun method(context: Context): Method {
+        val prefs = context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
+        if (prefs.getString("method", null) != Method.BUILT_IN_ADB.name) {
+            prefs.edit().putString("method", Method.BUILT_IN_ADB.name).apply()
+        }
+        return Method.BUILT_IN_ADB
+    }
 
+    /** Retained for compatibility with existing callers; Standard cannot be selected. */
     fun setMethod(context: Context, selected: Method) {
         context.getSharedPreferences("vrec_capture_method", Context.MODE_PRIVATE)
-            .edit().putString("method", selected.name).apply()
+            .edit().putString("method", Method.BUILT_IN_ADB.name).apply()
     }
 
     fun adbIdentityPresent(context: Context): Boolean = AdbIdentity.exists(context)
