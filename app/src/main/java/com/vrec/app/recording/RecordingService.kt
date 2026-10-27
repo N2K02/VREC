@@ -118,25 +118,7 @@ class RecordingService : Service() {
                 Log.w("Capture diagnostic: unsupported or unavailable ADB source direction=$direction helperReady=$helperReady voipArmed=${ExperimentalCaptureDaemon.voipArmed.value}; no file started and no microphone fallback")
                 return
             }
-            val standardFallback = false
-            val intent = Intent(context, RecordingService::class.java)
-                .putExtra(EXTRA_ADB_FALLBACK, standardFallback)
-                .setAction(ACTION_START)
-                .putExtra(EXTRA_DIRECTION, direction.name)
-                .putExtra(EXTRA_PEER, peer)
-                .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
-                .putExtra(EXTRA_CALL_CONNECTED_AT, callConnectedAt ?: 0L)
-                .putExtra(EXTRA_APP_PACKAGE, appPackage)
-                .putExtra(EXTRA_PHONE_ACCOUNT, accountId)
-                .putExtra(EXTRA_NUMBER_SOURCE, numberSource)
-                .putExtra(EXTRA_CALL_FLOW, callFlow)
-            try {
-                if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent)
-                else context.startService(intent)
-            } catch (e: Exception) {
-                if (standardFallback) AdbFallbackNotice.clear()
-                Log.w("Android blocked starting the recording service from the background", e)
-            }
+
         }
 
         /**
