@@ -20,6 +20,8 @@ import com.vrec.app.calls.CallMonitor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.vrec.app.experimental.adb.ExperimentalRecording
@@ -176,6 +178,7 @@ class RecordingService : Service() {
     private var numberSource: String? = null
     private var callFlow: String? = null
     private var callEndedAt: Long? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var adbFallback = false
     private var handoffRequested = false
     private var handoffCheckPending = false
@@ -188,7 +191,7 @@ class RecordingService : Service() {
         // files. After standard finalization, rearm it only for future calls.
         if (Prefs.recordingEnabled(applicationContext) &&
             ExperimentalCaptureDaemon.ready.value) {
-            CoroutineScope(Dispatchers.IO).launch {
+            serviceScope.launch {
                 ExperimentalCaptureDaemon.setMode(applicationContext, true)
             }
         }
@@ -352,7 +355,7 @@ class RecordingService : Service() {
             !ExperimentalCaptureDaemon.ready.value || !CallMonitor.canHandoffToAdb()) return
         handoffCheckPending = true
         val app = applicationContext
-        CoroutineScope(Dispatchers.IO).launch {
+        serviceScope.launch {
             val safeToSwitch = ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
             handler.post {
                 handoffCheckPending = false
@@ -393,7 +396,7 @@ class RecordingService : Service() {
         stopService(Intent(this, OverlayControlService::class.java))
         stopSelfAndForeground()
         val app = applicationContext
-        CoroutineScope(Dispatchers.IO).launch {
+        serviceScope.launch {
             // Recheck the watcher after saving: the call might have ended
             // while MediaRecorder was finalizing. Never start on a stale call.
             val stillLive = CallMonitor.canHandoffToAdb() &&
