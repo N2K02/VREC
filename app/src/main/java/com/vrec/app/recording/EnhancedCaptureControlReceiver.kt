@@ -8,11 +8,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.vrec.app.Log
 import com.vrec.app.calls.CallMonitor
 
 /** Notification controls use the same authenticated daemon protocol as the overlay. */
 class EnhancedCaptureControlReceiver : BroadcastReceiver() {
+    companion object {
+        // BroadcastReceiver instances are not stable across deliveries. Serialize
+        // notification actions globally so Pause/Resume/Stop cannot overtake.
+        private val controlMutex = Mutex()
+    }
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "com.vrec.app.SHELL_CONTROL" ||
             !AdbFallbackNotice.enhancedActive.value) return
@@ -23,14 +30,23 @@ class EnhancedCaptureControlReceiver : BroadcastReceiver() {
             try {
                 // goAsync receivers have a limited execution window. Never
                 // leave a broadcast pending indefinitely on a stalled socket.
-                val result = withTimeout(8_000L) {
-                    ExperimentalCaptureDaemon.captureControl(context.applicationContext, action)
-                }
-                when (result) {
-                    "PAUSED" -> AdbFallbackNotice.setEnhancedPaused(context, true)
-                    "RECORDING" -> AdbFallbackNotice.setEnhancedPaused(context, false)
-                    "STOPPED" -> CallMonitor.onShellStopConfirmed(context)
-                    else -> Log.w("Shell recording control not confirmed: $action")
+                withTimeout(8_000L) {
+                    controlMutex.withLock {
+                        // The recording may have ended while this broadcast
+                        // waited for an earlier command to finish.
+                        if (!AdbFallbackNotice.enhancedActive.value) return@withLock
+                        val result = ExperimentalCaptureDaemon.captureControl(
+                            context.applicationContext, action)
+                        when (result) {
+                            "PAUSED" -> if (action == 'P')
+                                AdbFallbackNotice.setEnhancedPaused(context, true)
+                            "RECORDING" -> if (action == 'R')
+                                AdbFallbackNotice.setEnhancedPaused(context, false)
+                            "STOPPED" -> if (action == 'S')
+                                CallMonitor.onShellStopConfirmed(context)
+                            else -> Log.w("Shell recording control not confirmed: $action")
+                        }
+                    }
                 }
             } catch (failure: Exception) {
                 Log.w("Shell notification control failed", failure)
