@@ -74,7 +74,6 @@ class RecordingService : Service() {
         const val EXTRA_PHONE_NUMBER = "phone_number"
         const val EXTRA_CALL_CONNECTED_AT = "call_connected_at"
         const val EXTRA_CALL_ENDED_AT = "call_ended_at"
-        const val EXTRA_ADB_FALLBACK = "adb_fallback"
 
         private val _state = MutableStateFlow<State>(State.Idle)
         val state: StateFlow<State> = _state
@@ -86,7 +85,7 @@ class RecordingService : Service() {
         fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null,
                   callConnectedAt: Long? = null, appPackage: String? = null, accountId: String? = null,
                   numberSource: String? = null, callFlow: String? = null,
-                  forceStandardFallback: Boolean = false) {
+) {
             if (!Prefs.recordingEnabled(context)) {
                 Log.i("Recording master switch is off; ignoring start")
                 return
@@ -151,21 +150,6 @@ class RecordingService : Service() {
     private var callFlow: String? = null
     private var callEndedAt: Long? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var adbFallback = false
-
-    private fun finishAdbFallback() {
-        if (!adbFallback) return
-        adbFallback = false
-        AdbFallbackNotice.clear()
-        // When ADB is restored mid-call it stays in standby, avoiding duplicate
-        // files. After standard finalization, rearm it only for future calls.
-        if (Prefs.recordingEnabled(applicationContext) &&
-            ExperimentalCaptureDaemon.ready.value) {
-            serviceScope.launch {
-                ExperimentalCaptureDaemon.setMode(applicationContext, true)
-            }
-        }
-    }
 
     private val handler = Handler(Looper.getMainLooper())
     private val sampler = object : Runnable {
@@ -259,11 +243,9 @@ class RecordingService : Service() {
         // The preference may change between enqueueing ACTION_START and delivery.
         if (!Prefs.recordingEnabled(this)) {
             _state.value = State.Idle
-            if (intent.getBooleanExtra(EXTRA_ADB_FALLBACK, false)) AdbFallbackNotice.clear()
             stopSelf()
             return
         }
-        adbFallback = intent.getBooleanExtra(EXTRA_ADB_FALLBACK, false)
         direction = runCatching { CallDirection.valueOf(intent.getStringExtra(EXTRA_DIRECTION) ?: "") }
             .getOrDefault(CallDirection.UNKNOWN)
         peer = intent.getStringExtra(EXTRA_PEER)
@@ -278,7 +260,6 @@ class RecordingService : Service() {
             // Android refused the microphone foreground service (often a background-start block).
             // Abort cleanly rather than risk the "didn't call startForeground" crash.
             _state.value = State.Idle
-            finishAdbFallback()
             stopSelf()
             return
         }
@@ -301,18 +282,13 @@ class RecordingService : Service() {
                     engine = null
                     Log.w("Capture diagnostic: standard audio engine failed to initialize; no recording started")
                     _state.value = State.Idle
-                    finishAdbFallback()
-                    CallMonitor.onRecordingFinalized(this)
+                            CallMonitor.onRecordingFinalized(this)
                     stopSelfAndForeground()
                     return@post
                 }
                 Log.i("Capture diagnostic: standard audio engine initialized source=${source.label}; recording started, audio content not yet verified")
                 _state.value = State.Recording(source.label, peer, silentSoFar = true)
                 update(recordingNotification(source.label))
-                if (adbFallback) {
-                    Log.w("Legacy microphone fallback was requested")
-                    AdbFallbackNotice.notifyStandardStarted(applicationContext)
-                }
                 if (Prefs.showOverlay(this) && !CallMonitor.overlayWasDismissed()) {
                     startService(Intent(this, OverlayControlService::class.java)
                         .setAction(OverlayControlService.ACTION_SHOW))
@@ -327,7 +303,6 @@ class RecordingService : Service() {
         _state.value = State.Idle
         _level.value = 0
         finalizing = false
-        finishAdbFallback()
         CallMonitor.onRecordingFinalized(this)
         if (!CallMonitor.canRecordAgain() || !Prefs.recordingEnabled(this)) {
             stopService(Intent(this, OverlayControlService::class.java))
@@ -494,7 +469,7 @@ class RecordingService : Service() {
     private fun recordingNotification(sourceLabel: String): Notification = baseNotification()
         .setContentTitle("Recording call")
         .setContentText((peer?.let { "$it · " } ?: "") + sourceLabel +
-            (if (adbFallback) " · Standard fallback" else ""))
+            "")
         .addAction(0, "Pause", actionPendingIntent(ACTION_PAUSE, 2))
         .addAction(0, "Stop", actionPendingIntent(ACTION_USER_STOP, 1))
         .build()
