@@ -30,6 +30,12 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(lifecycle.contains("loop?.cancel()"))
     }
 
+    @Test fun helperReadinessUsesReactiveState() {
+        val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        assertTrue(home.contains("combine(ExperimentalCaptureDaemon.ready, AdbPrivilegedApiHelper.state"))
+        assertTrue(home.contains(".distinctUntilChanged().collect"))
+    }
+
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
