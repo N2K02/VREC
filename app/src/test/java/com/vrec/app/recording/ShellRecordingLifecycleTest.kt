@@ -48,6 +48,26 @@ class ShellRecordingLifecycleTest {
         assertFalse(lifecycle.started("vrec_rec_100_in.dat"))
     }
 
+    @Test fun confirmedStopPreventsDelayedStartAndAllowsNextSession() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.stoppedByUser())
+        assertFalse(lifecycle.isActive())
+        assertFalse(lifecycle.started(first))
+        assertFalse(lifecycle.ended(first))
+        assertTrue(lifecycle.started(second))
+        assertTrue(lifecycle.stoppedByUser())
+        assertFalse(lifecycle.started(second))
+    }
+
+    @Test fun stoppingWithoutActiveSessionDoesNotPoisonNextCall() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertFalse(lifecycle.stoppedByUser())
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.ended(first))
+        assertFalse(lifecycle.stoppedByUser())
+    }
+
     @Test fun subsequentCallWorks() {
         val lifecycle = ShellRecordingLifecycle()
         assertTrue(lifecycle.started(first))
