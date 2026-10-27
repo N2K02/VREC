@@ -81,6 +81,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
@@ -124,7 +125,8 @@ fun RecordingsList() {
         contactsPermissionTick++
         refresh++
     }
-    val recordings = remember(tick, refresh) { RecordingStore.list(context) }
+    val storeRevision by RecordingStore.revision.collectAsState()
+    val recordings = remember(tick, refresh, storeRevision) { RecordingStore.list(context) }
     // Revisit existing SIM files once the user's call-log grant is available.
     // The Android call log may be populated after an audio recording is finalized.
     LaunchedEffect(tick, refresh, callLogAllowed, contactsAllowed) {
