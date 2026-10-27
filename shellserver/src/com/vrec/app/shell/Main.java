@@ -1907,7 +1907,7 @@ public final class Main {
                     userPausedCapture = false;
                     reply = "STOPPED";
                 } else if (action == 'I') {
-                    reply = activeRecording != null ? "RECORDING"
+                    reply = activeRecording != null ? "RECORDING " + activeRecording.name
                             : userPausedCapture ? "PAUSED" : "IDLE";
                 } else {
                     reply = "UNAVAILABLE";
