@@ -415,8 +415,14 @@ object ExperimentalCaptureDaemon {
         runCatching {
             var collected = 0
             var failures = 0
+            val waiting = pending(context)
+            if (waiting.isEmpty()) {
+                com.vrec.app.Log.i("Capture diagnostic: shell import found no finished recordings; check whether the helper captured and finalized the call")
+            } else {
+                com.vrec.app.Log.i("Capture diagnostic: shell import found " + waiting.size + " pending recording(s)")
+            }
             var firstFailure: String? = null
-            for (name in pending(context)) {
+            for (name in waiting) {
                 val identity = ShellRecordingIdentity.fromName(name)
                 if (identity == null) {
                     Log.w(TAG, "Skipping unknown shell recording identity: " + name)
