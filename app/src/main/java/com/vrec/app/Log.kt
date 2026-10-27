@@ -2,6 +2,8 @@ package com.vrec.app
 
 import android.content.Context
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.util.Log as AndroidLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +25,7 @@ object Log {
     private const val DUPLICATE_INFO_WINDOW_MS = 30_000L
     private fun redact(message: String): String = message
         .replace(Regex("(?<![A-Za-z0-9])\\+?[0-9][0-9 ()-]{6,}[0-9]"), "[redacted-number]")
-        .replace(Regex("(?i)(token|password|secret|authorization|auth_key)=([^\\s,;]+)"), "$1=[redacted]")
+        .replace(Regex("(?i)(token|password|secret|authorization|auth_key|api_key|access_token)=([^\\s,;]+)"), "$1=[redacted]")
 
     private fun today() = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
     private fun time() = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -39,7 +41,13 @@ object Log {
         persist()
     }
 
+    private val writeHandler = Handler(Looper.getMainLooper())
+    private val flush = Runnable { synchronized(this) { persistNow() } }
     private fun persist() {
+        writeHandler.removeCallbacks(flush)
+        writeHandler.postDelayed(flush, 1500L)
+    }
+    private fun persistNow() {
         context?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()
             ?.putString("day", day)?.putString("lines", _lines.value.joinToString("\n"))?.apply()
     }
@@ -91,6 +99,7 @@ object Log {
         rollDay()
         _lines.value = emptyList()
         lastInfoTimes.clear()
-        persist()
+        writeHandler.removeCallbacks(flush)
+        persistNow()
     }
 }
