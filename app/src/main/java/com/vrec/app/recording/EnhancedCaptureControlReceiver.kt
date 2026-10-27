@@ -7,6 +7,7 @@ import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.vrec.app.Log
 
 /** Notification controls use the same authenticated daemon protocol as the overlay. */
 class EnhancedCaptureControlReceiver : BroadcastReceiver() {
@@ -23,6 +24,7 @@ class EnhancedCaptureControlReceiver : BroadcastReceiver() {
                     "PAUSED" -> AdbFallbackNotice.setEnhancedPaused(context, true)
                     "RECORDING" -> AdbFallbackNotice.setEnhancedPaused(context, false)
                     "STOPPED" -> AdbFallbackNotice.shellStoppedByUser(context)
+                    else -> Log.w("Shell recording control not confirmed: $action")
                 }
             } finally {
                 pending.finish()
