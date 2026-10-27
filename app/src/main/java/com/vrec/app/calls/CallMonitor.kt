@@ -355,11 +355,11 @@ object CallMonitor {
             reconcile(context)
         }
         if (!hasLiveCall()) {
-            AdbFallbackNotice.enhancedActive.value = false
+            // Shell STARTED/ENDED events own capture state; Telecom may end first.
             overlayDismissed = false
             dismissCallControls(context)
             dismissOverlay(context)
-        } else if (RecordingService.state.value is RecordingService.State.Idle &&
+        } else if (!AdbFallbackNotice.enhancedActive.value &&
             canRecordAgain()) {
             showCallControls(context)
         }
@@ -370,7 +370,7 @@ object CallMonitor {
         handler.postDelayed({
             synchronized(this) {
                 if (recordingId != null || sessions.values.none { it.active }) return@synchronized
-                if (RecordingService.state.value is RecordingService.State.Idle) {
+                if (!AdbFallbackNotice.enhancedActive.value) {
                     reconcile(context)
                 } else {
                     scheduleWaitingCall(context, retry + 1)
@@ -388,7 +388,7 @@ object CallMonitor {
         }
         // Do not start a second recording until the current one is finished.
         if (recordingId != null || !Prefs.autoRecord(context)) return
-        if (RecordingService.state.value !is RecordingService.State.Idle) return
+        if (AdbFallbackNotice.enhancedActive.value) return
         val selected = sessions.values.firstOrNull {
             it.active && it.id !in suppressed && it.id !in autoAttempted &&
                 (!it.isVoip || Prefs.recordVoip(context))
@@ -423,9 +423,7 @@ object CallMonitor {
     /** A user Stop suppresses automatic restart for the remainder of the live call. */
     @Synchronized
     fun userStop(context: Context) {
-        val state = RecordingService.state.value
-        if (state is RecordingService.State.Idle ||
-            state is RecordingService.State.Stopping) return
+        if (!AdbFallbackNotice.enhancedActive.value) return
         val id = recordingId
         if (id != null) {
             suppressed.add(id)
@@ -435,7 +433,10 @@ object CallMonitor {
             Log.w("User stopped a recorder with no tracked call session")
         }
         Log.i("User stopped recording; an explicit Record is required to restart")
-        RecordingService.stop(context.applicationContext)
+        modeScope.launch {
+            val result = ExperimentalCaptureDaemon.captureControl(context.applicationContext, 'S')
+            if (result == "STOPPED") AdbFallbackNotice.shellStoppedByUser(context.applicationContext)
+        }
     }
 
     /**
@@ -445,7 +446,7 @@ object CallMonitor {
     @Synchronized
     fun userRecordAgain(context: Context, expectedSession: String? = null) {
         if (!Prefs.recordingEnabled(context) || recordingId != null ||
-            RecordingService.state.value !is RecordingService.State.Idle) return
+            AdbFallbackNotice.enhancedActive.value) return
         val chosen = sessions.values.firstOrNull {
             it.active && it.id in suppressed && it.source != Source.MANUAL &&
                 (expectedSession == null || it.id == expectedSession)
@@ -462,7 +463,7 @@ object CallMonitor {
     @Synchronized
     fun manualStart(context: Context) {
         if (!Prefs.recordingEnabled(context) || recordingId != null ||
-            RecordingService.state.value !is RecordingService.State.Idle) return
+            AdbFallbackNotice.enhancedActive.value) return
         if (canRecordAgain()) {
             userRecordAgain(context)
             return
@@ -542,7 +543,7 @@ object CallMonitor {
     @Synchronized
     fun onRecordingFinalized(context: Context) {
         val orphan = recordingId
-        if (orphan != null && RecordingService.state.value is RecordingService.State.Idle) {
+        if (orphan != null && !AdbFallbackNotice.enhancedActive.value) {
             recordingId = null
             suppressed.add(orphan)
         }
@@ -601,7 +602,6 @@ object CallMonitor {
     fun setRecordingEnabled(context: Context, enabled: Boolean) {
         Prefs.setRecordingEnabled(context, enabled)
         if (!enabled) {
-            AdbFallbackNotice.enhancedActive.value = false
             AdbFallbackNotice.clear()
             AdbFallbackNotice.endHandoff()
             recordingId = null
@@ -614,7 +614,7 @@ object CallMonitor {
             dismissOverlay(context)
             sawRinging = false
             pendingIncomingNumber = null
-            if (RecordingService.state.value !is RecordingService.State.Idle) {
+            if (AdbFallbackNotice.enhancedActive.value) {
                 RecordingService.stop(context.applicationContext, System.currentTimeMillis())
             }
         }
