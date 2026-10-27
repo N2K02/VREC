@@ -89,7 +89,6 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val resumeTick = rememberOnResumeTick()
     val voipNotificationGranted = remember(resumeTick) { VoipNotifListener.isEnabled(context) }
-    var recordingMethod by remember(resumeTick) { mutableStateOf(ExperimentalRecording.method(context)) }
     val captureState by com.vrec.app.recording.RecordingService.state.collectAsState()
     val shellRecording by com.vrec.app.recording.AdbFallbackNotice.enhancedActive.collectAsState()
     val methodLocked = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
@@ -97,10 +96,8 @@ fun SettingsScreen(
     val connection by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    LaunchedEffect(resumeTick, section, recordingMethod) {
-        if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
-            AdbPrivilegedApiHelper.checkHealth(context)
-        }
+    LaunchedEffect(resumeTick, section) {
+        AdbPrivilegedApiHelper.checkHealth(context)
     }
 
     // Home and Settings share the same persisted recording method.
@@ -263,7 +260,7 @@ fun SettingsScreen(
                 putBool(Prefs.RECORD_VOIP, it)
                 scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
             }
-            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
+            if (true) {
                 Text(
                     if (Build.VERSION.SDK_INT < 34)
                         "Enhanced VoIP playback capture requires Android 14 or newer."
