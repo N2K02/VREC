@@ -658,8 +658,7 @@ object CallMonitor {
                 // If Android has never authorized adbd, explain the necessary
                 // system step; never treat the app UID as shell UID 2000.
                 if (Prefs.recordingEnabled(appContext) &&
-                    ExperimentalRecording.method(appContext) ==
-                        ExperimentalRecording.Method.BUILT_IN_ADB) {
+                    true) {
                     LocalAdbMiddleware.setup(appContext)
                 }
                 var applied = false
