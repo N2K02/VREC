@@ -70,6 +70,13 @@ object LocalAdbMiddleware {
         if (AdbLifecycle.quitting) { busy.value = false; return@withLock false }
         try {
             if (userInitiated) ExperimentalRecording.allowManualRetry()
+            // Returning to Home must not reattach an already healthy helper.
+            // Only probe/reconnect when the helper is genuinely unavailable.
+            if (ExperimentalCaptureDaemon.ready.value &&
+                AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING) {
+                message.value = "Enhanced recording helper is connected and ready."
+                return@withLock true
+            }
             // Detached helper can survive ADB disconnect and needs no new bootstrap.
             if (AdbPrivilegedApiHelper.reconnect(app)) {
                 Log.i("ADB setup: previously started recording helper reattached")
