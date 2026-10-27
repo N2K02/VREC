@@ -1014,6 +1014,9 @@ public final class Main {
     private static final int COMMAND_DELETE = 'D';
     private static final int COMMAND_SET_ENABLED = 'E';
     private static final int COMMAND_LIST = 'L';
+    private static final int COMMAND_CAPTURE_CONTROL = 'Y';
+    private static volatile boolean userPausedCapture = false;
+    private static volatile boolean userStoppedCapture = false;
     /** On-demand: the app tells the daemon to start recording the call in
      *  progress, once the user has said yes to the start-of-call prompt. */
     private static final int COMMAND_START = 'S';
@@ -1418,6 +1421,7 @@ public final class Main {
     private static synchronized String beginRecording(boolean incoming, String app) {
         // The Home master switch overrides any automatic, on-demand or answering-
         // machine recording path, including a call already in progress.
+        if (userPausedCapture || userStoppedCapture) return null;
         if (recordingMode == MODE_OFF) {
             Ln.i("recording: Home master switch is off; capture refused");
             return null;
@@ -1664,6 +1668,8 @@ public final class Main {
         // happened, and the next one is a whole call away.
         synchronized (Main.class) {
             callActive = false;
+            userPausedCapture = false;
+            userStoppedCapture = false;
             answerGate.reset();
             endedSeq = callSeq;
             app = callVoipApp;
@@ -1876,6 +1882,39 @@ public final class Main {
             } finally {
                 closeQuietly(pfd);
             }
+            return;
+        }
+        if (command == COMMAND_CAPTURE_CONTROL) {
+            int action = client.getInputStream().read();
+            String reply;
+            synchronized (Main.class) {
+                if (action == 'P' && activeRecording != null) {
+                    userPausedCapture = true;
+                    stopRecording(null);
+                    reply = "PAUSED";
+                } else if (action == 'R' && userPausedCapture && callActive && !userStoppedCapture) {
+                    userPausedCapture = false;
+                    String file = beginRecording(callIncoming, callVoipApp);
+                    reply = file != null ? "RECORDING" : "FAILED";
+                    if (file != null) wake(ACTION_CALL_STARTED, callIncoming, file, callVoipApp);
+                } else if (action == 'S' && activeRecording != null) {
+                    userStoppedCapture = true;
+                    userPausedCapture = false;
+                    stopRecording(null);
+                    reply = "STOPPED";
+                } else if (action == 'S' && userPausedCapture) {
+                    userStoppedCapture = true;
+                    userPausedCapture = false;
+                    reply = "STOPPED";
+                } else if (action == 'I') {
+                    reply = activeRecording != null ? "RECORDING"
+                            : userPausedCapture ? "PAUSED" : "IDLE";
+                } else {
+                    reply = "UNAVAILABLE";
+                }
+            }
+            client.getOutputStream().write((reply + "\\n").getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().flush();
             return;
         }
         if (command == COMMAND_LIST) {
