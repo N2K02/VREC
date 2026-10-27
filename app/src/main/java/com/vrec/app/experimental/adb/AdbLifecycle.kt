@@ -39,6 +39,9 @@ object AdbLifecycle {
     private val wifiRecoveryJobs = mutableSetOf<Job>()
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
+    /** Serialize foreground setup with periodic and Wi-Fi-triggered recovery. */
+    suspend fun <T> coordinateSetup(block: suspend () -> T): T = recoveryMutex.withLock { block() }
+
     /** Idempotent. Called at process start and when VRec is opened after Quit. */
     @Synchronized fun startBackground(context: Context) {
         val app = context.applicationContext
