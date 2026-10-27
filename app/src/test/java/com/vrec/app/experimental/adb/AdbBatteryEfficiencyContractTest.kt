@@ -85,6 +85,18 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
 
+    @Test fun pausedRecoveryCreatesNotificationChannelAndDismissesStaleOverlay() {
+        val notice = source("app/src/main/java/com/vrec/app/recording/AdbFallbackNotice.kt")
+        val paused = notice.substringAfter("fun reconcileAuthenticatedPaused(context: Context)")
+            .substringBefore("fun reconcileAuthenticatedIdle(context: Context)")
+        assertTrue(paused.contains("shellLifecycle.reconcilePaused()"))
+        assertTrue(paused.contains("context.stopService(Intent(context, OverlayControlService::class.java))"))
+        val notification = notice.substringAfter("fun setEnhancedPaused(context: Context, paused: Boolean)")
+            .substringBefore("fun reconcileAuthenticatedRecording(context: Context")
+        assertTrue(notification.contains("manager.getNotificationChannel(CHANNEL) == null"))
+        assertTrue(notification.contains("manager.createNotificationChannel(NotificationChannel("))
+    }
+
     @Test fun processRestartRecoversAuthenticatedRecordingIdentityAndPausedState() {
         val helper = source("shellserver/src/com/vrec/app/shell/Main.java")
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
