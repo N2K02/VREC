@@ -59,6 +59,7 @@ object CallMonitor {
     private val handler = Handler(Looper.getMainLooper())
     private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val masterModeMutex = Mutex()
+    private val manualSegmentMutex = Mutex()
     // Automatic recording is attempted only once per active call session.
     // A user Stop must never trigger an automatic restart.
     private val autoAttempted = mutableSetOf<String>()
@@ -445,53 +446,60 @@ object CallMonitor {
     }
 
     /**
-     * Record again creates a new file for the same still-active call.
-     * The suppression flag stays set; call notifications cannot auto-restart.
+     * Manual capture is supported only when the authenticated shell watcher
+     * confirms an active cellular call. Never advertise a phantom recording.
+     * The shell's STARTED wake owns the UI recording state.
      */
-    @Synchronized
-    fun userRecordAgain(context: Context, expectedSession: String? = null) {
-        if (!Prefs.recordingEnabled(context) || recordingId != null ||
-            AdbFallbackNotice.enhancedActive.value) return
-        val chosen = sessions.values.firstOrNull {
-            it.active && it.id in suppressed && it.source != Source.MANUAL &&
-                (expectedSession == null || it.id == expectedSession)
-        } ?: return
-        recordingId = chosen.id
-        dismissCallControls(context)
-        Log.i("User started another recording segment for " + chosen.source.name)
-        RecordingService.start(context.applicationContext, chosen.direction,
-            chosen.name ?: chosen.number, chosen.number, chosen.connectedAt,
-            chosen.packageName, chosen.accountId, chosen.numberSource,
-            chosen.flowDirection.name)
+    private fun requestManualSegment(context: Context, expectedSession: String?, again: Boolean) {
+        val app = context.applicationContext
+        modeScope.launch {
+            val sessionId = synchronized(this@CallMonitor) {
+                if (!Prefs.recordingEnabled(app) || AdbFallbackNotice.enhancedActive.value) {
+                    null
+                } else {
+                    val candidates = sessions.values.filter {
+                        it.active && !it.isVoip && it.source != Source.MANUAL &&
+                            (!again || it.id in suppressed) &&
+                            (expectedSession == null || it.id == expectedSession)
+                    }
+                    candidates.singleOrNull()?.id
+                }
+            }
+            if (sessionId == null) {
+                Log.w("Manual shell capture requires one unambiguous active cellular call")
+                return@launch
+            }
+            manualSegmentMutex.withLock {
+                val stillEligible = synchronized(this@CallMonitor) {
+                    Prefs.recordingEnabled(app) && !AdbFallbackNotice.enhancedActive.value &&
+                        sessions[sessionId]?.let { it.active && !it.isVoip } == true
+                }
+                if (!stillEligible) return@withLock
+                val result = ExperimentalCaptureDaemon.startCurrentCellularCall(app)
+                if (result.isSuccess) {
+                    synchronized(this@CallMonitor) {
+                        if (sessions[sessionId]?.active == true) {
+                            suppressed.add(sessionId)
+                            autoAttempted.add(sessionId)
+                            recordingId = sessionId
+                            sessions[sessionId]?.let { rememberShellIdentity(app, it) }
+                            dismissCallControls(app)
+                        }
+                    }
+                    Log.i("Authenticated shell confirmed manual recording segment")
+                } else {
+                    Log.w("Manual shell recording was not confirmed")
+                }
+            }
+        }
     }
 
-    @Synchronized
+    fun userRecordAgain(context: Context, expectedSession: String? = null) {
+        requestManualSegment(context, expectedSession, again = true)
+    }
+
     fun manualStart(context: Context) {
-        if (!Prefs.recordingEnabled(context) || recordingId != null ||
-            AdbFallbackNotice.enhancedActive.value) return
-        if (canRecordAgain()) {
-            userRecordAgain(context)
-            return
-        }
-        val currentCall = sessions.values.firstOrNull {
-            it.active && it.source != Source.MANUAL
-        }
-        if (currentCall != null) {
-            // Explicit user-initiated recording is still linked to the call;
-            // Android's end signal will therefore stop and save this segment.
-            suppressed.add(currentCall.id)
-            autoAttempted.add(currentCall.id)
-            recordingId = currentCall.id
-            RecordingService.start(context.applicationContext, currentCall.direction,
-                currentCall.name ?: currentCall.number, currentCall.number,
-                currentCall.connectedAt, currentCall.packageName, currentCall.accountId,
-                currentCall.numberSource, currentCall.flowDirection.name)
-        } else {
-            val session = Session("manual", Source.MANUAL, active = true)
-            sessions[session.id] = session
-            recordingId = session.id
-            RecordingService.start(context.applicationContext, CallDirection.UNKNOWN, null)
-        }
+        requestManualSegment(context, null, again = false)
     }
 
     @Synchronized
