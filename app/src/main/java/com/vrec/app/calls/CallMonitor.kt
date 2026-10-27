@@ -396,12 +396,7 @@ object CallMonitor {
         autoAttempted.add(selected.id)
         rememberShellIdentity(context, selected)
         recordingId = selected.id
-        Log.i("Capture diagnostic: call selected session=" + selected.id +
-            " direction=" + selected.direction + " recordingState=" + RecordingService.state.value.javaClass.simpleName +
-            "; dispatch requested, not proof of audio or saved file")
-        Log.i("Start call recording via " + selected.source.name +
-            " app=" + (selected.packageName ?: "phone") +
-            " callerKnown=" + (selected.name != null || selected.number != null))
+        Log.i("Call selected for ADB capture: " + selected.source.name)
         RecordingService.start(context.applicationContext, selected.direction,
             selected.name ?: selected.number, selected.number, selected.connectedAt,
             selected.packageName, selected.accountId, selected.numberSource,
@@ -521,7 +516,7 @@ object CallMonitor {
         if (id != null) autoAttempted.add(id)
         dismissCallControls(context)
         dismissOverlay(context)
-        Log.i("Switched active cellular call from standard to enhanced capture")
+        Log.i("Shell capture owns active cellular call")
     }
 
     @Synchronized
