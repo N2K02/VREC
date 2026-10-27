@@ -25,7 +25,7 @@ class AdbHomeNavigationContractTest {
         val home = source.substringAfter("private fun HomeScreen(")
             .substringBefore("private fun RecordingMasterCard(")
         assertTrue(home.contains("Recording dashboard"))
-        assertTrue(home.contains("LocalAdbHomeCard()"))
+        assertTrue(home.contains("com.vrec.app.ui.LocalAdbHomeCard("))
         assertFalse(home.contains("onOpenExperimental"))
         assertTrue(source.contains("Screen.HOME -> HomeScreen()"))
         val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
