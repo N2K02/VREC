@@ -55,6 +55,15 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(log.indexOf("message == lastInfo") < log.indexOf("AndroidLog.i(TAG, message)"))
     }
 
+    @Test fun recoveryStatusAndRoutineLogsDoNotChurn() {
+        val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        assertTrue(recovery.contains("lastOutcome.value == outcome"))
+        val updater = source("app/src/main/java/com/vrec/app/update/AppUpdater.kt")
+        assertTrue(updater.contains("if (manual) com.vrec.app.Log.i"))
+        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        assertFalse(transport.contains("connect: already connected"))
+    }
+
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
