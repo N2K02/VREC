@@ -51,6 +51,7 @@ fun WirelessAdbSetupCard() {
         ActivityResultContracts.RequestPermission()
     ) {
         // Keep notification workflow compatible with split-screen Android Settings.
+        LocalWirelessAdb.start(context, userInitiated = true)
         LocalWirelessAdb.openSettings(context)
     }
     if (!wireless.supported) {
@@ -81,11 +82,11 @@ fun WirelessAdbSetupCard() {
             )
             if (adb.shellUid != 2000) {
                 Text(
-                    "1. Open Developer options and enable Wireless debugging (Wi-Fi required). " +
+                    "1. For first-time setup, enable USB debugging and Wireless debugging in Android Developer options (Wi-Fi required). " +
                         "If Android asks, tick \"Always allow on this network\".\n" +
                     "2. Tap 'Pair device with pairing code'. Keep that Android screen open.\n" +
-                    "3. Enter its six-digit code using the VRec notification, or return here to enter it.\n" +
-                    "4. VRec verifies UID 2000 and configures the recording helper automatically.",
+                    "3. Enter Android's six-digit code using the VRec notification, or return here to enter it. Android requires this one-time approval.\n" +
+                    "4. VRec pairs, connects, verifies UID 2000 and configures the recording helper automatically.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -94,7 +95,10 @@ fun WirelessAdbSetupCard() {
                         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                         PackageManager.PERMISSION_GRANTED) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else LocalWirelessAdb.openSettings(context)
+                    } else {
+                        LocalWirelessAdb.start(context, userInitiated = true)
+                        LocalWirelessAdb.openSettings(context)
+                    }
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("Open Android Developer options")
                 }
