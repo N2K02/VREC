@@ -29,14 +29,21 @@ object CallMetadataResolver {
 
     private val privateLabels = setOf(
         "private number", "private caller", "no caller id", "withheld",
-        "restricted", "anonymous", "unknown caller id",
+        "restricted", "anonymous", "unknown caller id", "private", "number withheld",
+        "hidden number", "blocked", "numéro masqué", "numero privato", "número privado",
     )
 
     fun privateCallerLabel(text: String?): Boolean =
-        text != null && normalize(text) in privateLabels
+        text != null && normalize(cleanLabel(text).orEmpty()) in privateLabels
+
+    fun cleanLabel(text: String?): String? {
+        if (text == null) return null
+        return text.filterNot { Character.getType(it) == Character.FORMAT.toInt() }
+            .replace(Regex("[\\\\s\\\\p{Zs}]+"), " ").trim()
+    }
 
     fun cleanName(text: String?): String? {
-        val value = text?.trim()?.replace(Regex("\\s+"), " ")?.take(120) ?: return null
+        val value = cleanLabel(text)?.take(120) ?: return null
         if (value.length < 2 || normalize(value) in placeholders) return null
         if (directNumber(value) != null) return null
         // Do not accept descriptive notification text as a caller identity.
@@ -45,7 +52,7 @@ object CallMetadataResolver {
     }
 
     fun directNumber(text: String?): String? {
-        val raw = text?.trim()?.removePrefix("tel:")?.take(80) ?: return null
+        val raw = cleanLabel(text)?.removePrefix("tel:")?.take(80) ?: return null
         if (!Regex("^\\+?[0-9() .-]+$").matches(raw)) return null
         val digits = raw.count(Char::isDigit)
         return raw.takeIf { digits in 5..18 }
