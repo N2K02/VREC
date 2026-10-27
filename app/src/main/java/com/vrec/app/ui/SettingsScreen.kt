@@ -73,7 +73,6 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.LiveUpdater
 import dev.n2k02.updater.hasPendingUpdate
 import com.vrec.app.Prefs
-import com.vrec.app.recording.RecordingEngine
 
 @Composable
 fun SettingsScreen(
