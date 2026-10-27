@@ -285,6 +285,19 @@ object ExperimentalCaptureDaemon {
         }
     }
 
+    /** Authenticated commands affect only the active shell recording. */
+    suspend fun captureControl(context: Context, action: Char): String = withContext(Dispatchers.IO) {
+        require(action in "PRSI")
+        runCatching {
+            open(context, 'Y', byteArrayOf(action.code.toByte())).use {
+                it.getInputStream().bufferedReader().readLine()?.trim() ?: "UNAVAILABLE"
+            }
+        }.getOrElse { failure ->
+            message.value = "Enhanced recording control failed: " + (failure.message ?: "helper unavailable")
+            "UNAVAILABLE"
+        }
+    }
+
     enum class QuitResult { STOPPED, BUSY, NOT_RUNNING, FAILED }
 
     /**
