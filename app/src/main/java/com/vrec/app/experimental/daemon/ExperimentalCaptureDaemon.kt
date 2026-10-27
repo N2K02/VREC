@@ -219,8 +219,7 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    suspend fun setMode(context: Context, enabled: Boolean,
-                        forVerifiedHandoff: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+    suspend fun setMode(context: Context, enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         modeMutex.withLock {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
@@ -320,7 +319,7 @@ object ExperimentalCaptureDaemon {
     suspend fun stopRecording(context: Context) {
         voipArmed.value = false
         setMode(context, false)
-        message.value = "Enhanced capture paused. Standard recording remains available."
+        message.value = "Enhanced capture paused. Shell recording remains disabled until rearmed."
     }
 
     /** Read a short, authenticated quality summary written by the shell after a call. */
