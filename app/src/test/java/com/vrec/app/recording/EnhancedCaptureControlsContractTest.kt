@@ -5,7 +5,8 @@ import org.junit.Test
 import java.io.File
 
 class EnhancedCaptureControlsContractTest {
-    private fun source(path: String) = File(path).readText()
+    private fun source(path: String) = listOf(File(path), File("../$path"))
+        .firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
 
     @Test fun shellControlsRequireAuthenticatedCommandAndFinalizeBeforeImport() {
         val shell = source("shellserver/src/com/vrec/app/shell/Main.java")
