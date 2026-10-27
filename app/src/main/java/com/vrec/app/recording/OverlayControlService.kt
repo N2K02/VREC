@@ -164,18 +164,8 @@ class OverlayControlService : Service() {
                 }
                 if (stoppingSince != null || !Prefs.recordingEnabled(this@OverlayControlService))
                     return@setOnClickListener
-                when (RecordingService.state.value) {
-                    is RecordingService.State.Paused ->
-                        startService(Intent(this@OverlayControlService, RecordingService::class.java)
-                            .setAction(RecordingService.ACTION_RESUME))
-                    is RecordingService.State.Recording ->
-                        startService(Intent(this@OverlayControlService, RecordingService::class.java)
-                            .setAction(RecordingService.ACTION_PAUSE))
-                    is RecordingService.State.Idle ->
-                        if (CallMonitor.canRecordAgain())
-                            CallMonitor.userRecordAgain(this@OverlayControlService)
-                    else -> Unit
-                }
+                // ADB-only: no legacy microphone recorder is available.
+                if (CallMonitor.canRecordAgain()) CallMonitor.userRecordAgain(this@OverlayControlService)
             }
         }
         val stop = ImageButton(this).apply {
@@ -191,15 +181,8 @@ class OverlayControlService : Service() {
                     }
                     return@setOnClickListener
                 }
-                if (stoppingSince != null ||
-                    (RecordingService.state.value !is RecordingService.State.Recording &&
-                        RecordingService.state.value !is RecordingService.State.Paused))
-                    return@setOnClickListener
-                stoppingSince = SystemClock.elapsedRealtime()
-                renderStopping()
-                CallMonitor.userStop(this@OverlayControlService)
-                handler.removeCallbacks(refresh)
-                handler.post(refresh)
+                // Stop is available only for an authenticated active shell capture.
+                return@setOnClickListener
             }
         }
         val close = ImageButton(this).apply {
