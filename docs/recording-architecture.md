@@ -26,9 +26,11 @@ is armed, including after restarts. Quit stops app-owned work safely.
 
 This experimental workflow is ADB-only. If the shell helper is missing or
 cannot capture the selected SIM/VoIP source, do **not** start the app microphone
-recorder automatically or mark the recording as successful. Standard recorder
-classes remain in the codebase for existing data compatibility, but the
-method selector and normal fallback path are disabled in this branch.
+recorder automatically or mark the recording as successful. The legacy microphone RecordingEngine has been deleted. RecordingService is a
+compatibility facade and does not create audio. Shell STARTED/ENDED events
+update AdbFallbackNotice's capture state; authenticated helper commands own
+pause/resume/stop. The facade's legacy start/metadata methods are no-ops and
+must not be mistaken for a successful capture.
 Android/OEM audio-HAL restrictions can still make protected call sources
 silent even when shell UID 2000 is verified.
 
@@ -60,3 +62,10 @@ with real consented test calls.
 - Android refuses a runtime grant: display attention required.
 - Accessibility label remains **Vrec call recording helper**.
 - Saved playback, imports, details, Settings/Quit and updates stay operational.
+
+## Verification still required
+
+- Integration tests must exercise real shell STARTED/PAUSED/ENDED events and UI synchronization.
+- Test repeated Telecom events, outgoing answer gating, call waiting and reconnect during finalization.
+- Verify shell metadata journal against real cellular and VoIP calls.
+- Measure battery use on physical Android devices; CI cannot establish battery efficiency.
