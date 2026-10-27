@@ -167,8 +167,6 @@ class RecordingService : Service() {
     private var callEndedAt: Long? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var adbFallback = false
-    private var handoffRequested = false
-    private var handoffCheckPending = false
 
     private fun finishAdbFallback() {
         if (!adbFallback) return
@@ -219,7 +217,7 @@ class RecordingService : Service() {
                 finish()
             }
             ACTION_USER_STOP -> CallMonitor.userStop(this)
-            ACTION_ADB_HANDOFF -> requestHandoff()
+            ACTION_ADB_HANDOFF -> Unit // Obsolete handoff action: ADB-only capture never starts a standard segment.
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
             ACTION_UPDATE_PEER -> {
@@ -339,102 +337,17 @@ class RecordingService : Service() {
         }
     }
 
-    /**
-     * Preflight without interrupting the microphone. Never hand off a VoIP,
-     * unknown, paused, ending or already-disconnected call.
-     */
-    private fun requestHandoff() {
-        if (handoffCheckPending || handoffRequested || finalizing || stopPending ||
-            !adbFallback || _state.value !is State.Recording ||
-            !Prefs.recordingEnabled(this) ||
-            !ExperimentalCaptureDaemon.ready.value || !CallMonitor.canHandoffToAdb()) return
-        handoffCheckPending = true
-        val app = applicationContext
-        serviceScope.launch {
-            val safeToSwitch = ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
-            handler.post {
-                handoffCheckPending = false
-                if (!safeToSwitch || handoffRequested || finalizing || stopPending ||
-                    !adbFallback || _state.value !is State.Recording ||
-                    !Prefs.recordingEnabled(this@RecordingService) ||
-                    !CallMonitor.canHandoffToAdb()) {
-                    if (!safeToSwitch) Log.i(
-                        "ADB helper has not verified the live cellular call; keeping standard audio")
-                    return@post
-                }
-                AdbFallbackNotice.beginHandoff()
-                handoffRequested = true
-                Log.i("ADB helper verified current call; saving standard segment before handoff")
-                finish()
-            }
-        }
-    }
-
     /** Called only once the standard segment has actually finished saving. */
     private fun recordingFinished() {
         _state.value = State.Idle
         _level.value = 0
         finalizing = false
-        if (!handoffRequested) {
-            finishAdbFallback()
-            CallMonitor.onRecordingFinalized(this)
-            if (!CallMonitor.canRecordAgain() || !Prefs.recordingEnabled(this)) {
-                stopService(Intent(this, OverlayControlService::class.java))
-            }
-            stopSelfAndForeground()
-            return
+        finishAdbFallback()
+        CallMonitor.onRecordingFinalized(this)
+        if (!CallMonitor.canRecordAgain() || !Prefs.recordingEnabled(this)) {
+            stopService(Intent(this, OverlayControlService::class.java))
         }
-
-        handoffRequested = false
-        adbFallback = false
-        stopService(Intent(this, OverlayControlService::class.java))
-        val app = applicationContext
-        serviceScope.launch {
-            // Recheck the watcher after saving: the call might have ended
-            // while MediaRecorder was finalizing. Never start on a stale call.
-            val stillLive = CallMonitor.canHandoffToAdb() &&
-                Prefs.recordingEnabled(app) &&
-                ExperimentalCaptureDaemon.ready.value &&
-                ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
-            val started = if (stillLive) {
-                val armed = ExperimentalCaptureDaemon.setMode(
-                    app, true, forVerifiedHandoff = true)
-                if (armed) ExperimentalCaptureDaemon.startCurrentCellularCall(app)
-                else Result.failure(IllegalStateException("Could not arm the enhanced recorder"))
-            } else Result.failure(IllegalStateException("Active call was not verified after saving"))
-
-            if (started.isSuccess && CallMonitor.canHandoffToAdb() &&
-                Prefs.recordingEnabled(app)) {
-                AdbFallbackNotice.clear()
-                AdbFallbackNotice.endHandoff()
-                CallMonitor.onAdbHandoffComplete(app)
-                AdbFallbackNotice.notifyEnhancedStarted(app)
-                Log.i("Enhanced recording handoff succeeded: " + started.getOrNull())
-            } else {
-                // If the shell command returned an error after starting capture,
-                // its response may have been lost. Do not restart a microphone
-                // recorder unless the shell confirms capture is OFF.
-                val shellStopped = ExperimentalCaptureDaemon.setMode(app, false)
-                AdbFallbackNotice.endHandoff()
-                if (!shellStopped) {
-                    Log.w("ADB handoff uncertain: could not confirm shell capture stopped")
-                    ExperimentalCaptureDaemon.message.value =
-                        "Handoff status unknown. Check enhanced capture before recording again."
-                    AdbFallbackNotice.clear()
-                    CallMonitor.onRecordingFinalized(app)
-                } else if (CallMonitor.canHandoffToAdb() && Prefs.recordingEnabled(app)) {
-                    Log.w("Enhanced start was not confirmed; recovering standard recording")
-                    AdbFallbackNotice.reserve()
-                    CallMonitor.recoverStandardAfterAdbHandoffFailure(app)
-                } else {
-                    AdbFallbackNotice.clear()
-                    CallMonitor.onRecordingFinalized(app)
-                }
-            }
-            // Keep this service alive until the handoff has completed; onDestroy
-            // can then safely cancel its remaining background jobs.
-            stopSelfAndForeground()
-        }
+        stopSelfAndForeground()
     }
 
     private fun pauseRecording() {
