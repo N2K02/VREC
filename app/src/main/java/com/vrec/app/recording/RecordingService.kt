@@ -401,7 +401,6 @@ class RecordingService : Service() {
         handoffRequested = false
         adbFallback = false
         stopService(Intent(this, OverlayControlService::class.java))
-        stopSelfAndForeground()
         val app = applicationContext
         serviceScope.launch {
             // Recheck the watcher after saving: the call might have ended
@@ -445,6 +444,9 @@ class RecordingService : Service() {
                     CallMonitor.onRecordingFinalized(app)
                 }
             }
+            // Keep this service alive until the handoff has completed; onDestroy
+            // can then safely cancel its remaining background jobs.
+            stopSelfAndForeground()
         }
     }
 
