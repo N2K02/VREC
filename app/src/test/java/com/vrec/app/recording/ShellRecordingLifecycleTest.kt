@@ -91,6 +91,17 @@ class ShellRecordingLifecycleTest {
         assertFalse(lifecycle.started(second))
     }
 
+    @Test fun pausedReplyAfterEndedWakeStillAcknowledgesPausedSession() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.ended(first))
+        assertTrue(lifecycle.pausedByUser()) // authenticated PAUSED arrives late
+        assertFalse(lifecycle.pausedByUser()) // no duplicate transition
+        assertTrue(lifecycle.started(second)) // resume has a new identity
+        assertFalse(lifecycle.ended(first))
+        assertTrue(lifecycle.isActive())
+    }
+
     @Test fun processRestartSnapshotRehydratesAndResumesWithoutStaleWakes() {
         val lifecycle = ShellRecordingLifecycle() // fresh Android process
         val snapshot = ExperimentalCaptureDaemon.parseCaptureSnapshot("RECORDING vrec_rec_100.dat")
