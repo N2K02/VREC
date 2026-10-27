@@ -506,6 +506,7 @@ object ExperimentalCaptureDaemon {
                     com.vrec.app.calls.ShellCallMetadataJournal.consume(
                         context, started, identity.appPackage)
                     delete(context, name)
+                    RecordingStore.notifySaved()
                     collected++
                 } catch (t: Throwable) {
                     // One bad or truncated shell file must not block later
