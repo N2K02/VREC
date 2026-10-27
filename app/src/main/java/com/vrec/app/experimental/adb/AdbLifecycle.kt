@@ -20,6 +20,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Owns VRec's background ADB work so it can be stopped as one unit:
@@ -32,6 +34,8 @@ object AdbLifecycle {
         private set
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
+    private val recoveryMutex = Mutex()
+    private val wifiRecoveryJobs = mutableSetOf<Job>()
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
     /** Idempotent. Called at process start and when VRec is opened after Quit. */
@@ -59,7 +63,12 @@ object AdbLifecycle {
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     if (!quitting && AdbSelfRecovery.canSelfRestore(app))
-                        scope.launch { recover(app, "Wi-Fi connected") }
+                        synchronized(this@AdbLifecycle) {
+                            if (!quitting) {
+                                wifiRecoveryJobs.removeAll { !it.isActive }
+                                wifiRecoveryJobs.add(scope.launch { recover(app, "Wi-Fi connected") })
+                            }
+                        }
                 }
             }
             val request = NetworkRequest.Builder()
@@ -72,7 +81,11 @@ object AdbLifecycle {
     private suspend fun recover(app: Context, reason: String) {
         if (quitting) return
         try {
-            AdbHelperAutoRecovery.check(app)
+            recoveryMutex.withLock {
+                if (!quitting && kotlinx.coroutines.currentCoroutineContext().isActive) {
+                    AdbHelperAutoRecovery.check(app)
+                }
+            }
         } catch (cancelled: CancellationException) {
             // Quit and superseded recovery jobs are expected cancellation, not failures.
             throw cancelled
@@ -91,6 +104,8 @@ object AdbLifecycle {
         quitting = true
         loop?.cancel()
         loop = null
+        wifiRecoveryJobs.forEach { it.cancel() }
+        wifiRecoveryJobs.clear()
         wifiCallback?.let { cb ->
             catchingNonCancellation {
                 app.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb)
