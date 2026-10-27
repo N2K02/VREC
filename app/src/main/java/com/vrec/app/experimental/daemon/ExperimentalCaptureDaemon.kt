@@ -494,6 +494,8 @@ object ExperimentalCaptureDaemon {
                         sidecar.writeText(json.toString())
                     }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
+                    com.vrec.app.calls.ShellCallMetadataJournal.consume(
+                        context, started, identity.appPackage)
                     delete(context, name)
                     collected++
                 } catch (t: Throwable) {
