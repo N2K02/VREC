@@ -18,6 +18,31 @@ internal class ShellRecordingLifecycle {
         return true
     }
 
+    /** An authenticated status snapshot supersedes a missed END/START wake.
+     * Retire the previous identity so delayed wakes cannot resurrect it.
+     */
+    @Synchronized fun reconcileRecording(file: String): Boolean {
+        if (!valid(file) || identity(file) in ended) return false
+        if (current == file) return false
+        current?.let { previous ->
+            ended.add(identity(previous))
+            while (ended.size > 64) ended.remove(ended.first())
+        }
+        current = file
+        recentlyEnded = false
+        return true
+    }
+
+    /** An authenticated PAUSED snapshot supersedes a missed END wake. */
+    @Synchronized fun reconcilePaused() {
+        current?.let { previous ->
+            ended.add(identity(previous))
+            while (ended.size > 64) ended.remove(ended.first())
+        }
+        current = null
+        recentlyEnded = false
+    }
+
     @Synchronized fun ended(file: String): Boolean {
         if (!valid(file)) return false
         // A stale END for another recording must not poison a future
