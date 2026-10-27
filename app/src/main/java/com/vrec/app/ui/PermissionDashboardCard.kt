@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.Prefs
 import com.vrec.app.calls.VoipNotifListener
@@ -166,32 +168,36 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                         fontWeight = FontWeight.Bold)
                 }
             }
-            permissions.chunked(2).forEach { pair ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    pair.forEach { (label, granted) ->
-                        Surface(shape = RoundedCornerShape(13.dp),
+            permissions.chunked(3).forEach { group ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    group.forEach { (label, granted) ->
+                        Surface(shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             border = androidx.compose.foundation.BorderStroke(1.dp,
-                                PermissionDashboardPolicy.badgeColor(granted).copy(alpha = 0.45f)),
+                                PermissionDashboardPolicy.badgeColor(granted).copy(alpha = 0.55f)),
                             modifier = Modifier.weight(1f)
                                 .then(if (!granted) Modifier.clickable { tryGrant(label) } else Modifier)) {
-                            Row(Modifier.padding(horizontal = 9.dp, vertical = 11.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(label, style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 2)
-                                    Text(if (granted) "✓ Granted" else "✕ Not granted",
-                                        color = if (granted) Color(0xFF69CB89) else Color(0xFFFF7474),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold)
-                                }
+                            Row(Modifier.padding(horizontal = 7.dp, vertical = 10.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(if (granted) "✓" else "✕",
+                                    modifier = Modifier
+                                        .background(PermissionDashboardPolicy.badgeColor(granted),
+                                            androidx.compose.foundation.shape.CircleShape)
+                                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold)
+                                Text(label, style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2, lineHeight = 13.sp,
+                                    modifier = Modifier.weight(1f))
                             }
                         }
                     }
-                    if (pair.size == 1)
+                    repeat(3 - group.size) {
                         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    }
                 }
             }
             if (count != permissions.size) {
