@@ -49,6 +49,8 @@ import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.Prefs
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Home owns the only setup/retry action. First-time directions are disclosure
@@ -110,6 +112,18 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
                 ExperimentalRecording.tcpPortListening()) {
                 LocalAdbMiddleware.setup(context, userInitiated = false)
             }
+        }
+    }
+    // Observe helper readiness immediately rather than waiting for the fallback timer.
+    LaunchedEffect(Unit) {
+        combine(ExperimentalCaptureDaemon.ready, AdbPrivilegedApiHelper.state,
+            ExperimentalRecording.status) { ready, state, adb ->
+            Triple(ready, state, adb.connected)
+        }.distinctUntilChanged().collect { (ready, state, connected) ->
+            if (ready && state == AdbPrivilegedApiHelper.State.RUNNING &&
+                LocalWirelessAdb.status.value.scanning) LocalWirelessAdb.stop(context)
+            if (connected && LocalWirelessAdb.status.value.scanning)
+                LocalWirelessAdb.stop(context)
         }
     }
     LaunchedEffect(needsUsbBootstrap, wireless.connectPort, wireless.pairingPort) {
