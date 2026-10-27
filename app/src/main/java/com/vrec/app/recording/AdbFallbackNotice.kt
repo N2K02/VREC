@@ -99,7 +99,10 @@ object AdbFallbackNotice {
     fun setEnhancedPaused(context: Context, paused: Boolean) {
         if (paused) {
             if (!shellLifecycle.pausedByUser() && !enhancedPaused.value) return
-        } else if (!enhancedActive.value) {
+            enhancedActive.value = true
+        } else if (!shellLifecycle.isActive()) {
+            // Resume can return before its STARTED wake. Do not claim a new
+            // recording is active until that wake identifies the actual file.
             return
         }
         enhancedPaused.value = paused
@@ -125,7 +128,9 @@ object AdbFallbackNotice {
      * STARTED wakes still supply the filename needed to adopt a new session.
      */
     fun reconcileAuthenticatedIdle(context: Context) {
-        if (!shellLifecycle.stoppedByUser()) return
+        // A paused segment has already closed its file. An authenticated IDLE
+        // reply must still clear its paused UI and notification.
+        if (!shellLifecycle.stoppedByUser() && !enhancedPaused.value && !enhancedActive.value) return
         enhancedActive.value = false
         enhancedPaused.value = false
         dismiss(context)
