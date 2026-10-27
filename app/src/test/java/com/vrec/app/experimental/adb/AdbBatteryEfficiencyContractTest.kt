@@ -36,11 +36,12 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(home.contains(".distinctUntilChanged().collect"))
     }
 
-    @Test fun serviceCancelsJobsOnlyAfterHandoff() {
+    @Test fun serviceCleanupAndNoLegacyHandoff() {
         val service = source("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
         assertTrue(service.contains("serviceScope.cancel()"))
         assertTrue(service.contains("handler.removeCallbacks(sampler)"))
-        assertTrue(service.contains("stopSelfAndForeground()\\n        }\\n    }\\n\\n    private fun pauseRecording()".replace("\\n", "\n")))
+        assertFalse(service.contains("private fun requestHandoff()"))
+        assertFalse(service.contains("recoverStandardAfterAdbHandoffFailure"))
     }
 
     @Test fun recoveryIsSerialized() {
