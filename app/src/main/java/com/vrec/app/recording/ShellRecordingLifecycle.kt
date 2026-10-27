@@ -25,6 +25,15 @@ internal class ShellRecordingLifecycle {
         return true
     }
 
+    /** Pause closes the current file; Resume must accept a fresh STARTED file. */
+    @Synchronized fun pausedByUser(): Boolean {
+        val file = current ?: return false
+        ended.add(identity(file))
+        while (ended.size > 64) ended.remove(ended.first())
+        current = null
+        return true
+    }
+
     /** A confirmed user stop ends the current generation even if END is delayed. */
     @Synchronized fun stoppedByUser(): Boolean {
         val file = current ?: return false
