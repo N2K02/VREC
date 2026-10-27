@@ -120,6 +120,14 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(notice.contains("fun reconcileAuthenticatedIdle(context: Context)"))
     }
 
+    @Test fun notificationReceiverHasBoundedExecutionAndAlwaysFinishes() {
+        val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
+        assertTrue(receiver.contains("withTimeout(8_000L)"))
+        assertTrue(receiver.contains("finally {"))
+        assertTrue(receiver.contains("pending.finish()"))
+        assertTrue(receiver.contains("\"STOPPED\" -> CallMonitor.onShellStopConfirmed(context)"))
+    }
+
     @Test fun notificationStopSuppressesAutomaticRestart() {
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
         val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
