@@ -84,8 +84,7 @@ class RecordingService : Service() {
 
         fun start(context: Context, direction: CallDirection, peer: String?, phoneNumber: String? = null,
                   callConnectedAt: Long? = null, appPackage: String? = null, accountId: String? = null,
-                  numberSource: String? = null, callFlow: String? = null,
-) {
+                  numberSource: String? = null, callFlow: String? = null) {
             if (!Prefs.recordingEnabled(context)) {
                 Log.i("Recording master switch is off; ignoring start")
                 return
@@ -280,13 +279,13 @@ class RecordingService : Service() {
                 }
                 if (source == null) {
                     engine = null
-                    Log.w("Capture diagnostic: standard audio engine failed to initialize; no recording started")
+                    Log.w("Legacy recording engine could not initialize")
                     _state.value = State.Idle
-                            CallMonitor.onRecordingFinalized(this)
+                    CallMonitor.onRecordingFinalized(this)
                     stopSelfAndForeground()
                     return@post
                 }
-                Log.i("Capture diagnostic: standard audio engine initialized source=${source.label}; recording started, audio content not yet verified")
+                Log.i("Legacy recording engine started: ${source.label}")
                 _state.value = State.Recording(source.label, peer, silentSoFar = true)
                 update(recordingNotification(source.label))
                 if (Prefs.showOverlay(this) && !CallMonitor.overlayWasDismissed()) {
@@ -468,8 +467,7 @@ class RecordingService : Service() {
 
     private fun recordingNotification(sourceLabel: String): Notification = baseNotification()
         .setContentTitle("Recording call")
-        .setContentText((peer?.let { "$it · " } ?: "") + sourceLabel +
-            "")
+        .setContentText((peer?.let { "$it · " } ?: "") + sourceLabel)
         .addAction(0, "Pause", actionPendingIntent(ACTION_PAUSE, 2))
         .addAction(0, "Stop", actionPendingIntent(ACTION_USER_STOP, 1))
         .build()
