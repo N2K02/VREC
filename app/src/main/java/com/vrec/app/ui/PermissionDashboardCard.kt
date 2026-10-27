@@ -167,8 +167,7 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
                 Column(Modifier.weight(1f)) {
                     Text("App Permissions", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
-                    Text(if (method == ExperimentalRecording.Method.STANDARD) "Standard"
-                        else "ADB enhanced", style = MaterialTheme.typography.labelSmall,
+                    Text("ADB enhanced", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Surface(shape = RoundedCornerShape(50),
