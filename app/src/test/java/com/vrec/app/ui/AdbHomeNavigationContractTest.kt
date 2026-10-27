@@ -31,7 +31,7 @@ class AdbHomeNavigationContractTest {
         val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(card.contains("LocalAdbMiddleware.setup(context, userInitiated = true)"))
         assertTrue(card.contains("LocalWirelessAdb.start(context)"))
-        assertTrue(card.contains("LocalWirelessAdb.start(context)"))
+        assertTrue(card.contains("ExperimentalRecording.tcpPortListening()"))
         assertTrue(card.contains("ExperimentalRecording.tcpPortListening()"))
         assertTrue(card.contains("WirelessAdbSetupCard()"))
         assertTrue(card.contains("instructionsExpanded = !instructionsExpanded"))
