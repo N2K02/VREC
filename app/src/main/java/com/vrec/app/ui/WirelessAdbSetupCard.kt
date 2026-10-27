@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -29,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import com.vrec.app.experimental.adb.AdbUserChoices
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalWirelessAdb
 
@@ -47,6 +51,8 @@ fun WirelessAdbSetupCard() {
         if (wireless.connectPort != null || wireless.pairingPort != null) expanded = true
     }
     var code by remember { mutableStateOf("") }
+    var tcpApproved by remember { mutableStateOf(AdbUserChoices.tcpMode(context)) }
+    var confirmTcp by remember { mutableStateOf(false) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -68,6 +74,16 @@ fun WirelessAdbSetupCard() {
             Text(if (expanded) "▲" else "▼")
         }
         if (expanded) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Automatically switch to TCP/5555 after pairing", modifier = Modifier.weight(1f))
+                Switch(checked = tcpApproved, onCheckedChange = { enabled ->
+                    if (enabled) confirmTcp = true else {
+                        tcpApproved = false
+                        AdbUserChoices.setTcpMode(context, false)
+                    }
+                })
+            }
+            Text("Once approved, VRec reuses TCP/5555 on repairs and reconnects when available. Disabling this preference does not close an already listening ADB port.", style = MaterialTheme.typography.bodySmall)
             Text(
                 when {
                     adb.connected && adb.shellUid == 2000 -> "Android shell UID 2000 verified."
@@ -131,5 +147,18 @@ fun WirelessAdbSetupCard() {
                 }
             }
         }
+    }
+    if (confirmTcp) {
+        AlertDialog(
+            onDismissRequest = { confirmTcp = false },
+            title = { Text("Enable TCP/5555 after pairing?") },
+            text = { Text("TCP/5555 can expose Android debugging to devices on your network. Only enable it on trusted networks. VRec will automatically switch after a verified UID 2000 connection and reverify access. This choice is saved for future repairs.") },
+            confirmButton = { TextButton(onClick = {
+                tcpApproved = true
+                AdbUserChoices.setTcpMode(context, true)
+                confirmTcp = false
+            }) { Text("Allow") } },
+            dismissButton = { TextButton(onClick = { confirmTcp = false }) { Text("Cancel") } },
+        )
     }
 }
