@@ -1,20 +1,17 @@
 package com.vrec.app.ui
 
-import com.vrec.app.experimental.adb.ExperimentalRecording
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PermissionDashboardPolicyTest {
-    @Test fun microphoneGrantOnlyShownForStandard() {
-        assertTrue(PermissionDashboardPolicy.visibleFor(ExperimentalRecording.Method.STANDARD, true))
-        assertFalse(PermissionDashboardPolicy.visibleFor(ExperimentalRecording.Method.BUILT_IN_ADB, true))
+    @Test fun microphoneGrantNotRequiredForAdbOnly() {
+        assertFalse(PermissionDashboardPolicy.visibleFor(true))
     }
 
-    @Test fun sharedPermissionsAppearInBothModes() {
-        assertTrue(PermissionDashboardPolicy.visibleFor(ExperimentalRecording.Method.STANDARD, false))
-        assertTrue(PermissionDashboardPolicy.visibleFor(ExperimentalRecording.Method.BUILT_IN_ADB, false))
+    @Test fun sharedPermissionsAppearInAdbOnlyMode() {
+        assertTrue(PermissionDashboardPolicy.visibleFor(false))
     }
 
     @Test fun permissionBadgeUsesExplicitGrantAndDenialLabels() {
