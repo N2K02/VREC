@@ -1,5 +1,7 @@
 package com.vrec.app.recording
 
+import kotlinx.coroutines.launch
+
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Service
@@ -150,6 +152,16 @@ class OverlayControlService : Service() {
             background = ColorDrawable(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
             setOnClickListener {
+                if (AdbFallbackNotice.enhancedActive.value) {
+                    val action = if (AdbFallbackNotice.enhancedPaused.value) 'R' else 'P'
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        val result = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.captureControl(applicationContext, action)
+                        if (result == "PAUSED" || result == "RECORDING") {
+                            AdbFallbackNotice.setEnhancedPaused(applicationContext, result == "PAUSED")
+                        }
+                    }
+                    return@setOnClickListener
+                }
                 if (stoppingSince != null || !Prefs.recordingEnabled(this@OverlayControlService))
                     return@setOnClickListener
                 when (RecordingService.state.value) {
@@ -172,6 +184,13 @@ class OverlayControlService : Service() {
             background = ColorDrawable(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
             setOnClickListener {
+                if (AdbFallbackNotice.enhancedActive.value) {
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        val result = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.captureControl(applicationContext, 'S')
+                        if (result == "STOPPED") AdbFallbackNotice.shellStoppedByUser(applicationContext)
+                    }
+                    return@setOnClickListener
+                }
                 if (stoppingSince != null ||
                     (RecordingService.state.value !is RecordingService.State.Recording &&
                         RecordingService.state.value !is RecordingService.State.Paused))
@@ -329,20 +348,22 @@ class OverlayControlService : Service() {
 
     /** Shell owns the capture. App-side pause/stop commands must not target MediaRecorder. */
     private fun renderEnhancedShell() {
+        val paused = AdbFallbackNotice.enhancedPaused.value
         statusDot?.apply {
-            setStatusColor(Color.RED)
-            contentDescription = "Enhanced shell recording active. Drag controls"
+            setStatusColor(if (paused) 0xFFFF9800.toInt() else Color.RED)
+            contentDescription = if (paused) "Enhanced recording paused" else "Enhanced recording active"
         }
-        startBlinking()
+        if (paused) stopBlinking() else startBlinking()
         pauseButton?.apply {
-            isEnabled = false
-            alpha = 0.45f
-            contentDescription = "Pause unavailable for shell recording"
+            isEnabled = true
+            alpha = 1f
+            setImageResource(if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+            contentDescription = if (paused) "Resume enhanced recording" else "Pause enhanced recording"
         }
         stopButton?.apply {
-            isEnabled = false
-            alpha = 0.45f
-            contentDescription = "Stop using call controls; shell capture is independent"
+            isEnabled = true
+            alpha = 1f
+            contentDescription = "Stop enhanced recording"
         }
     }
 
