@@ -44,8 +44,7 @@ import kotlinx.coroutines.launch
 
 /** Actual Android grants, not the permissions we merely requested. */
 internal object PermissionDashboardPolicy {
-    fun visibleFor(method: ExperimentalRecording.Method, isMicrophone: Boolean): Boolean =
-        !isMicrophone || method == ExperimentalRecording.Method.STANDARD
+    fun visibleFor(isMicrophone: Boolean): Boolean = !isMicrophone
 
     fun grantedCount(grants: List<Boolean>): Int = grants.count { it }
 
@@ -63,7 +62,7 @@ internal fun permissionIntent(label: String): String = when (label) {
 }
 
 @Composable
-fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
+fun PermissionDashboardCard() {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
@@ -90,7 +89,7 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
     LaunchedEffect(Unit) {
         while (true) { delay(5_000L); tick++ }
     }
-    val permissions = remember(tick, method) {
+    val permissions = remember(tick) {
         fun granted(name: String) =
             context.checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED
         buildList {
@@ -99,15 +98,15 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
             add("Contacts" to granted(Manifest.permission.READ_CONTACTS))
             if (Build.VERSION.SDK_INT >= 33)
                 add("Notifications" to granted(Manifest.permission.POST_NOTIFICATIONS))
-            if (PermissionDashboardPolicy.visibleFor(method, true))
+            if (PermissionDashboardPolicy.visibleFor(true))
                 add("Microphone" to granted(Manifest.permission.RECORD_AUDIO))
             add("Accessibility" to VrecAccessibilityService.isEnabled(context))
             add("Call notification access" to VoipNotifListener.isEnabled(context))
             add("Floating controls" to (Build.VERSION.SDK_INT < 23 ||
                 Settings.canDrawOverlays(context)))
-            if (method == ExperimentalRecording.Method.BUILT_IN_ADB && Build.VERSION.SDK_INT >= 31)
+            if (Build.VERSION.SDK_INT >= 31)
                 add("Advanced detection" to CallDetectionAccess.isGranted(context))
-            if (method == ExperimentalRecording.Method.BUILT_IN_ADB)
+            if (true)
                 add("ADB shell helper" to (ExperimentalCaptureDaemon.ready.value &&
                     AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING))
         }
@@ -116,7 +115,7 @@ fun PermissionDashboardCard(method: ExperimentalRecording.Method) {
         if (working) return
         actionMessage = null
         val runtime = runtimePermission[label]
-        if (method == ExperimentalRecording.Method.BUILT_IN_ADB &&
+        if (true &&
             label in setOf("Phone state", "Call history", "Contacts", "Notifications", "Advanced detection")) {
             scope.launch {
                 working = true
