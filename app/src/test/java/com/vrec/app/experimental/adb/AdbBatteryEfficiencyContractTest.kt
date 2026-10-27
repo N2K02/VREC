@@ -85,6 +85,21 @@ class AdbBatteryEfficiencyContractTest {
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
 
+    @Test fun shellLifecycleFeedsLegacyUiAndControlsFailClosed() {
+        val service = source("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
+        assertTrue(service.contains("combine(AdbFallbackNotice.enhancedActive"))
+        assertTrue(service.contains("State.Paused"))
+        val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
+        assertTrue(receiver.contains("Shell recording control not confirmed"))
+    }
+
+    @Test fun diagnosticsAreBatched() {
+        val log = source("app/src/main/java/com/vrec/app/Log.kt")
+        assertTrue(log.contains("postDelayed(flush, 1500L)"))
+        assertTrue(log.contains("writeHandler.removeCallbacks(flush)"))
+        assertTrue(log.contains("persistNow()"))
+    }
+
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
