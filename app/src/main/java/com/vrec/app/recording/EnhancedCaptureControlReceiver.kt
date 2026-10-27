@@ -38,12 +38,15 @@ class EnhancedCaptureControlReceiver : BroadcastReceiver() {
                         val result = ExperimentalCaptureDaemon.captureControl(
                             context.applicationContext, action)
                         when (result) {
-                            "PAUSED" -> if (action == 'P')
-                                AdbFallbackNotice.setEnhancedPaused(context, true)
-                            "RECORDING" -> if (action == 'R')
-                                AdbFallbackNotice.setEnhancedPaused(context, false)
-                            "STOPPED" -> if (action == 'S')
-                                CallMonitor.onShellStopConfirmed(context)
+                            "PAUSED" -> {
+                                if (action == 'P') AdbFallbackNotice.setEnhancedPaused(context, true)
+                            }
+                            "RECORDING" -> {
+                                if (action == 'R') AdbFallbackNotice.setEnhancedPaused(context, false)
+                            }
+                            "STOPPED" -> {
+                                if (action == 'S') CallMonitor.onShellStopConfirmed(context)
+                            }
                             else -> Log.w("Shell recording control not confirmed: $action")
                         }
                     }
