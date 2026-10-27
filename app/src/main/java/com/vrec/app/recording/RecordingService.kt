@@ -187,7 +187,6 @@ class RecordingService : Service() {
         // When ADB is restored mid-call it stays in standby, avoiding duplicate
         // files. After standard finalization, rearm it only for future calls.
         if (Prefs.recordingEnabled(applicationContext) &&
-            true &&
             ExperimentalCaptureDaemon.ready.value) {
             CoroutineScope(Dispatchers.IO).launch {
                 ExperimentalCaptureDaemon.setMode(applicationContext, true)
@@ -400,7 +399,6 @@ class RecordingService : Service() {
             val stillLive = CallMonitor.canHandoffToAdb() &&
                 Prefs.recordingEnabled(app) &&
                 ExperimentalCaptureDaemon.ready.value &&
-                true &&
                 ExperimentalCaptureDaemon.canHandoffCurrentCellularCall(app)
             val started = if (stillLive) {
                 val armed = ExperimentalCaptureDaemon.setMode(
