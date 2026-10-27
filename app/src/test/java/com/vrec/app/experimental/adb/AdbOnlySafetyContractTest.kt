@@ -21,7 +21,7 @@ class AdbOnlySafetyContractTest {
 
     @Test fun missingHelperCannotTriggerAutomaticStandardRecording() {
         val recorder = read("app/src/main/java/com/vrec/app/recording/RecordingService.kt")
-        assertTrue(recorder.contains("if (adbSelected) {"))
+        assertTrue(recorder.contains("Never launch a second microphone recorder or silently fall back"))
         assertFalse(recorder.contains("val standardFallback = false"))
     }
 
