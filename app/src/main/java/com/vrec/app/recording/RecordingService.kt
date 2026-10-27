@@ -91,36 +91,23 @@ class RecordingService : Service() {
                 Log.i("Recording master switch is off; ignoring start")
                 return
             }
-            // One recording per call: the enhanced helper owns cellular calls
-            // only while ready; otherwise reserve an immediate standard fallback.
-            // Keep the user's selected ADB mode for the NEXT call.
-            val adbSelected = true
+            // ADB-only: the independent shell helper owns supported calls.
+            // Never launch a second microphone recorder or silently fall back.
             val helperReady = ExperimentalCaptureDaemon.ready.value
-            val shellOwnsCellular = direction == CallDirection.INCOMING ||
-                direction == CallDirection.OUTGOING
-            val shellOwnsVoip = direction == CallDirection.VOIP &&
-                ExperimentalCaptureDaemon.voipArmed.value &&
-                com.vrec.app.experimental.daemon.EnhancedVoipPolicy.isShellVoipCall(
-                    enabled = Prefs.recordVoip(context),
-                    adbSelected = adbSelected,
-                    sdk = Build.VERSION.SDK_INT,
-                    appPackage = appPackage,
-                )
-            Log.i("Capture diagnostic: request direction=$direction adb=$adbSelected helperReady=$helperReady voipArmed=${ExperimentalCaptureDaemon.voipArmed.value} shellCellular=$shellOwnsCellular shellVoip=$shellOwnsVoip")
-            if (adbSelected && helperReady && !forceStandardFallback &&
-                (shellOwnsCellular || shellOwnsVoip)) {
-                Log.i("Capture diagnostic: delegated to shell helper; app recorder not started; audio/file verification pending")
-                // The independent shell recorder owns this call. Do not start a
-                // second microphone capture that could silence the call app.
-                return
+            val supported = direction == CallDirection.INCOMING ||
+                direction == CallDirection.OUTGOING ||
+                (direction == CallDirection.VOIP &&
+                    ExperimentalCaptureDaemon.voipArmed.value &&
+                    com.vrec.app.experimental.daemon.EnhancedVoipPolicy.isShellVoipCall(
+                        enabled = Prefs.recordVoip(context),
+                        adbSelected = true,
+                        sdk = Build.VERSION.SDK_INT,
+                        appPackage = appPackage,
+                    ))
+            if (!helperReady || !supported) {
+                Log.w("ADB capture unavailable for $direction; no microphone fallback")
             }
-            if (adbSelected) {
-                // ADB-only mode: never silently fall back to capturing the microphone.
-                // A missing or unsupported shell source must stay unavailable.
-                Log.w("Capture diagnostic: unsupported or unavailable ADB source direction=$direction helperReady=$helperReady voipArmed=${ExperimentalCaptureDaemon.voipArmed.value}; no file started and no microphone fallback")
-                return
-            }
-
+            // Supported calls are captured by the independent shell helper.
         }
 
         /**
