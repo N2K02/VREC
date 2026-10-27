@@ -423,7 +423,9 @@ object ExperimentalCaptureDaemon {
                     continue
                 }
                 val started = identity.startedAt
-                val direction = identity.direction
+                val caller = com.vrec.app.calls.ShellCallMetadataJournal.find(
+                    context, started, identity.appPackage)
+                val direction = if (caller != null) CallDirection.VOIP else identity.direction
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
                 if (dest.exists() && dest.length() > 100L) {
                     delete(context, name)
@@ -467,11 +469,15 @@ object ExperimentalCaptureDaemon {
                         else health?.substringBefore(" | ")?.let { "Shell " + it }
                             ?: "Enhanced shell capture"
                     RecordingStore.writeMeta(
-                        dest, direction, ShellVoipLabels.forPackage(identity.appPackage), label,
+                        dest, direction, caller?.name ?: caller?.number ?:
+                            ShellVoipLabels.forPackage(identity.appPackage), label,
                         silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
                             health?.contains("NO_AUDIO") == true,
                         durationMs = durationMs,
-                        appPackage = identity.appPackage,
+                        appPackage = caller?.packageName ?: identity.appPackage,
+                        phoneNumber = caller?.number,
+                        contactName = caller?.name,
+                        numberSource = caller?.numberSource,
                         recordingType = RecordingType.ADB,
                     )
                     val sidecar = File(dest.parentFile, dest.name + ".json")
