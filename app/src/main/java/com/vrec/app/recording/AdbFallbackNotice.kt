@@ -115,6 +115,19 @@ object AdbFallbackNotice {
             manager.notify(NOTIFICATION_ID, notice)
     }
 
+    /**
+     * Reconcile only an authenticated idle reply. Network failures and
+     * unavailable helpers must never be interpreted as a stopped recording.
+     * STARTED wakes still supply the filename needed to adopt a new session.
+     */
+    fun reconcileAuthenticatedIdle(context: Context) {
+        if (!shellLifecycle.stoppedByUser()) return
+        enhancedActive.value = false
+        enhancedPaused.value = false
+        dismiss(context)
+        runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
+    }
+
     fun shellStoppedByUser(context: Context) {
         if (!shellLifecycle.stoppedByUser()) return
         enhancedActive.value = false
