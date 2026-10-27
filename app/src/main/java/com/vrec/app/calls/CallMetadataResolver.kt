@@ -39,7 +39,7 @@ object CallMetadataResolver {
     fun cleanLabel(text: String?): String? {
         if (text == null) return null
         return text.filterNot { Character.getType(it) == Character.FORMAT.toInt() }
-            .replace(Regex("[\\\\s\\\\p{Zs}]+"), " ").trim()
+            .replace(Regex("[\\s\\p{Zs}]+"), " ").trim()
     }
 
     fun cleanName(text: String?): String? {
