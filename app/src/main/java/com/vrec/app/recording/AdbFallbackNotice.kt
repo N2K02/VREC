@@ -123,9 +123,17 @@ object AdbFallbackNotice {
 
     fun shellRecordingEnded(context: Context, file: String) {
         if (!shellLifecycle.ended(file)) return
+        // A pause intentionally finalizes the current segment. Retain its
+        // caller/timer until the authenticated PAUSED reply is processed.
+        val pausing = EnhancedCaptureControlReceiver.pendingAction.value == 'P'
+        if (pausing) {
+            pausedElapsedMs.value = segmentStartedAt.value?.let {
+                (System.currentTimeMillis() - it).coerceAtLeast(0L)
+            }
+        }
         enhancedActive.value = false
         enhancedPaused.value = false
-        clearDisplaySession()
+        if (!pausing) clearDisplaySession()
         dismiss(context)
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
     }
@@ -146,6 +154,15 @@ object AdbFallbackNotice {
                 }
             }
             enhancedActive.value = true
+            // A PAUSED result may arrive after the segment END wake dismissed
+            // its overlay. Re-show the same controls without restarting audio.
+            if (Prefs.showOverlay(context) &&
+                !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
+                runCatching {
+                    context.startService(Intent(context, OverlayControlService::class.java)
+                        .setAction(OverlayControlService.ACTION_SHOW))
+                }.onFailure { Log.w("Paused shell overlay unavailable", it) }
+            }
         } else if (!shellLifecycle.isActive()) {
             // Resume can return before its STARTED wake. Do not claim a new
             // recording is active until that wake identifies the actual file.
