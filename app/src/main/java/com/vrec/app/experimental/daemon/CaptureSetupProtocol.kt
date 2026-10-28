@@ -8,7 +8,7 @@ package com.vrec.app.experimental.daemon
  * the SIM source. A reachable socket/PONG alone is not proof of readiness.
  */
 internal object CaptureSetupProtocol {
-    enum class Source { APPLIED, DEFERRED_DURING_CALL, INVALID, UNCONFIRMED }
+    enum class Source { APPLIED, DEFERRED_DURING_CALL, INVALID, LEGACY_HELPER, UNCONFIRMED }
 
     data class Verdict(
         val ready: Boolean,
@@ -47,6 +47,7 @@ internal object CaptureSetupProtocol {
         "SOURCE $requested" -> Source.APPLIED
         "SOURCE BUSY" -> Source.DEFERRED_DURING_CALL
         "SOURCE INVALID" -> Source.INVALID
+        "SOURCE UNSUPPORTED" -> Source.LEGACY_HELPER
         else -> Source.UNCONFIRMED
     }
 
@@ -68,6 +69,8 @@ internal object CaptureSetupProtocol {
                 true, source, false, "Recording mode verified; SIM source change deferred until call ends",
             )
             Source.INVALID -> Verdict(false, source, true, "Shell rejected the requested SIM source")
+            Source.LEGACY_HELPER -> Verdict(false, source, true,
+                "Running shell helper does not support SIM source configuration; safe upgrade required")
             Source.UNCONFIRMED -> Verdict(
                 false, source, !sourceReply.isNullOrBlank(),
                 if (sourceReply.isNullOrBlank()) "SIM source acknowledgement timed out"
