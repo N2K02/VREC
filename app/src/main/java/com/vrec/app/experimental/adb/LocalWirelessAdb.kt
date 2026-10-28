@@ -74,6 +74,7 @@ object LocalWirelessAdb {
     private const val AUTO_RETRY_BASE_MS = 30_000L
     private const val AUTO_RETRY_MAX_MS = 10 * 60_000L
     @Volatile private var lastAutoAttemptMs = 0L
+    @Volatile private var lastTcpPromotionAtMs = 0L
 
     /**
      * Automatic searches are bounded: each stops after 60 s without finding
@@ -352,6 +353,37 @@ object LocalWirelessAdb {
                     " To close it, turn USB debugging off in Developer options, or Retry and use Disable TCP.")
         }
         return restored
+    }
+
+    /**
+     * A previously verified TLS shell may still be attached after an upgrade
+     * or setting change. Promote it without requiring the user to pair again.
+     * Throttle unsuccessful attempts and never disturb a busy capture.
+     */
+    fun promoteVerifiedShellToTcp(context: Context) {
+        val app = context.applicationContext
+        val link = ExperimentalRecording.status.value
+        if (AdbLifecycle.quitting || !AdbUserChoices.tcpMode(app) ||
+            link.shellUid != 2000 || !link.connected || link.busy ||
+            ExperimentalRecording.awaitingManualRetry ||
+            ExperimentalRecording.tcpPortListening()) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastTcpPromotionAtMs < 5 * 60_000L) return
+        lastTcpPromotionAtMs = now
+        scope.launch {
+            if (!transition.tryLock()) return@launch
+            try {
+                AdbLifecycle.coordinateSetup {
+                    val current = ExperimentalRecording.status.value
+                    if (!AdbLifecycle.quitting && current.connected &&
+                        current.shellUid == 2000 && !current.busy &&
+                        AdbUserChoices.tcpMode(app) &&
+                        !ExperimentalRecording.tcpPortListening()) {
+                        switchToLocalTcp(app)
+                    }
+                }
+            } finally { transition.unlock() }
+        }
     }
 
     fun retry(context: Context) {
