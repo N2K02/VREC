@@ -178,7 +178,10 @@ object AdbHelperAutoRecovery {
     }
 
     /** Returns null on success (UID 2000 and helper verified), else the typed failure. */
-    private suspend fun recoverOverTcp(app: Context): AdbFailure? {
+    private suspend fun recoverOverTcp(app: Context): AdbFailure? =
+        AdbLifecycle.coordinateSetup { recoverOverTcpUncoordinated(app) }
+
+    private suspend fun recoverOverTcpUncoordinated(app: Context): AdbFailure? {
         val link = ExperimentalRecording.status.value
         if (link.connected && link.shellUid == 2000 && AdbTransport.isConnected) {
             val confirmed = AdbTransport.exec("id -u").getOrNull()
@@ -193,7 +196,7 @@ object AdbHelperAutoRecovery {
             AdbTransport.close()
             ExperimentalRecording.refreshConnectionStatus()
         }
-        return reconnectTcp(app, automatic = true)
+        return reconnectTcpUncoordinated(app, automatic = true)
     }
 
     /**
@@ -203,7 +206,16 @@ object AdbHelperAutoRecovery {
      * retry can't re-trigger Android's authorization prompt.
      * Returns null on success, else the typed failure.
      */
-    suspend fun reconnectTcp(app: Context, automatic: Boolean): AdbFailure? {
+    suspend fun reconnectTcp(app: Context, automatic: Boolean): AdbFailure? =
+        if (automatic) AdbLifecycle.coordinateSetup {
+            reconnectTcpUncoordinated(app, automatic = true)
+        } else reconnectTcpUncoordinated(app, automatic = false)
+
+    /**
+     * Caller holds the shared transport mutex (or invoked explicitly from
+     * LocalWirelessAdb while its entire pairing/switch transaction holds it).
+     */
+    private suspend fun reconnectTcpUncoordinated(app: Context, automatic: Boolean): AdbFailure? {
         var failure: AdbFailure? = null
         for (attempt in 0 until 3) {
             if (attempt > 0) {
