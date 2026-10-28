@@ -39,7 +39,7 @@ class AdbStartupCancellationRegressionTest {
         val middleware = source("app/src/main/java/com/vrec/app/experimental/adb/LocalAdbMiddleware.kt")
         assertTrue(middleware.contains("AdbPrivilegedApiHelper.reconnect(app))"))
         assertTrue(middleware.contains("LocalWirelessAdb.promoteVerifiedShellToTcp(app)"))
-        assertTrue(middleware.contains("AdbPrivilegedApiHelper.startWithAdb(app)"))
+        assertTrue(middleware.contains("AdbPrivilegedApiHelper.startWithAdb(app, manualRepair = userInitiated)"))
         val restart = source("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
         assertTrue(restart.contains("AdbTransport.exec(\"id -u\", timeoutMs = 3_000)"))
         assertTrue(restart.contains("if (!authorized)"))
