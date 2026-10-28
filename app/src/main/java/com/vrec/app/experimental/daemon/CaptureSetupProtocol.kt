@@ -4,7 +4,7 @@ package com.vrec.app.experimental.daemon
  * The authenticated shell helper's setup acknowledgements. Kept pure so
  * startup/reconnect behavior can be replayed in local JVM regression tests.
  *
- * The shell's E command sets recording/answered-call mode, and Y configures
+ * The shell's E command sets recording/answered-call mode, and J configures
  * the SIM source. A reachable socket/PONG alone is not proof of readiness.
  */
 internal object CaptureSetupProtocol {
