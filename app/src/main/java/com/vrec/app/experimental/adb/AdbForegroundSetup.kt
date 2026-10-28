@@ -9,6 +9,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Single entry point for the Home Start/Retry button and the permission-card
@@ -21,6 +22,7 @@ object AdbForegroundSetup {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val starting = AtomicBoolean(false)
+    private val generation = AtomicLong(0L)
     val busy = MutableStateFlow(false)
     val lastOutcome = MutableStateFlow<Outcome?>(null)
 
@@ -32,6 +34,8 @@ object AdbForegroundSetup {
     fun begin(context: Context): Boolean {
         if (AdbLifecycle.quitting || !starting.compareAndSet(false, true)) return false
         busy.value = true
+        lastOutcome.value = null
+        val requestGeneration = generation.get()
         val app = context.applicationContext
         scope.launch {
             try {
@@ -44,8 +48,12 @@ object AdbForegroundSetup {
                     (failure.message ?: "unexpected error") + ". Check Diagnostics and retry."
                 lastOutcome.value = Outcome.USER_ACTION_REQUIRED
             } finally {
-                busy.value = false
-                starting.set(false)
+                // A former job finishing after Quit must not clear the new
+                // request's busy state when the Activity is opened again.
+                if (generation.get() == requestGeneration) {
+                    busy.value = false
+                    starting.set(false)
+                }
             }
         }
         return true
@@ -53,7 +61,11 @@ object AdbForegroundSetup {
 
     /** Quit stops any explicit setup, without destroying the reusable app scope. */
     fun shutdown() {
+        generation.incrementAndGet()
         scope.coroutineContext.cancelChildren()
+        busy.value = false
+        starting.set(false)
+        lastOutcome.value = null
     }
 
     internal object Routing {
