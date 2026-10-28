@@ -50,6 +50,7 @@ object CallMonitor {
         var nameSource: String = "unknown",
         var accountId: String? = null,
         var connectedAt: Long? = null,
+        var mediaType: String? = null,
         var active: Boolean = false,
     ) {
         val isVoip: Boolean get() = source == Source.VOIP_NOTIFICATION ||
@@ -122,6 +123,7 @@ object CallMonitor {
         name: String?,
         accountId: String?,
         connectedAt: Long?,
+        videoCall: Boolean? = null,
     ) {
         if (!Prefs.experimentalCallDetection(context) || !Prefs.recordingEnabled(context)) return
         if ((state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) && id !in sessions) {
@@ -135,6 +137,8 @@ object CallMonitor {
             session.flowDirection = flow
         }
         session.accountId = accountId ?: session.accountId
+        if (videoCall == true) session.mediaType = "VIDEO"
+        else if (videoCall == false && session.mediaType == null) session.mediaType = "VOICE"
         if (!number.isNullOrBlank()) {
             session.number = number
             session.numberSource = "telecom"
@@ -167,6 +171,12 @@ object CallMonitor {
             sessions.values.firstOrNull { it.source == Source.VOIP_NOTIFICATION && it.packageName == packageName }
         else sessions["sim-legacy"]
         if (legacy != null) {
+            legacy.connectedAt?.let {
+                ShellCallMetadataJournal.forget(context.applicationContext, legacy.id + ":" + it)
+            }
+            if (session.mediaType == null || session.mediaType == "VOICE") {
+                if (legacy.mediaType == "VIDEO") session.mediaType = "VIDEO"
+            }
             if (session.number == null) { session.number = legacy.number; session.numberSource = legacy.numberSource }
             if (session.name == null) { session.name = legacy.name; session.nameSource = legacy.nameSource }
             if (session.flowDirection == CallDirection.UNKNOWN &&
@@ -232,6 +242,13 @@ object CallMonitor {
             }
             "OFFHOOK" -> {
                 if (sessions.values.any { it.source == Source.TELECOM && !it.isVoip }) return
+                // Some VoIP calls also produce a cellular OFFHOOK broadcast.
+                // A live, already identified Telecom VoIP call is authoritative;
+                // never invent a second SIM owner for that same event.
+                if (sessions.values.any { it.source == Source.TELECOM && it.isVoip && it.active }) {
+                    Log.i("Ignoring phone-state OFFHOOK while a Telecom VoIP call is active")
+                    return
+                }
                 if (OutgoingCallStartPolicy.waitForTelecomAnswer(
                         incomingRang = sawRinging,
                         telecomObserverBound = telecomBound,
@@ -262,6 +279,7 @@ object CallMonitor {
                 pendingDialerIdentity = null
                 session.active = true
                 if (session.connectedAt == null) session.connectedAt = System.currentTimeMillis()
+                rememberShellIdentity(context, session)
                 reconcile(context)
             }
             "IDLE" -> {
@@ -359,6 +377,7 @@ object CallMonitor {
         val session = candidates.single()
         applyMetadata(session, metadata)
         if (recordingId == session.id) updateRecording(context, session)
+        else rememberShellIdentity(context, session)
     }
 
     private fun applyMetadata(session: Session, candidate: CallerMetadata?) {
@@ -444,12 +463,13 @@ object CallMonitor {
     }
 
     private fun rememberShellIdentity(context: Context, session: Session) {
-        if (session.isVoip && session.connectedAt != null) {
-            ShellCallMetadataJournal.remember(context.applicationContext,
-                session.id + ":" + session.connectedAt, session.connectedAt!!,
-                CallDirection.VOIP, session.packageName, session.name, session.number,
-                session.numberSource, session.flowDirection)
-        }
+        val started = session.connectedAt ?: return
+        val kind = if (session.isVoip) CallDirection.VOIP else session.direction
+        if (kind == CallDirection.UNKNOWN) return
+        ShellCallMetadataJournal.remember(context.applicationContext,
+            session.id + ":" + started, started,
+            kind, session.packageName, session.name, session.number,
+            session.numberSource, session.flowDirection, session.mediaType)
     }
 
     private fun updateRecording(context: Context, session: Session) {
