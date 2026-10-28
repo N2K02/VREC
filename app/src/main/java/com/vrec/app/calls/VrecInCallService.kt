@@ -4,6 +4,7 @@ import android.os.Build
 import android.telecom.Call
 import android.telecom.InCallService
 import android.telecom.TelecomManager
+import android.telecom.VideoProfile
 import androidx.annotation.RequiresApi
 import com.vrec.app.Log
 import com.vrec.app.Prefs
@@ -61,6 +62,7 @@ class VrecInCallService : InCallService() {
         CallMonitor.onTelecomEvent(
             this, id, state, owner, !cellular || selfManaged,
             flow, number, name, account?.id, details.connectTimeMillis.takeIf { it > 0L },
+            videoCall = VideoProfile.isVideo(details.videoState),
         )
     }
 
