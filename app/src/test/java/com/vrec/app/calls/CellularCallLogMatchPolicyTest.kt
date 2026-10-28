@@ -65,4 +65,44 @@ class CellularCallLogMatchPolicyTest {
         assertEquals(correct,
             CellularCallLogMatchPolicy.bestMatch(recording(), listOf(correct, unrelated)))
     }
+
+    @Test fun correctsMissedRingingWhenCompletedCallLogProvesIncoming() {
+        val shell = recording(direction = CallDirection.OUTGOING)
+        val actual = entry(type = 1)
+        assertEquals(actual, CellularCallLogDirectionPolicy.bestMatch(shell, listOf(actual)))
+    }
+
+    @Test fun confirmsOutgoingAndHonorsExistingPhoneNumber() {
+        val outgoing = entry(type = 2)
+        val shell = recording(direction = CallDirection.OUTGOING)
+        assertEquals(outgoing, CellularCallLogDirectionPolicy.bestMatch(shell, listOf(outgoing)))
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(
+            shell.copy(phoneNumber = "+23012345678"), listOf(outgoing)))
+    }
+
+    @Test fun refusesAmbiguousOverlappingCallLogEntries() {
+        val first = entry(type = 1, number = "+23057045289")
+        val second = entry(type = 2, start = 993_000L, number = "+23059876543")
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(
+            recording(direction = CallDirection.OUTGOING), listOf(first, second)))
+    }
+
+    @Test fun refusesDriftMissedAndVoipCalls() {
+        val shell = recording(direction = CallDirection.INCOMING)
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(shell, listOf(entry(type = 3))))
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(shell, listOf(entry(start = 100_000L))))
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(shell, listOf(entry(duration = 8L))))
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(
+            recording(direction = CallDirection.VOIP), listOf(entry())))
+        assertNull(CellularCallLogDirectionPolicy.bestMatch(
+            recording(direction = CallDirection.UNKNOWN), listOf(entry())))
+    }
+
+    @Test fun callerRecoveryUsesExplicitCorrectedFlowInsteadOfShellSuffix() {
+        val recovered = recording(direction = CallDirection.OUTGOING)
+            .copy(callFlowDirection = "INCOMING")
+        val incoming = entry(type = 1)
+        assertEquals(incoming, CellularCallLogMatchPolicy.bestMatch(
+            recovered, listOf(entry(type = 2, number = "+23012345678"), incoming)))
+    }
 }
