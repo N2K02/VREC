@@ -154,6 +154,15 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
     )
 
     if (healthy) {
+        if (permissions.finished && permissions.unavailable.isNotEmpty()) {
+            Text(
+                "Recording helper is running. Some optional Android access remains unavailable: " +
+                    permissions.unavailable.joinToString().take(240) +
+                    ". Tap the relevant permission above for Android's supported approval.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (!accessibilityOn) {
             Text(
                 "Optional: Vrec call recording helper needs Android Accessibility approval for accessibility-based detection.",
