@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -110,9 +111,6 @@ fun PermissionDashboardCard() {
                 Settings.canDrawOverlays(context)))
             if (Build.VERSION.SDK_INT >= 31)
                 add("Advanced detection" to CallDetectionAccess.isGranted(context))
-            if (true)
-                add("ADB shell helper" to (helperReady &&
-                    helperState == AdbPrivilegedApiHelper.State.RUNNING))
         }
     }
     fun tryGrant(label: String) {
@@ -194,7 +192,7 @@ fun PermissionDashboardCard() {
                 Icon(Icons.Rounded.VerifiedUser, contentDescription = null,
                     tint = Color(0xFF66D9A4), modifier = Modifier.size(27.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("App Permissions", style = MaterialTheme.typography.titleMedium,
+                    Text("Android permissions", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
                     Text("ADB enhanced", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -238,6 +236,28 @@ fun PermissionDashboardCard() {
                     repeat(3 - group.size) {
                         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     }
+                }
+            }
+            // Helper health is a service state, not an Android permission.
+            // A broken helper must never make all granted permissions look denied.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    when {
+                        helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
+                            "ADB recording helper: Ready"
+                        foregroundBusy || helperState == AdbPrivilegedApiHelper.State.STARTING ->
+                            "ADB recording helper: Starting…"
+                        else -> "ADB recording helper: Needs repair"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING)
+                        MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!helperReady || helperState != AdbPrivilegedApiHelper.State.RUNNING) {
+                    OutlinedButton(onClick = { tryGrant("ADB shell helper") },
+                        enabled = !foregroundBusy && !working) { Text("Repair") }
                 }
             }
             if (count != permissions.size) {
