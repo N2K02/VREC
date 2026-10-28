@@ -35,7 +35,12 @@ class AdbLifecycleContractTest {
         assertFalse(mw.contains("runCatching"))
         val controller = read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         assertFalse(controller.contains("runCatching { AdbPermissionBootstrap"))
-        assertTrue(controller.contains("private suspend fun grantSafely("))
+        // Permission setup moved into the helper's verified startup flow.
+        val helper = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
+        val flow = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperStartFlow.kt")
+        assertTrue(helper.contains("AdbPermissionBootstrap.grantEligible(app)"))
+        assertTrue(flow.indexOf("steps.verifyUid2000()") in
+            0 until flow.indexOf("steps.configurePermissions()"))
     }
 
     @Test fun permissionBootstrapIsSerializedAndReverifiesUidLive() {
