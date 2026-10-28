@@ -80,6 +80,35 @@ class CaptureSetupFlowTest {
         assertEquals(1, attempts)
     }
 
+    @Test fun legacyHelperClosingUnknownSimCommandRequestsSafeUpgrade() = runBlocking {
+        // Old helpers can acknowledge E and then close the unknown J command
+        // immediately. The caller confirms EOF twice before using this marker.
+        val result = protocol.evaluate("1 WAIT 0", "SOURCE UNSUPPORTED", true, false, 0)
+        assertFalse(result.ready)
+        assertTrue(result.incompatible)
+        assertEquals(CaptureSetupProtocol.Source.LEGACY_HELPER, result.source)
+        assertTrue(result.detail.contains("upgrade"))
+
+        var attempts = 0
+        val upgraded = protocol.verifyWithRetry(
+            configure = {
+                attempts++
+                result.ready
+            },
+            incompatible = { result.incompatible },
+            waitBetween = { error("An incompatible helper must not be reconfigured repeatedly") },
+        )
+        assertFalse(upgraded)
+        assertEquals(1, attempts)
+    }
+
+    @Test fun realSocketTimeoutNeverCausesAutomaticHelperReplacement() {
+        val result = protocol.evaluate("1 WAIT 0", null, true, false, 0)
+        assertFalse(result.ready)
+        assertFalse(result.incompatible)
+        assertEquals(CaptureSetupProtocol.Source.UNCONFIRMED, result.source)
+    }
+
     @Test fun unresponsiveHelperUsesBoundedRetriesAndDoesNotAssumeReady() = runBlocking {
         var attempts = 0
         val confirmed = protocol.verifyWithRetry(
