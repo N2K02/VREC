@@ -55,6 +55,11 @@ internal object RecordingListLabels {
         return if (!pkg.isNullOrBlank()) SourceKind.APP else SourceKind.UNKNOWN
     }
 
+    private val sourceOnlyLabels = setOf(
+        "whatsapp", "whatsapp business", "telegram", "signal", "messenger",
+        "viber", "voip", "voip app", "sim", "phone", "unknown",
+    )
+
     fun contact(
         savedName: String?,
         lookedUpName: String?,
@@ -67,7 +72,11 @@ internal object RecordingListLabels {
         peer,
         phoneNumber,
         legacyFilenameContact(fileName),
-    ).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) } ?: "Unknown contact"
+    ).firstNotNullOfOrNull { value ->
+        value?.trim()?.takeIf {
+            it.isNotEmpty() && it.lowercase(Locale.ROOT) !in sourceOnlyLabels
+        }
+    } ?: "Unknown caller"
 
     private fun legacyFilenameContact(fileName: String?): String? {
         val name = fileName ?: return null
