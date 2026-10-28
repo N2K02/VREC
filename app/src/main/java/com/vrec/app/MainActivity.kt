@@ -95,6 +95,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.recording.RecordingFailureNotice
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.adb.ExperimentalRecording
@@ -407,6 +408,7 @@ private fun HomeScreen() {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val recordingWarning by RecordingFailureNotice.warning.collectAsState()
     val recording = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
         recState is RecordingService.State.Idle, enhancedActive)
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
@@ -424,6 +426,23 @@ private fun HomeScreen() {
         Text("Automatic call capture and ADB helper status in one place.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        recordingWarning?.let { warning ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+            ) {
+                Column(Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Recording warning", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(warning, style = MaterialTheme.typography.bodyMedium)
+                    androidx.compose.material3.TextButton(
+                        onClick = { RecordingFailureNotice.dismiss(context) }
+                    ) { Text("Dismiss warning") }
+                }
+            }
+        }
         RecordingMasterCard(enabled = recordingEnabled, ready = ready, active = recording, onEnabledChange = { enabled ->
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
