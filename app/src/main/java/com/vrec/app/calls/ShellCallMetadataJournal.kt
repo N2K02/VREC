@@ -155,7 +155,7 @@ object ShellCallMetadataJournal {
         val filtered = saved.filter { it.optString("key") != key }
         if (filtered.size == saved.size) return
         val result = JSONArray()
-        filtered.forEach(result::put)
+        filtered.forEach { result.put(it) }
         save(context, result)
     }
 
