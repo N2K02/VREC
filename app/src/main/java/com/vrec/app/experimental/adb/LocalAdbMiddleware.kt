@@ -109,7 +109,7 @@ object LocalAdbMiddleware {
                 }
                 LocalAdbSetupPolicy.Next.USE_VERIFIED_SESSION -> {
                     Log.i("ADB setup: shell already verified; restoring permissions and helper")
-                    val result = AdbPrivilegedApiHelper.startWithAdb(app)
+                    val result = AdbPrivilegedApiHelper.startWithAdb(app, manualRepair = userInitiated)
                     val permissions = AdbPermissionBootstrap.status.value
                     message.value = if (result.isSuccess)
                         "Enhanced helper started. Permissions needing attention: ${permissions.unavailable.size}"
