@@ -69,10 +69,16 @@ class AdbHomeNavigationContractTest {
         val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertFalse(recovery.contains("usbDebuggingFlag("))
         assertTrue(controller.contains("awaitingManualRetry = true"))
-        assertTrue(controller.contains("AdbPermissionBootstrap.grantEligible(context)"))
-        // UID 2000 is verified (verifyShellUid) before the permission grants run.
+        val helper = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
+        val flow = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperStartFlow.kt")
+        assertTrue(helper.contains("AdbPermissionBootstrap.grantEligible(app)"))
+        // Transport UID verification precedes the helper's independent live UID
+        // check, which happens before any optional permission grants.
         val connectBody = controller.substringAfter("suspend fun connect(context: Context")
-        assertTrue(connectBody.indexOf("verifyShellUid()") < connectBody.indexOf("grantSafely(context)"))
+        assertTrue(connectBody.indexOf("verifyShellUid()") in
+            0 until connectBody.indexOf("startHelperTyped(context)"))
+        assertTrue(flow.indexOf("steps.verifyUid2000()") in
+            0 until flow.indexOf("steps.configurePermissions()"))
         assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
     }
 }
