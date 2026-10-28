@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -185,6 +186,7 @@ fun PermissionDashboardCard() {
         }
     }
     val count = PermissionDashboardPolicy.grantedCount(permissions.map { it.second })
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     Surface(
         shape = RoundedCornerShape(24.dp),
         color = HomePanelStyle.color(),
@@ -204,8 +206,9 @@ fun PermissionDashboardCard() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 val allGranted = count == permissions.size
-                val summaryTint = if (allGranted) Color(0xFF91E3AF)
-                    else MaterialTheme.colorScheme.primary
+                val summaryTint = if (allGranted) {
+                    if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
+                } else MaterialTheme.colorScheme.primary
                 Surface(
                     shape = RoundedCornerShape(50),
                     color = summaryTint.copy(alpha = 0.12f),
@@ -228,8 +231,9 @@ fun PermissionDashboardCard() {
             permissions.chunked(2).forEach { group ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     group.forEach { (label, granted) ->
-                        val accent = if (granted) Color(0xFF8FDFAB)
-                            else MaterialTheme.colorScheme.error
+                        val accent = if (granted) {
+                            if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
+                        } else MaterialTheme.colorScheme.error
                         Surface(
                             shape = RoundedCornerShape(15.dp),
                             color = accent.copy(alpha = 0.09f),
