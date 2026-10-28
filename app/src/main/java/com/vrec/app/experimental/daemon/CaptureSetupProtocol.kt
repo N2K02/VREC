@@ -17,6 +17,26 @@ internal object CaptureSetupProtocol {
         val detail: String,
     )
 
+    /**
+     * Scriptable bounded setup flow. The production helper and JVM tests both
+     * use this runner, so a transient first acknowledgement doesn't make a
+     * previously working recording helper appear permanently broken.
+     */
+    suspend fun verifyWithRetry(
+        maxAttempts: Int = 3,
+        configure: suspend () -> Boolean,
+        incompatible: () -> Boolean,
+        waitBetween: suspend (Int) -> Unit,
+    ): Boolean {
+        require(maxAttempts in 1..5)
+        for (attempt in 1..maxAttempts) {
+            if (configure()) return true
+            if (incompatible()) return false
+            if (attempt < maxAttempts) waitBetween(attempt)
+        }
+        return false
+    }
+
     fun modeAccepted(reply: String?, enabled: Boolean, waitForAnswer: Boolean): Boolean {
         val mode = if (enabled) 1 else 0
         val wait = if (enabled && waitForAnswer) 1 else 0
