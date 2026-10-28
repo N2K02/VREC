@@ -98,7 +98,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         paired = ExperimentalRecording.wirelessWasPaired(context),
         pairingPortFound = wireless.pairingPort != null,
         wirelessPortFound = wireless.connectPort != null,
-        tcpApproved = com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context),
+        tcpEnabled = com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context),
         awaitingManualRetry = ExperimentalRecording.awaitingManualRetry,
     ))
     val badge = AdbBadgePolicy.resolve(
@@ -203,7 +203,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             Text(
                 when {
                     onboarding == AdbOnboardingPolicy.Step.READY -> "Recording helper ready — nothing to set up"
-                    onboarding == AdbOnboardingPolicy.Step.SWITCH_TO_TCP -> "UID 2000 verified — switching to approved TCP/5555"
+                    onboarding == AdbOnboardingPolicy.Step.SWITCH_TO_TCP -> "UID 2000 verified — switching automatically to TCP/5555"
                     verified -> "Android shell UID 2000 verified — preparing helper"
                     busy || adbState.busy -> "Checking ADB authorization…"
                     wireless.pairingPort != null -> "Wireless pairing found — enter Android's six-digit code"
