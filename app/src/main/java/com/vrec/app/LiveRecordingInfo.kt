@@ -11,6 +11,8 @@ internal data class LiveRecordingInfo(
     val caller: String,
     val source: String,
     val startedAt: Long?,
+    val packageName: String? = null,
+    val direction: CallDirection = CallDirection.UNKNOWN,
 )
 
 /**
@@ -31,7 +33,13 @@ internal object LiveRecordingInfoResolver {
                 CallDirection.INCOMING, CallDirection.OUTGOING -> "SIM call"
                 else -> "VoIP call"
             }
-        return LiveRecordingInfo(caller, source, identity.startedAt)
+        val flow = when (matched?.flowDirection) {
+            "INCOMING" -> CallDirection.INCOMING
+            "OUTGOING" -> CallDirection.OUTGOING
+            else -> identity.direction
+        }
+        return LiveRecordingInfo(caller, source, identity.startedAt,
+            identity.appPackage, flow)
     }
 
     internal fun preferredCaller(vararg suggestions: String?): String =
