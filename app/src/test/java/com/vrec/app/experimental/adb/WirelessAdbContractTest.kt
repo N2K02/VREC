@@ -22,7 +22,7 @@ class WirelessAdbContractTest {
         assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
         assertTrue(controller.substringAfter("suspend fun connectWireless(").contains("verifyShellUid()"))
         assertTrue(controller.contains("deferHelperUntilTcp"))
-        assertTrue(controller.contains("startHelperTyped(context)"))
+        assertTrue(controller.contains("startHelperTyped(context, manualRepair = !automatic)"))
         val helper = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
         val flow = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperStartFlow.kt")
         assertTrue(helper.contains("AdbPermissionBootstrap.grantEligible(app)"))
