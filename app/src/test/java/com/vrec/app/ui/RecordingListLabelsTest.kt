@@ -69,4 +69,21 @@ class RecordingListLabelsTest {
         assertEquals("Incoming", RecordingListLabels.direction(CallDirection.VOIP, "incoming"))
         assertEquals("Outgoing", RecordingListLabels.direction(CallDirection.VOIP, "outgoing"))
     }
+
+    @Test fun verifiedFlowOverridesShellDirectionAndVoipRemainsVoipSource() {
+        assertEquals("Incoming", RecordingListLabels.direction(CallDirection.OUTGOING, "INCOMING"))
+        assertEquals("Outgoing", RecordingListLabels.direction(CallDirection.INCOMING, "OUTGOING"))
+        assertEquals(CallDirection.INCOMING, RecordingListLabels.flowDirection(
+            CallDirection.VOIP, "incoming"))
+        assertEquals(CallDirection.OUTGOING, RecordingListLabels.flowDirection(
+            CallDirection.VOIP, "OUTGOING"))
+        assertEquals(CallDirection.INCOMING, RecordingListLabels.flowDirection(
+            CallDirection.OUTGOING, "INCOMING"))
+        assertEquals(CallDirection.OUTGOING, RecordingListLabels.flowDirection(
+            CallDirection.OUTGOING, null))
+        assertEquals(CallDirection.UNKNOWN, RecordingListLabels.flowDirection(
+            CallDirection.VOIP, null))
+        assertEquals(RecordingListLabels.SourceKind.APP, RecordingListLabels.sourceKind(
+            CallDirection.VOIP, "com.whatsapp", "VOIP"))
+    }
 }
