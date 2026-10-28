@@ -14,7 +14,7 @@ class AdbHelperTcpRecoveryContractTest {
             .substringAfter("suspend fun connectWireless(")
             .substringBefore("/** Runs a connection attempt")
         val defer = wireless.indexOf("if (deferHelperUntilTcp)")
-        val bootstrap = wireless.indexOf("startHelperTyped(context)")
+        val bootstrap = wireless.indexOf("startHelperTyped(context, manualRepair = !automatic)")
         assertTrue(defer >= 0 && bootstrap > defer)
         assertTrue(wireless.substring(defer, bootstrap).contains("return attempt"))
         val coordinator = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
