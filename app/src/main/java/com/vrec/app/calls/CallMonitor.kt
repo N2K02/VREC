@@ -57,6 +57,24 @@ object CallMonitor {
     }
 
     private val sessions = linkedMapOf<String, Session>()
+
+    /** UI-only identity. Never assign a caller across concurrent or unknown sessions. */
+    data class LiveCaller(val name: String?, val number: String?, val appPackage: String?)
+
+    @Synchronized
+    fun liveCallerForShell(appPackage: String?, direction: CallDirection): LiveCaller? {
+        val candidates = sessions.values.filter { session ->
+            session.active && if (appPackage != null) {
+                session.isVoip && session.packageName == appPackage
+            } else {
+                !session.isVoip && direction in setOf(CallDirection.INCOMING, CallDirection.OUTGOING) &&
+                    (session.flowDirection == direction || session.direction == direction)
+            }
+        }
+        if (candidates.size != 1) return null
+        val session = candidates.single()
+        return LiveCaller(session.name, session.number, session.packageName)
+    }
     private val handler = Handler(Looper.getMainLooper())
     private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val masterModeMutex = Mutex()
@@ -644,6 +662,13 @@ object CallMonitor {
      */
     @Synchronized
     fun setRecordingEnabled(context: Context, enabled: Boolean) {
+        // Do not tear down shell capture/session ownership while a call is
+        // active. Home locks the switch; this guards other callers too.
+        if (AdbFallbackNotice.enhancedActive.value ||
+            RecordingService.state.value !is RecordingService.State.Idle) {
+            Log.i("Automatic recording toggle ignored during active capture lifecycle")
+            return
+        }
         Prefs.setRecordingEnabled(context, enabled)
         if (!enabled) {
             AdbFallbackNotice.clear()
