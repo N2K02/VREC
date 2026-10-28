@@ -56,6 +56,25 @@ class AdbStartupCancellationRegressionTest {
         assertTrue(daemon.contains("if (it is CancellationException) throw it"))
     }
 
+    @Test fun queuedWirelessRepairCannotAcceptDuplicateStart() {
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        val retry = wireless.substringAfter("fun retry(context: Context)")
+            .substringBefore("fun openSettings(context: Context)")
+        assertTrue(retry.contains("phase = Phase.CONNECTING"))
+        assertTrue(retry.contains("AdbLifecycle.coordinateSetup {"))
+        val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        assertTrue(home.contains("enabled = !foregroundBusy && !busy && !adbState.busy && !wirelessWorking"))
+    }
+
+    @Test fun stagedJarChecksShellReadabilityAndCleansTemporaryDownload() {
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        assertTrue(daemon.contains("ShellJarStagingPolicy.choose(directReadable, Build.VERSION.SDK_INT)"))
+        assertTrue(daemon.contains("check(shellCanRead(staged))"))
+        assertTrue(daemon.contains("sharedStage?.cleanup?.invoke()"))
+        assertTrue(daemon.contains("resolver.delete(uri, null, null)"))
+        assertTrue(daemon.contains("MediaStore.Downloads.EXTERNAL_CONTENT_URI"))
+    }
+
     @Test fun deniedRuntimePermissionUsesAndroidWithoutShellAuthorization() {
         val card = source("app/src/main/java/com/vrec/app/ui/PermissionDashboardCard.kt")
         assertTrue(card.contains("val result = if (authorized)"))
