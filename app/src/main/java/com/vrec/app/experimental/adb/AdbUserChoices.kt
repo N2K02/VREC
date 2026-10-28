@@ -4,14 +4,15 @@ import android.content.Context
 import android.provider.Settings
 
 /**
- * Security-relevant ADB behaviour the user must opt into. Both default OFF.
+ * Security-relevant ADB preferences. TCP/5555 defaults ON for verified shell setup;
+ * reboot restore remains OFF unless explicitly enabled.
  *
  * - Restore after restart: VRec may switch Wireless debugging back on after a
  *   reboot (Android turns it off on reboot) to restart the recording helper.
  *   Never after the user turned it off themselves during the same boot.
- * - TCP/5555 mode: after verified Wireless ADB, VRec moves adbd to TCP/5555 so
- *   the helper can be restarted without Wi-Fi. TCP/5555 can be reached by other
- *   devices on the network, so it is off unless chosen.
+ * - TCP/5555 mode: after verified Wireless ADB, VRec moves adbd to TCP/5555
+ *   automatically for durable local reconnects. The user can switch it off;
+ *   TCP/5555 may be reachable by other devices on the same network.
  */
 object AdbUserChoices {
     private const val PREFS = "vrec_adb_user_choices"
@@ -26,7 +27,7 @@ object AdbUserChoices {
         prefs(context).edit().putBoolean(RESTORE_AFTER_RESTART, enabled).apply()
     }
 
-    fun tcpMode(context: Context): Boolean = prefs(context).getBoolean(TCP_MODE, false)
+    fun tcpMode(context: Context): Boolean = prefs(context).getBoolean(TCP_MODE, true)
 
     fun setTcpMode(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(TCP_MODE, enabled).apply()
