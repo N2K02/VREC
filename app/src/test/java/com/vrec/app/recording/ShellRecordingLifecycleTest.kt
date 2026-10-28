@@ -159,4 +159,27 @@ class ShellRecordingLifecycleTest {
         assertTrue(lifecycle.ended(first))
         assertTrue(lifecycle.started(second))
     }
+
+    @Test fun rapidPauseStopAndResumeCannotResurrectStoppedCapture() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        assertTrue(lifecycle.pausedByUser())
+        assertFalse(lifecycle.pausedByUser())
+        assertTrue(lifecycle.started(second))
+        assertTrue(lifecycle.stoppedByUser())
+        assertFalse(lifecycle.isActive())
+        assertFalse(lifecycle.started(first))
+        assertFalse(lifecycle.started(second))
+        assertFalse(lifecycle.ended(second))
+    }
+
+    @Test fun restoredPausedStateRejectsOldWakesUntilNewSegmentStarts() {
+        val lifecycle = ShellRecordingLifecycle()
+        assertTrue(lifecycle.started(first))
+        lifecycle.reconcilePaused()
+        assertFalse(lifecycle.started(first))
+        assertFalse(lifecycle.ended(first))
+        assertTrue(lifecycle.started(second))
+        assertTrue(lifecycle.isActive())
+    }
 }
