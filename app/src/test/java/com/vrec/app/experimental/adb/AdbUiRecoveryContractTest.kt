@@ -23,16 +23,19 @@ class AdbUiRecoveryContractTest {
 
     @Test fun foregroundAndBackgroundRecoveryShareCoordinator() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
-        assertTrue(lifecycle.contains("recoveryMutex.withLock { block() }"))
+        assertTrue(lifecycle.contains("transportMutex.withLock { block() }"))
         assertTrue(lifecycle.contains("recoveryMutex.withLock {"))
         assertTrue(lifecycle.contains("wifiRecoveryJobs.forEach { it.cancel() }"))
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        assertTrue(wireless.contains("AdbLifecycle.coordinateSetup {"))
     }
 
-    @Test fun tcpApprovalIsOneTimeAndExplicit() {
+    @Test fun tcpSwitchIsDefaultWithUserOptOutAndNetworkWarning() {
         val onboarding = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
-        assertTrue(onboarding.contains("AdbUserChoices.setTcpMode(context, true)"))
-        assertTrue(onboarding.contains("confirmTcp = true"))
-        assertTrue(onboarding.contains("TCP/5555 can expose Android debugging"))
+        val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
+        assertTrue(choices.contains("getBoolean(TCP_MODE, true)"))
+        assertTrue(onboarding.contains("AdbUserChoices.setTcpMode(context, enabled)"))
+        assertTrue(onboarding.contains("Other devices on the network may reach TCP/5555"))
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(wireless.contains("if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)"))
     }
