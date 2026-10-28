@@ -62,6 +62,8 @@ data class Recording(
     val callConnectedAt: Long? = null,
     val callEndedAt: Long? = null,
     val metadataAvailable: Boolean = true,
+    /** CALL media, not video file capture: VIDEO or VOICE when observed. */
+    val callMediaType: String? = null,
 ) {
     val sizeBytes: Long get() = file.length()
     val displayName: String get() = contactName?.takeIf { it.isNotBlank() }
@@ -125,6 +127,7 @@ object RecordingStore {
         startedAtOverride: Long? = null,
         endedAtOverride: Long? = null,
         audioHealth: String? = null,
+        callMediaType: String? = null,
     ): Boolean {
         val started = startedAtOverride ?: runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
@@ -147,6 +150,9 @@ object RecordingStore {
             .put("simSlot", simSlot ?: JSONObject.NULL)
             .put("carrier", carrier ?: JSONObject.NULL)
             .put("callType", if (direction == CallDirection.VOIP) "VOIP" else direction.name)
+            .put("callMediaType", callMediaType?.takeIf {
+                it == "VIDEO" || it == "VOICE"
+            } ?: JSONObject.NULL)
             .put("sourcePackage", appPackage ?: JSONObject.NULL)
             .put("phoneAccountId", accountId ?: JSONObject.NULL)
             .put("numberSource", numberSource ?: JSONObject.NULL)
@@ -329,6 +335,8 @@ object RecordingStore {
             callConnectedAt = meta?.optLong("callConnectedAt")?.takeIf { it > 0 },
             callEndedAt = meta?.optLong("callEndedAt")?.takeIf { it > 0 },
             metadataAvailable = meta != null,
+            callMediaType = meta?.optString("callMediaType")
+                ?.takeIf { it == "VIDEO" || it == "VOICE" },
         )
     }
 
