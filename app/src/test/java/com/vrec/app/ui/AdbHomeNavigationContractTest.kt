@@ -29,7 +29,7 @@ class AdbHomeNavigationContractTest {
         assertFalse(home.contains("onOpenExperimental"))
         assertTrue(source.contains("Screen.HOME -> HomeScreen()"))
         val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
-        assertTrue(card.contains("AdbForegroundSetup.startOrRepair(context)"))
+        assertTrue(card.contains("AdbForegroundSetup.begin(context)"))
         val foreground = read("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
         assertTrue(foreground.contains("LocalAdbMiddleware.setup(app, userInitiated = true)"))
         assertFalse(card.contains("LocalWirelessAdb.start(context)"))
