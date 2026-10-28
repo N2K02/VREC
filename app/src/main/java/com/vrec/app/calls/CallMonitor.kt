@@ -303,6 +303,7 @@ object CallMonitor {
         status: String,
         metadata: CallerMetadata?,
         notificationFlow: CallDirection = CallDirection.UNKNOWN,
+        mediaType: String? = null,
     ) {
         if (!Prefs.recordingEnabled(context)) return
         val candidates = sessions.values.filter { it.source == Source.TELECOM &&
@@ -312,6 +313,7 @@ object CallMonitor {
 
         if (target != null) {
             applyMetadata(target, metadata)
+            if (mediaType == "VIDEO") target.mediaType = "VIDEO"
             // Telecom remains authoritative; notification evidence may fill a gap.
             if (target.isVoip && target.flowDirection == CallDirection.UNKNOWN &&
                 notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
@@ -348,6 +350,7 @@ object CallMonitor {
                 direction = CallDirection.VOIP)
         }
         applyMetadata(session, metadata)
+        if (mediaType == "VIDEO") session.mediaType = "VIDEO"
         if (session.flowDirection == CallDirection.UNKNOWN &&
             notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
             session.flowDirection = notificationFlow
