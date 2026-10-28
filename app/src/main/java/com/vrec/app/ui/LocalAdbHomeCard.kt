@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -331,10 +332,11 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
 /** Badge represents a verified current shell session, not merely an open TCP socket. */
 @Composable
 private fun AdbUidBadge(state: AdbBadgePolicy.State, needsUsbBootstrap: Boolean) {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val accent = when (state) {
-        AdbBadgePolicy.State.SUCCESS -> Color(0xFF91E3AF)
+        AdbBadgePolicy.State.SUCCESS -> if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
         AdbBadgePolicy.State.FAILED -> MaterialTheme.colorScheme.error
-        AdbBadgePolicy.State.IN_PROGRESS -> Color(0xFFFFD18A)
+        AdbBadgePolicy.State.IN_PROGRESS -> if (dark) Color(0xFFFFD18A) else Color(0xFF8B6018)
         AdbBadgePolicy.State.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when (state) {
