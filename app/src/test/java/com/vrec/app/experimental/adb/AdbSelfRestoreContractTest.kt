@@ -5,7 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Restore and TCP/5555 are opt-in, verified, and respect the user's own choices. */
+/** Reboot restore is opt-in; verified TCP/5555 is automatic but can be disabled. */
 class AdbSelfRestoreContractTest {
     private fun read(path: String) = listOf(File(path), File("../$path"))
         .firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
@@ -15,9 +15,9 @@ class AdbSelfRestoreContractTest {
     private val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
     private val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
 
-    @Test fun bothSecurityChoicesDefaultOff() {
+    @Test fun rebootRestoreDefaultsOffButTcpDefaultsOn() {
         assertTrue(choices.contains("getBoolean(RESTORE_AFTER_RESTART, false)"))
-        assertTrue(choices.contains("getBoolean(TCP_MODE, false)"))
+        assertTrue(choices.contains("getBoolean(TCP_MODE, true)"))
     }
 
     @Test fun secureSettingsOnlyRequestedForOptedInRestoreAfterVerifiedUid() {
@@ -41,7 +41,7 @@ class AdbSelfRestoreContractTest {
         assertFalse(restore.contains("\"adb_enabled\""))
     }
 
-    @Test fun tcpSwitchOnlyWhenOptedInAndReadyNeedsHelper() {
+    @Test fun tcpSwitchFollowsUserPreferenceAndReadyNeedsHelper() {
         val connect = wireless.substringAfter("private suspend fun connectAndSwitch(")
             .substringBefore("fun shutdown(")
         assertTrue(connect.contains("if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)"))
