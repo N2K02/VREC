@@ -260,6 +260,12 @@ fun PermissionDashboardCard() {
                         enabled = !foregroundBusy && !working) { Text("Repair") }
                 }
             }
+            if (count == permissions.size && (!helperReady ||
+                    helperState != AdbPrivilegedApiHelper.State.RUNNING)) {
+                Text("All listed Android permissions are granted. The ADB shell helper is a separate service and still needs to confirm recording mode and SIM audio source. Use Repair after the call has ended.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (count != permissions.size) {
                 Text(if (working) "Checking ADB grants…" else
                     "Tap a red ✕ for the available Android approval steps. VRec requests eligible grants after verified ADB UID 2000; Accessibility, notification access and overlays are Android-controlled and optional for some features.",
