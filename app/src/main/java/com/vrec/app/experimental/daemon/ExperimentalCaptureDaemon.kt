@@ -139,6 +139,18 @@ object ExperimentalCaptureDaemon {
         return result
     }
 
+    private fun bundledBuild(context: Context): String =
+        context.assets.open(ASSET).use(ShellHelperBuildPolicy::fingerprint)
+
+    /** Detect an obsolete daemon without sending newer commands it cannot answer. */
+    suspend fun runningBuildStatus(context: Context): ShellHelperBuildPolicy.Decision {
+        val banner = pingBanner(context)
+        if (banner?.startsWith("PONG 2") != true) {
+            return ShellHelperBuildPolicy.Decision.INCOMPATIBLE_PROTOCOL
+        }
+        return ShellHelperBuildPolicy.decide(banner, bundledBuild(context))
+    }
+
     private fun stage(context: Context): String {
         val dir = context.getExternalFilesDir(null)
             ?: error("App external storage unavailable for one-time shell bootstrap.")
@@ -225,8 +237,7 @@ object ExperimentalCaptureDaemon {
         runCatching {
             val runningBanner = pingBanner(context)
             if (runningBanner?.startsWith("PONG 2") == true) {
-                val bundledBuild = context.assets.open(ASSET).use(ShellHelperBuildPolicy::fingerprint)
-                val buildDecision = ShellHelperBuildPolicy.decide(runningBanner, bundledBuild)
+                val buildDecision = ShellHelperBuildPolicy.decide(runningBanner, bundledBuild(context))
                 if (buildDecision != ShellHelperBuildPolicy.Decision.STALE) {
                     if (confirmSetup(context)) {
                         message.value = if (Prefs.recordingEnabled(context))
