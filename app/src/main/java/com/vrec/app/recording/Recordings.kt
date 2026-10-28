@@ -194,6 +194,7 @@ object RecordingStore {
             .put("callFlowDirection", when (callFlowDirection?.uppercase(Locale.ROOT)) {
                 "INCOMING" -> "INCOMING"
                 "OUTGOING" -> "OUTGOING"
+                "UNKNOWN" -> "UNKNOWN"
                 else -> JSONObject.NULL
             })
         writeJsonAtomic(recording.file, json)
