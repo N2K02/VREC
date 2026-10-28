@@ -10,9 +10,9 @@ class RecordingListLabelsTest {
         assertEquals("Phonebook", RecordingListLabels.contact(null, "Phonebook", "Caller", "+2301234567"))
         assertEquals("Caller", RecordingListLabels.contact(null, "+2301234567", "Caller", "+2301234567"))
         assertEquals("+2301234567", RecordingListLabels.contact(null, null, null, "+2301234567"))
-        assertEquals("Unknown contact", RecordingListLabels.contact(" ", "", null, null))
+        assertEquals("Unknown caller", RecordingListLabels.contact(" ", "", null, null))
         assertEquals("Sonu orange", RecordingListLabels.contact(null, null, null, null, "20261025_202514_VOIP_Sonu_orange.m4a"))
-        assertEquals("Unknown contact", RecordingListLabels.contact(null, null, null, null, "vrec_rec_1792945016544_in.ogg"))
+        assertEquals("Unknown caller", RecordingListLabels.contact(null, null, null, null, "vrec_rec_1792945016544_in.ogg"))
     }
 
     @Test fun determinesDirectionWithoutGuessingForLegacyVoip() {
@@ -122,5 +122,19 @@ class RecordingListLabelsTest {
             RecordingListLabels.mediaBadge(null))
         assertEquals(RecordingListLabels.MediaBadge.CALL,
             RecordingListLabels.mediaBadge("UNKNOWN"))
+    }
+    @Test fun savedNameThenNumberThenOnlyExplicitPrivateNumberAreValidCallerFallbacks() {
+        assertEquals("Saved WhatsApp contact", RecordingListLabels.contact(
+            "Saved WhatsApp contact", null, "WhatsApp", "+23051234567"))
+        assertEquals("+23051234567", RecordingListLabels.contact(
+            null, null, "WhatsApp", "+23051234567"))
+        assertEquals("Private number", RecordingListLabels.contact(
+            "Private number", null, "SIM", null))
+        assertEquals("Unknown caller", RecordingListLabels.contact(
+            null, null, "WhatsApp", null))
+        assertEquals("Unknown caller", RecordingListLabels.contact(
+            null, null, "SIM", null))
+        assertEquals("Saved name", RecordingListLabels.contact(
+            "Saved name", "+23051234567", null, "+23051234567"))
     }
 }
