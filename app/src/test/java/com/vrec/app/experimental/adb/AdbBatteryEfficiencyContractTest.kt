@@ -171,7 +171,7 @@ class AdbBatteryEfficiencyContractTest {
 
     @Test fun interruptedShellImportIsRetriedWithoutDeletingOriginal() {
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
-        assertTrue(daemon.contains("File(dest.parentFile, dest.name + \".json\").exists()"))
+        assertTrue(daemon.contains("RecordingStore.hasValidMetadata(dest)"))
         assertTrue(daemon.contains("Cannot remove incomplete previous import"))
         assertTrue(daemon.contains("if (t is CancellationException) throw t"))
         assertTrue(daemon.contains("temp.delete()"))
