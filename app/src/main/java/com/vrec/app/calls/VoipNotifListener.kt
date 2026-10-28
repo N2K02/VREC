@@ -10,6 +10,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.telecom.TelecomManager
 import com.vrec.app.Log
+import com.vrec.app.recording.CallDirection
 
 /** Caller metadata enrichment for Telecom calls; standalone VoIP detection where Telecom is silent. */
 class VoipNotifListener : NotificationListenerService() {
@@ -30,7 +31,11 @@ class VoipNotifListener : NotificationListenerService() {
         private const val EXTRA_CALL_TYPE = "android.callType"
     }
 
-    private data class Signal(val status: String, val metadata: CallerMetadata?)
+    private data class Signal(
+        val status: String,
+        val metadata: CallerMetadata?,
+        val direction: CallDirection,
+    )
     private val signals = mutableMapOf<String, MutableMap<String, Signal>>()
     private val handler = Handler(Looper.getMainLooper())
     private val expiry = mutableMapOf<String, Runnable>()
@@ -63,7 +68,8 @@ class VoipNotifListener : NotificationListenerService() {
                 .mapNotNull { sbn ->
                     val n = sbn.notification ?: return@mapNotNull null
                     val state = stateOf(n) ?: return@mapNotNull null
-                    sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n))
+                    sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n),
+                        directionOf(n, state))
                 }
                 .toMap()
             if (latest.isEmpty()) {
@@ -131,7 +137,8 @@ class VoipNotifListener : NotificationListenerService() {
         }
         expiry.remove(pkg)?.let(handler::removeCallbacks)
         val map = signals.getOrPut(pkg) { mutableMapOf() }
-        map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n))
+        map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n),
+            directionOf(n, state))
         publish(pkg, phone)
         if (!phone) scheduleWatchdog()
     }
@@ -158,8 +165,20 @@ class VoipNotifListener : NotificationListenerService() {
         val metadata = values.firstNotNullOfOrNull { it.metadata?.takeIf { m ->
             m.number != null || m.name != null
         } }
-        CallMonitor.onNotification(this, pkg, phone, status, metadata)
+        val known = values.map { it.direction }
+            .filter { it == CallDirection.INCOMING || it == CallDirection.OUTGOING }
+            .distinct()
+        CallMonitor.onNotification(this, pkg, phone, status, metadata,
+            if (known.size == 1) known.single() else CallDirection.UNKNOWN)
     }
+
+    private fun directionOf(n: Notification, state: String): CallDirection =
+        VoipNotificationDirection.fromSignal(
+            n.extras?.getInt(EXTRA_CALL_TYPE, 0) ?: 0,
+            state,
+            n.extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+            n.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+        )
 
     private fun stateOf(n: Notification): String? {
         val type = n.extras?.getInt(EXTRA_CALL_TYPE, 0) ?: 0
