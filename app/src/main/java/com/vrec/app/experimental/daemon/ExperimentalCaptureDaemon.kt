@@ -51,6 +51,7 @@ object ExperimentalCaptureDaemon {
     val voipArmed = MutableStateFlow(false)
     val voipMessage = MutableStateFlow("Enhanced VoIP capture is off.")
     val simSourceMessage = MutableStateFlow("VOICE_CALL")
+    private val incompatibleProtocol = MutableStateFlow(false)
     private val importMutex = Mutex()
     private val modeMutex = Mutex()
     // Lifecycle entry point for the app's ADB-bootstrapped privileged Java service.
@@ -149,14 +150,31 @@ object ExperimentalCaptureDaemon {
         Prefs.recordingEnabled(context) &&
             true
 
+    /** A daemon can answer PONG before its configuration worker has settled.
+     * Retry short transient handshakes; never recreate a working helper just
+     * because a configuration packet was delayed.
+     */
+    private suspend fun confirmSetup(context: Context): Boolean {
+        repeat(3) { attempt ->
+            if (setMode(context, Prefs.recordingEnabled(context))) return true
+            if (attempt < 2) delay(400L * (attempt + 1))
+        }
+        return false
+    }
+
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (probe(context)) {
-                if (setMode(context, Prefs.recordingEnabled(context))) {
+                if (confirmSetup(context)) {
                     message.value = if (Prefs.recordingEnabled(context))
                         "Recorder running. It can capture without a current ADB connection."
                     else "Recorder running; Home recording switch is off."
                     return@runCatching
+                }
+                // A transient failure must not kill a previously working recorder.
+                // Replace only when an explicit, incompatible protocol reply was received.
+                check(incompatibleProtocol.value) {
+                    "Existing shell helper is answering, but configuration could not be confirmed: " + message.value
                 }
                 // The previous APK may have left an old shell daemon running.
                 // A new app must not pretend an old binary supports answered-call
@@ -228,8 +246,8 @@ object ExperimentalCaptureDaemon {
                 }
                 error("Shell recorder did not start: $cause")
             }
-            check(setMode(context, Prefs.recordingEnabled(context))) {
-                "Shell recorder started, but its recording mode was not confirmed."
+            check(confirmSetup(context)) {
+                "Shell recorder started, but configuration could not be confirmed: " + message.value
             }
             message.value = if (Prefs.recordingEnabled(context))
                 "Shell recorder started. Calls can continue while Wi-Fi is off."
@@ -246,38 +264,34 @@ object ExperimentalCaptureDaemon {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
             val allowed = enabled && shouldArmForNextCall(context)
-            val verified = runCatching {
-                val waitForAnswer = allowed && requireOutgoingAnswer(context)
+            val waitForAnswer = allowed && requireOutgoingAnswer(context)
+            val modeReply = runCatching {
                 open(context, 'E', byteArrayOf(
-                        if (allowed) 1 else 0,
-                        if (waitForAnswer) 1 else 0,
-                    )).use {
-                    val confirmed = it.getInputStream().bufferedReader().readLine()?.trim()
-                    // Never consider an old one-byte daemon compatible with
-                    // the authorized answered-call timing requirement.
-                    confirmed == "${if (allowed) 1 else 0} WAIT ${if (waitForAnswer) 1 else 0}" ||
-                        (!waitForAnswer && confirmed == (if (allowed) "1" else "0"))
+                    if (allowed) 1 else 0,
+                    if (waitForAnswer) 1 else 0,
+                )).use {
+                    it.getInputStream().bufferedReader().readLine()?.trim()
                 }
-            }.getOrDefault(false)
-            val configuredSource = if (verified) {
+            }.getOrNull()
+            val selected = EnhancedCapturePreferences.simSource(context)
+            val sourceReply = if (CaptureSetupProtocol.modeAccepted(modeReply, allowed, waitForAnswer)) {
                 runCatching {
-                    val selected = EnhancedCapturePreferences.simSource(context)
                     open(context, 'Y', byteArrayOf(selected.wireValue.toByte())).use {
-                        it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
+                        it.getInputStream().bufferedReader().readLine()?.trim()
                     }
-                }.getOrDefault("")
-            } else ""
-            simSourceMessage.value = when {
-                configuredSource == "SOURCE BUSY" ->
-                    "SIM source retained during an active call; reconfigure when idle."
-                configuredSource.startsWith("SOURCE ") -> configuredSource
-                else -> "SIM source unavailable: reconnect ADB to upgrade the helper."
+                }.getOrNull()
+            } else null
+            val verdict = CaptureSetupProtocol.evaluate(
+                modeReply, sourceReply, allowed, waitForAnswer, selected.wireValue,
+            )
+            val verified = verdict.ready
+            incompatibleProtocol.value = verdict.incompatible
+            simSourceMessage.value = when (verdict.source) {
+                CaptureSetupProtocol.Source.APPLIED -> "SOURCE ${selected.wireValue}"
+                CaptureSetupProtocol.Source.DEFERRED_DURING_CALL ->
+                    "SIM source change deferred until the current call ends."
+                else -> verdict.detail
             }
-            // SOURCE BUSY is a healthy running helper protecting an active
-            // capture. Never mark it failed or try to replace it mid-call.
-            // The requested source can be applied on the next idle mode sync.
-            val sourceOk = configuredSource.startsWith("SOURCE ") &&
-                configuredSource != "SOURCE INVALID"
             val requestedApps = if (allowed) EnhancedCapturePreferences.voipPackages(context)
                 else emptySet()
             val voipResult = if (verified) runCatching {
@@ -295,11 +309,15 @@ object ExperimentalCaptureDaemon {
                 voipArmed.value -> "Enhanced VoIP capture armed for ${requestedApps.size} apps."
                 else -> "Enhanced VoIP audio policy not available on this phone."
             }
-            if (!verified || !sourceOk) {
-                ready.value = false
-                message.value = "Enhanced helper source configuration not verified. Reconnect authorized ADB to update it."
+            ready.value = verified
+            if (!verified) {
+                message.value = verdict.detail +
+                    ". The helper remains available for a safe retry; check diagnostics."
+                com.vrec.app.Log.w("Shell capture setup: " + verdict.detail)
+            } else if (verdict.source == CaptureSetupProtocol.Source.DEFERRED_DURING_CALL) {
+                message.value = verdict.detail
             }
-            verified && sourceOk
+            verified
         }
     }
 
