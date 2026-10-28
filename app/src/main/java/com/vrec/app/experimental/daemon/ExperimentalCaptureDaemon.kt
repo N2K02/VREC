@@ -677,15 +677,24 @@ object ExperimentalCaptureDaemon {
                     val label = if (voip) "Enhanced VoIP playback + microphone"
                         else health?.substringBefore(" | ")?.let { "Shell " + it }
                             ?: "Enhanced shell capture"
+                    // Resolve an exact phone number through Android Contacts
+                    // when available, without ever guessing a caller by app
+                    // name or nearby notification. Private callers have no
+                    // number to look up.
+                    val contactName = caller?.name?.takeIf { it.isNotBlank() }
+                        ?: caller?.number?.let { number ->
+                            com.vrec.app.calls.CallInfo.describe(context, number)
+                                ?.takeIf { it != number }
+                        }
                     check(RecordingStore.writeMeta(
-                        dest, direction, caller?.name ?: caller?.number ?:
-                            ShellVoipLabels.forPackage(identity.appPackage), label,
+                        dest, direction, contactName ?: caller?.number ?:
+                            ShellVoipLabels.forPackage(caller?.packageName ?: identity.appPackage), label,
                         silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
                             health?.contains("NO_AUDIO") == true,
                         durationMs = durationMs,
                         appPackage = caller?.packageName ?: identity.appPackage,
                         phoneNumber = caller?.number,
-                        contactName = caller?.name,
+                        contactName = contactName,
                         numberSource = caller?.numberSource,
                         callFlowDirection = caller?.flowDirection
                             ?: identity.direction.takeIf {
