@@ -1,6 +1,8 @@
 package com.vrec.app.recording
 
 import android.content.Context
+import android.util.AtomicFile
+import com.vrec.app.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -81,6 +83,7 @@ object RecordingStore {
     }
 
     private val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+    private val metadataLock = Any()
 
     fun dir(context: Context): File =
         File(context.getExternalFilesDir(null), "recordings").apply { mkdirs() }
@@ -119,7 +122,7 @@ object RecordingStore {
         simSlot: Int? = null,
         carrier: String? = null,
         recordingType: RecordingType = RecordingType.STANDARD,
-    ) {
+    ): Boolean {
         val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
             ?: System.currentTimeMillis()
@@ -151,7 +154,7 @@ object RecordingStore {
             .put("notes", "")
             .put("favorite", false)
             .put("bookmarksMs", JSONArray())
-        runCatching { sidecar(file).writeText(json.toString()) }
+        return writeJsonAtomic(file, json)
     }
 
     fun updateDetails(
@@ -163,7 +166,7 @@ object RecordingStore {
         countryCode: String? = recording.countryCode,
         simLabel: String? = recording.simLabel,
         carrier: String? = recording.carrier,
-    ) {
+    ): Boolean = synchronized(metadataLock) {
         val json = readJson(recording.file) ?: JSONObject()
             .put("startedAt", recording.startedAt)
             .put("direction", recording.direction.name)
@@ -179,17 +182,17 @@ object RecordingStore {
             .put("countryCode", countryCode?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
             .put("simLabel", simLabel?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
             .put("carrier", carrier?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
-        runCatching { sidecar(recording.file).writeText(json.toString()) }
+        writeJsonAtomic(recording.file, json)
     }
 
-    fun addBookmark(recording: Recording, positionMs: Long) {
-        val json = readJson(recording.file) ?: return
+    fun addBookmark(recording: Recording, positionMs: Long): Boolean = synchronized(metadataLock) {
+        val json = readJson(recording.file) ?: return@synchronized false
         val old = json.optJSONArray("bookmarksMs") ?: JSONArray()
         if ((0 until old.length()).none { kotlin.math.abs(old.optLong(it) - positionMs) < 1500 }) {
             old.put(positionMs.coerceAtLeast(0))
         }
         json.put("bookmarksMs", old)
-        runCatching { sidecar(recording.file).writeText(json.toString()) }
+        writeJsonAtomic(recording.file, json)
     }
 
     fun list(context: Context): List<Recording> =
@@ -198,9 +201,17 @@ object RecordingStore {
             ?.sortedByDescending { it.startedAt }
             ?: emptyList()
 
-    fun delete(recording: Recording) {
-        runCatching { recording.file.delete() }
-        runCatching { sidecar(recording.file).delete() }
+    /** Keep the metadata if audio deletion fails; report partial deletion. */
+    fun delete(recording: Recording): Boolean {
+        val audioDeleted = !recording.file.exists() || recording.file.delete()
+        if (!audioDeleted) {
+            Log.w("Recording deletion failed: audio is still present")
+            return false
+        }
+        val metadata = sidecar(recording.file)
+        val metadataDeleted = !metadata.exists() || metadata.delete()
+        if (!metadataDeleted) Log.w("Recording deletion partially failed: metadata is still present")
+        return metadataDeleted
     }
 
     fun exportDetails(recording: Recording): String {
@@ -213,7 +224,45 @@ object RecordingStore {
     }
 
     private fun sidecar(file: File) = File(file.parentFile, file.name + ".json")
-    private fun readJson(file: File): JSONObject? = runCatching { JSONObject(sidecar(file).readText()) }.getOrNull()
+
+    /** AtomicFile retains the previous complete JSON if a write fails. */
+    private fun writeJsonAtomic(file: File, json: JSONObject): Boolean = synchronized(metadataLock) {
+        val atomic = AtomicFile(sidecar(file))
+        var stream: java.io.FileOutputStream? = null
+        try {
+            stream = atomic.startWrite()
+            stream.write(json.toString().toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(stream)
+            true
+        } catch (t: Exception) {
+            if (stream != null) atomic.failWrite(stream)
+            Log.w("Recording metadata could not be saved", t)
+            false
+        }
+    }
+
+    private fun readJson(file: File): JSONObject? = synchronized(metadataLock) {
+        runCatching {
+            AtomicFile(sidecar(file)).openRead().bufferedReader(Charsets.UTF_8)
+                .use { JSONObject(it.readText()) }
+        }.getOrNull()
+    }
+
+    /** Import metadata updates must complete before deleting the shell original. */
+    fun finalizeImportedMeta(
+        file: File, startedAt: Long, endedAt: Long, source: String, health: String?,
+    ): Boolean = synchronized(metadataLock) {
+        val json = readJson(file) ?: return@synchronized false
+        json.put("startedAt", startedAt)
+            .put("endedAt", endedAt)
+            .put("source", source)
+        if (health != null) {
+            json.put("audioHealth", health)
+                .put("audioHealthWarning", health.contains("QUIET") ||
+                    health.contains("CLIPPING") || health.contains("NO_AUDIO"))
+        }
+        writeJsonAtomic(file, json)
+    }
 
     private fun read(file: File): Recording {
         val meta = readJson(file)
