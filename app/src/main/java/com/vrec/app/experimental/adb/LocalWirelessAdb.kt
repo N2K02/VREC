@@ -365,6 +365,9 @@ object LocalWirelessAdb {
         val link = ExperimentalRecording.status.value
         if (AdbLifecycle.quitting || !AdbUserChoices.tcpMode(app) ||
             link.shellUid != 2000 || !link.connected || link.busy ||
+            !AdbTransport.isConnected ||
+            com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value ||
+            com.vrec.app.calls.CallMonitor.hasLiveCall() ||
             ExperimentalRecording.awaitingManualRetry ||
             ExperimentalRecording.tcpPortListening()) return
         val now = android.os.SystemClock.elapsedRealtime()
@@ -377,6 +380,9 @@ object LocalWirelessAdb {
                     val current = ExperimentalRecording.status.value
                     if (!AdbLifecycle.quitting && current.connected &&
                         current.shellUid == 2000 && !current.busy &&
+                        AdbTransport.isConnected &&
+                        !com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value &&
+                        !com.vrec.app.calls.CallMonitor.hasLiveCall() &&
                         AdbUserChoices.tcpMode(app) &&
                         !ExperimentalRecording.tcpPortListening()) {
                         switchToLocalTcp(app)
