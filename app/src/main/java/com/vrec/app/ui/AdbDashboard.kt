@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vrec.app.experimental.adb.AdbLifecycle
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
@@ -128,8 +129,9 @@ fun AdbDashboard(
                     note = null
                     if (verified) scope.launch {
                         acting = true
-                        AdbPrivilegedApiHelper.startWithAdb(context)
-                            .onFailure { note = it.message ?: "Helper didn't start." }
+                        AdbLifecycle.coordinateSetup {
+                            AdbPrivilegedApiHelper.startWithAdb(context)
+                        }.onFailure { note = it.message ?: "Helper didn't start." }
                         acting = false
                     } else onStart()
                 },
@@ -155,11 +157,13 @@ fun AdbDashboard(
                 onClick = {
                     scope.launch {
                         acting = true; note = null
-                        val session = verified || ExperimentalRecording.connect(context).isSuccess
-                        note = if (!session) "Restart needs ADB, so the helper was left running."
-                        else describe(AdbPrivilegedApiHelper.stop(context))
-                            ?: AdbPrivilegedApiHelper.startWithAdb(context)
-                                .exceptionOrNull()?.let { it.message ?: "Helper didn't start again." }
+                        note = AdbLifecycle.coordinateSetup {
+                            val session = verified || ExperimentalRecording.connect(context).isSuccess
+                            if (!session) "Restart needs ADB, so the helper was left running."
+                            else describe(AdbPrivilegedApiHelper.stop(context))
+                                ?: AdbPrivilegedApiHelper.startWithAdb(context)
+                                    .exceptionOrNull()?.let { it.message ?: "Helper didn't start again." }
+                        }
                         acting = false
                     }
                 },
