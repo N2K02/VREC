@@ -41,6 +41,20 @@
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
+    <!-- Android 11+ package visibility: look up only supported call apps so
+         recording cards can show their real installed icons and app labels.
+         Uninstalled or unlisted apps retain the generic icon fallback. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.thoughtcrime.securesms" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.viber.voip" />
+        <package android:name="com.skype.raider" />
+        <package android:name="com.google.android.apps.tachyon" />
+    </queries>
+
     <application
         android:name=".VrecApp"
         android:allowBackup="false"
