@@ -23,7 +23,7 @@ internal object CaptureSetupProtocol {
         return reply == "$mode WAIT $wait" || (!waitForAnswer && reply == mode.toString())
     }
 
-    fun sourceReply(reply: String?, requested: Int): Source = when (reply) {
+    fun classifySource(reply: String?, requested: Int): Source = when (reply) {
         "SOURCE $requested" -> Source.APPLIED
         "SOURCE BUSY" -> Source.DEFERRED_DURING_CALL
         "SOURCE INVALID" -> Source.INVALID
