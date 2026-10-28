@@ -299,7 +299,7 @@ object LocalWirelessAdb {
         }
         // Default: switch verified shell UID 2000 to TCP/5555 and reconnect.
         // The user may opt out in Settings. The listener may be network-reachable.
-        if (switchToTcp) return switchToLocalTcp(app)
+        if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)
         val helperAnswers = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.probe(app)
         stop(app)
         status.value = status.value.copy(
@@ -317,7 +317,7 @@ object LocalWirelessAdb {
         status.value = status.value.copy(phase = Phase.IDLE)
     }
 
-    private suspend fun switchToLocalTcp(context: Context): Boolean {
+    private suspend fun switchToLocalTcp(context: Context, automatic: Boolean): Boolean {
         // The shell itself changes adbd transport. It may drop the TLS connection.
         // Only report readiness after reconnecting and rechecking UID 2000.
         status.value = status.value.copy(phase = Phase.SWITCHING)
@@ -345,7 +345,7 @@ object LocalWirelessAdb {
         }
         // Re-verifies UID 2000 on the new transport and requires the helper to answer.
         val restored = com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
-            .reconnectTcp(context, automatic = false) == null
+            .reconnectTcpWithinSetup(context, automatic = automatic) == null
         if (restored) {
             stop(context)
             status.value = status.value.copy(phase = Phase.READY, message =
@@ -393,7 +393,7 @@ object LocalWirelessAdb {
                         AdbUserChoices.tcpMode(app) &&
                         !ExperimentalRecording.tcpPortListening()) {
                         lastTcpPromotionAtMs = android.os.SystemClock.elapsedRealtime()
-                        switchToLocalTcp(app)
+                        switchToLocalTcp(app, automatic = true)
                     }
                 }
             } finally { transition.unlock() }
