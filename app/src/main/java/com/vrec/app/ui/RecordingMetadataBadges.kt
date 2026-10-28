@@ -139,9 +139,9 @@ private fun DirectionBadge(direction: String, dark: Boolean) {
             Icons.Filled.CallReceived)
         "Outgoing" -> Triple("Outgoing", if (dark) Color(0xFF92C7FF) else Color(0xFF1767A7),
             Icons.Filled.CallMade)
-        "VoIP" -> Triple("VoIP", if (dark) Color(0xFFCEB5FF) else Color(0xFF6843A6),
+        "VoIP" -> Triple("Direction ?", MaterialTheme.colorScheme.onSurfaceVariant,
             Icons.Filled.Call)
-        else -> Triple("Unknown", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Filled.Call)
+        else -> Triple("Direction ?", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Filled.Call)
     }
     Row(
         modifier = Modifier
