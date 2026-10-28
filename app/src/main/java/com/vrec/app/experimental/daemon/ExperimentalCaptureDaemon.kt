@@ -116,15 +116,27 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    /** Only counts as running after the server proves knowledge of our token. */
-    suspend fun probe(context: Context): Boolean = withContext(Dispatchers.IO) {
-        val result = runCatching {
+    /** The authenticated PONG includes a build fingerprint on recent daemons. */
+    private suspend fun pingBanner(context: Context): String? = withContext(Dispatchers.IO) {
+        try {
             open(context, 'P').use {
-                it.getInputStream().bufferedReader().readLine()?.startsWith("PONG 2") == true
+                it.getInputStream().bufferedReader().readLine()?.trim()
             }
-        }.getOrDefault(false)
-        ready.value = result
-        result
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * A PONG proves that the process is alive and authenticated, NOT that
+     * recording mode and SIM source configuration have been acknowledged.
+     */
+    suspend fun probe(context: Context): Boolean {
+        val result = pingBanner(context)?.startsWith("PONG 2") == true
+        if (!result) ready.value = false
+        return result
     }
 
     private fun stage(context: Context): String {
@@ -211,18 +223,28 @@ object ExperimentalCaptureDaemon {
 
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            if (probe(context)) {
-                if (confirmSetup(context)) {
-                    message.value = if (Prefs.recordingEnabled(context))
-                        "Recorder running. It can capture without a current ADB connection."
-                    else "Recorder running; Home recording switch is off."
-                    return@runCatching
+            val runningBanner = pingBanner(context)
+            if (runningBanner?.startsWith("PONG 2") == true) {
+                val bundledBuild = context.assets.open(ASSET).use(ShellHelperBuildPolicy::fingerprint)
+                val buildDecision = ShellHelperBuildPolicy.decide(runningBanner, bundledBuild)
+                if (buildDecision != ShellHelperBuildPolicy.Decision.STALE) {
+                    if (confirmSetup(context)) {
+                        message.value = if (Prefs.recordingEnabled(context))
+                            "Recorder running. It can capture without a current ADB connection."
+                        else "Recorder running; Home recording switch is off."
+                        return@runCatching
+                    }
+                    // A timeout is not proof that an existing daemon is obsolete.
+                    // Keep it alive so a call in progress is never interrupted.
+                    check(incompatibleProtocol.value) {
+                        "Existing shell helper is answering, but configuration could not be confirmed: " + message.value
+                    }
+                } else {
+                    com.vrec.app.Log.i("Shell capture: running helper build differs from bundled APK; requesting safe upgrade")
                 }
-                // A transient failure must not kill a previously working recorder.
-                // Replace only when an explicit, incompatible protocol reply was received.
-                check(incompatibleProtocol.value) {
-                    "Existing shell helper is answering, but configuration could not be confirmed: " + message.value
-                }
+                // A stale APK may leave a running daemon that still answers PONG,
+                // but cannot process newer SIM-source commands. The authenticated
+                // Q command refuses to exit during a call, recording, or import.
                 // The previous APK may have left an old shell daemon running.
                 // A new app must not pretend an old binary supports answered-call
                 // gating. Only a verified ADB shell may replace it, and never
