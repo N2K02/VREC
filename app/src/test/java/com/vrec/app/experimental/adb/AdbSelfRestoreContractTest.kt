@@ -48,7 +48,9 @@ class AdbSelfRestoreContractTest {
         assertTrue(connect.contains("deferHelperUntilTcp = switchToTcp"))
         assertTrue(connect.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
         assertTrue(connect.contains("ExperimentalCaptureDaemon.probe(app)"))
-        assertTrue(connect.indexOf("connectWireless(") < connect.indexOf("switchToLocalTcp(app)"))
+        assertTrue(connect.indexOf("connectWireless(") >= 0)
+        assertTrue(connect.indexOf("connectWireless(") <
+            connect.indexOf("switchToLocalTcp(app, automatic = automatic)"))
         assertTrue(wireless.contains("turn USB debugging off in Developer options"))
     }
 
