@@ -133,31 +133,45 @@ fun RecordingsList() {
         if (callLogAllowed) {
             val candidates = recordings.filter {
                 (it.direction == CallDirection.INCOMING || it.direction == CallDirection.OUTGOING) &&
-                    (it.phoneNumber.isNullOrBlank() || it.contactName.isNullOrBlank())
+                    (it.callFlowDirection.isNullOrBlank() ||
+                        it.phoneNumber.isNullOrBlank() || it.contactName.isNullOrBlank())
             }
             val changed = withContext(Dispatchers.IO) {
                 var updates = 0
                 candidates.forEach { rec ->
-                    val identity = CallHistoryResolver.recover(context.applicationContext, rec)
-                        ?: return@forEach
+                    // A shell _in/_out filename can be wrong if the RINGING
+                    // event was missed. Only a unique completed SIM call log
+                    // match may correct it; preserve existing manual choices.
+                    val recoveredFlow = if (rec.callFlowDirection.isNullOrBlank()) {
+                        CallHistoryResolver.recoverDirection(context.applicationContext, rec)?.name
+                    } else null
+                    val enriched = if (recoveredFlow != null)
+                        rec.copy(callFlowDirection = recoveredFlow) else rec
+                    val identity = if (rec.phoneNumber.isNullOrBlank() ||
+                        rec.contactName.isNullOrBlank()) {
+                        CallHistoryResolver.recover(context.applicationContext, enriched)
+                    } else null
                     val previousNumber = rec.phoneNumber
-                    // Never silently replace an explicitly captured or manually edited number.
-                    if (!previousNumber.isNullOrBlank() &&
-                        previousNumber.filter(Char::isDigit) != identity.number.orEmpty().filter(Char::isDigit)) {
-                        return@forEach
+                    val matchingIdentity = identity?.takeIf {
+                        previousNumber.isNullOrBlank() ||
+                            previousNumber.filter(Char::isDigit) ==
+                                it.number.orEmpty().filter(Char::isDigit)
                     }
+                    // Never silently replace a number manually assigned to a different call.
                     val resolvedName = rec.contactName?.takeIf { it.isNotBlank() }
-                        ?: identity.name?.takeIf { it.isNotBlank() }
+                        ?: matchingIdentity?.name?.takeIf { it.isNotBlank() }
                     val resolvedNumber = previousNumber?.takeIf { it.isNotBlank() }
-                        ?: identity.number?.takeIf { it.isNotBlank() }
-                    if (resolvedNumber != rec.phoneNumber || resolvedName != rec.contactName) {
+                        ?: matchingIdentity?.number?.takeIf { it.isNotBlank() }
+                    if (recoveredFlow != null || resolvedNumber != rec.phoneNumber ||
+                        resolvedName != rec.contactName) {
                         if (RecordingStore.updateDetails(
                             rec, rec.notes, rec.favorite,
                             contactName = resolvedName,
                             phoneNumber = resolvedNumber,
+                            callFlowDirection = recoveredFlow ?: rec.callFlowDirection,
                         )) updates++
                         else com.vrec.app.recording.RecordingFailureNotice.warn(
-                            context, "Recording contact metadata could not be saved. Check free storage.")
+                            context, "Recording metadata could not be saved. Check free storage.")
                     }
                 }
                 updates
@@ -220,13 +234,16 @@ fun RecordingsList() {
         val q = search.trim()
         val textMatch = q.isEmpty() || listOfNotNull(
             rec.peer, rec.phoneNumber, rec.contactName, rec.countryCode, rec.simLabel, rec.carrier,
-            rec.notes, rec.sourceLabel, directionLabel(rec.direction), rec.file.name,
+            rec.notes, rec.sourceLabel,
+            RecordingListLabels.direction(rec.direction, rec.callFlowDirection), rec.file.name,
             dateFmt.format(Date(rec.startedAt))
         ).any { it.contains(q, ignoreCase = true) }
         textMatch && when (filter) {
             RecordingFilter.ALL -> true
-            RecordingFilter.INCOMING -> rec.direction == CallDirection.INCOMING
-            RecordingFilter.OUTGOING -> rec.direction == CallDirection.OUTGOING
+            RecordingFilter.INCOMING ->
+                RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection) == CallDirection.INCOMING
+            RecordingFilter.OUTGOING ->
+                RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection) == CallDirection.OUTGOING
             RecordingFilter.VOIP -> rec.direction == CallDirection.VOIP
             RecordingFilter.FAVORITES -> rec.favorite
             RecordingFilter.SILENT -> rec.silent
@@ -761,8 +778,8 @@ private fun RecordingDetailsDialog(
     var simLabel by remember(rec.file.absolutePath) { mutableStateOf(rec.simLabel.orEmpty()) }
     var carrier by remember(rec.file.absolutePath) { mutableStateOf(rec.carrier.orEmpty()) }
     var callFlowDirection by remember(rec.file.absolutePath) {
-        mutableStateOf(rec.callFlowDirection?.uppercase(Locale.ROOT)
-            ?.takeIf { it == "INCOMING" || it == "OUTGOING" } ?: "UNKNOWN")
+        mutableStateOf(RecordingListLabels.flowDirection(
+            rec.direction, rec.callFlowDirection).name)
     }
     var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
     var moreOpen by remember(rec.file.absolutePath) { mutableStateOf(false) }
@@ -778,13 +795,14 @@ private fun RecordingDetailsDialog(
         rec.durationMs > 0L -> rec.durationMs
         else -> measuredDurationMs
     }
-    val callType = rec.callType?.takeUnless { it.equals("UNKNOWN", true) }
-        ?.let { when (it.uppercase(Locale.ROOT)) {
-            "INCOMING" -> "Incoming call"
-            "OUTGOING" -> "Outgoing call"
-            "VOIP" -> "VoIP call"
-            else -> it
-        } } ?: rec.direction.takeIf { it != CallDirection.UNKNOWN }?.let(::directionLabel)
+    val resolvedFlow = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection)
+    val callType = when {
+        RecordingListLabels.sourceKind(rec.direction, rec.sourcePackage, rec.callType) ==
+            RecordingListLabels.SourceKind.APP -> "VoIP call"
+        resolvedFlow == CallDirection.INCOMING -> "Incoming call"
+        resolvedFlow == CallDirection.OUTGOING -> "Outgoing call"
+        else -> null
+    }
 
     // Older recordings may have no duration sidecar. Read the media duration
     // off the UI thread; never infer it from size or a timestamp.
@@ -974,6 +992,8 @@ private fun RecordingDetailsDialog(
                 if (editing) {
                     RecordingDetailSection("Edit details") {
                         if (rec.direction == CallDirection.VOIP ||
+                            rec.direction == CallDirection.INCOMING ||
+                            rec.direction == CallDirection.OUTGOING ||
                             rec.callType.equals("VOIP", ignoreCase = true)) {
                             Text("Call direction", style = MaterialTheme.typography.labelMedium)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -984,7 +1004,7 @@ private fun RecordingDetailsDialog(
                                         label = { Text(label) })
                                 }
                             }
-                            Text("For an older VoIP recording, select a direction only if you know it.",
+                            Text("Correct the direction only if you know it. Otherwise keep Unknown.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
