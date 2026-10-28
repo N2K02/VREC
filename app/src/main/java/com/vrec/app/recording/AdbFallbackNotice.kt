@@ -51,6 +51,7 @@ object AdbFallbackNotice {
                 else shellLifecycle.started(file))) return
         enhancedActive.value = true
         enhancedPaused.value = false
+        RecordingFailureNotice.clearAfterCaptureStarted(context)
         if (Prefs.showOverlay(context) && !com.vrec.app.calls.CallMonitor.overlayWasDismissed()) {
             runCatching {
                 context.startService(Intent(context, OverlayControlService::class.java)
