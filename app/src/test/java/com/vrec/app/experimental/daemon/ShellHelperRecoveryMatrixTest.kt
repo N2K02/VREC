@@ -95,17 +95,17 @@ class ShellHelperRecoveryMatrixTest {
     }
 
     @Test fun timeoutsAndResetsAreReportedButNotMistakenForLegacyEof() = runBlocking {
-        for (error in listOf(SocketTimeoutException("timeout"), SocketException("reset"))) {
+        for (failureException in listOf(SocketTimeoutException("timeout"), SocketException("reset"))) {
             var attempts = 0
             var failure: String? = null
             val result = CaptureSourceHandshake.request(
-                read = { attempts++; throw error },
+                read = { attempts++; throw failureException },
                 waitBetween = { error("A broken socket must not trigger duplicate commands") },
                 onTransportError = { failure = it.javaClass.simpleName },
             )
             assertNull(result)
             assertEquals(1, attempts)
-            assertEquals(error.javaClass.simpleName, failure)
+            assertEquals(failureException.javaClass.simpleName, failure)
         }
     }
 
