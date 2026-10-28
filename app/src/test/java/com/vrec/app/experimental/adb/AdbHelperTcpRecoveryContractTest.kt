@@ -25,6 +25,8 @@ class AdbHelperTcpRecoveryContractTest {
         val tcp = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
             .substringAfter("private suspend fun switchToLocalTcp(")
         assertTrue(tcp.contains("reconnectTcp(context, automatic = false)"))
+        assertTrue(tcp.indexOf("ExperimentalRecording.refreshConnectionStatus()") <
+            tcp.indexOf("reconnectTcp(context, automatic = false)"))
     }
 
     @Test fun startButtonDoesNotTrustAnOldUidBadge() {
