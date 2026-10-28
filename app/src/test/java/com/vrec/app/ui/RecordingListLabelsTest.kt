@@ -10,9 +10,9 @@ class RecordingListLabelsTest {
         assertEquals("Phonebook", RecordingListLabels.contact(null, "Phonebook", "Caller", "+2301234567"))
         assertEquals("Caller", RecordingListLabels.contact(null, "+2301234567", "Caller", "+2301234567"))
         assertEquals("+2301234567", RecordingListLabels.contact(null, null, null, "+2301234567"))
-        assertEquals("Unknown caller", RecordingListLabels.contact(" ", "", null, null))
+        assertEquals("Recorded call", RecordingListLabels.contact(" ", "", null, null))
         assertEquals("Sonu orange", RecordingListLabels.contact(null, null, null, null, "20261025_202514_VOIP_Sonu_orange.m4a"))
-        assertEquals("Unknown caller", RecordingListLabels.contact(null, null, null, null, "vrec_rec_1792945016544_in.ogg"))
+        assertEquals("Recorded call", RecordingListLabels.contact(null, null, null, null, "vrec_rec_1792945016544_in.ogg"))
     }
 
     @Test fun determinesDirectionWithoutGuessingForLegacyVoip() {
@@ -130,11 +130,36 @@ class RecordingListLabelsTest {
             null, null, "WhatsApp", "+23051234567"))
         assertEquals("Private number", RecordingListLabels.contact(
             "Private number", null, "SIM", null))
-        assertEquals("Unknown caller", RecordingListLabels.contact(
+        assertEquals("Recorded call", RecordingListLabels.contact(
             null, null, "WhatsApp", null))
-        assertEquals("Unknown caller", RecordingListLabels.contact(
+        assertEquals("Recorded call", RecordingListLabels.contact(
             null, null, "SIM", null))
         assertEquals("Saved name", RecordingListLabels.contact(
             "Saved name", "+23051234567", null, "+23051234567"))
+    }
+    @Test fun whenCallerMissingUseVerifiedCallDetailsNotUnknownPlaceholder() {
+        assertEquals("Incoming WhatsApp video call", RecordingListLabels.contact(
+            null, null, "WhatsApp", null, direction = CallDirection.INCOMING,
+            source = "WhatsApp", mediaType = "VIDEO"))
+        assertEquals("Outgoing SIM call", RecordingListLabels.contact(
+            null, null, "SIM", null, direction = CallDirection.OUTGOING, source = "SIM"))
+        assertEquals("WhatsApp call", RecordingListLabels.contact(
+            "Unknown caller", null, null, null, source = "WhatsApp"))
+        assertEquals("Incoming call", RecordingListLabels.callSummary(
+            CallDirection.INCOMING, null))
+        assertEquals("Recorded call", RecordingListLabels.callSummary(
+            CallDirection.UNKNOWN, null))
+    }
+
+    @Test fun realCallerNameAndNumberBeatSummaryEvenForVideoCalls() {
+        assertEquals("+23051234567", RecordingListLabels.contact(
+            null, null, "WhatsApp", "+23051234567",
+            direction = CallDirection.INCOMING, source = "WhatsApp", mediaType = "VIDEO"))
+        assertEquals("Saved WhatsApp name", RecordingListLabels.contact(
+            "Saved WhatsApp name", null, "WhatsApp", "+23051234567",
+            direction = CallDirection.INCOMING, source = "WhatsApp", mediaType = "VIDEO"))
+        assertEquals("Private number", RecordingListLabels.contact(
+            "Private number", null, "SIM", null,
+            direction = CallDirection.INCOMING, source = "SIM"))
     }
 }
