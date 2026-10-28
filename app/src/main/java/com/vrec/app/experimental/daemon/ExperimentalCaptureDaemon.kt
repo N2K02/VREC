@@ -344,34 +344,14 @@ object ExperimentalCaptureDaemon {
             }.getOrNull()
             val selected = EnhancedCapturePreferences.simSource(context)
             val sourceReply = if (CaptureSetupProtocol.modeAccepted(modeReply, allowed, waitForAnswer)) {
-                // An older still-running helper can answer PONG and mode E
-                // but not the newer SIM-source J command. Unknown commands
-                // close the socket immediately (EOF), not after a timeout.
-                // Confirm EOF twice before permitting a guarded helper upgrade.
-                var endOfStream = 0
-                var reply: String? = null
-                for (attempt in 0 until 2) {
-                    try {
-                        val answer = open(context, 'J',
-                            byteArrayOf(selected.wireValue.toByte())).use {
-                            it.getInputStream().bufferedReader().readLine()?.trim()
+                CaptureSourceHandshake.request(
+                    read = {
+                        open(context, 'J', byteArrayOf(selected.wireValue.toByte())).use {
+                            it.getInputStream().bufferedReader().readLine()
                         }
-                        if (answer == null) {
-                            endOfStream++
-                            if (attempt == 0) delay(150L)
-                        } else {
-                            reply = answer
-                            break
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        // Timeouts/resets are transient, never proof of an
-                        // incompatible daemon. Preserve any current capture.
-                        break
-                    }
-                }
-                if (endOfStream == 2) "SOURCE UNSUPPORTED" else reply
+                    },
+                    waitBetween = { delay(150L) },
+                )
             } else null
             val verdict = CaptureSetupProtocol.evaluate(
                 modeReply, sourceReply, allowed, waitForAnswer, selected.wireValue,
