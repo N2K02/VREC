@@ -192,7 +192,7 @@ object ExperimentalRecording {
         // startWithAdb performs the same live UID check and permission bootstrap
         // for every entry point; do not repeat grants in this transport wrapper.
         val helper = try {
-            startHelperTyped(context)
+            startHelperTyped(context, manualRepair = !automatic)
         } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
             status.value = status.value.copy(busy = false)
             throw cancelled
@@ -273,7 +273,7 @@ object ExperimentalRecording {
             return attempt
         }
         val helper = try {
-            startHelperTyped(context)
+            startHelperTyped(context, manualRepair = !automatic)
         } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
             status.value = status.value.copy(busy = false)
             throw cancelled
@@ -313,8 +313,8 @@ object ExperimentalRecording {
     }
 
     /** Helper failures are typed HELPER_UNAVAILABLE and recorded, so UI and recovery don't parse text. */
-    private suspend fun startHelperTyped(context: Context): Result<Unit> {
-        val helper = AdbPrivilegedApiHelper.startWithAdb(context)
+    private suspend fun startHelperTyped(context: Context, manualRepair: Boolean): Result<Unit> {
+        val helper = AdbPrivilegedApiHelper.startWithAdb(context, manualRepair = manualRepair)
         if (helper.isFailure) status.value = status.value.copy(lastFailure = AdbFailure.HELPER_UNAVAILABLE)
         return helper.fold({ Result.success(Unit) }, {
             Result.failure(AdbConnectionException(AdbFailure.HELPER_UNAVAILABLE,
