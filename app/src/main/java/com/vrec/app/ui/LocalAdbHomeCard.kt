@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +48,6 @@ import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.Prefs
-import kotlinx.coroutines.launch
 
 /**
  * Home owns the only setup/retry action. First-time directions are disclosure
@@ -58,11 +56,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolean = false) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val adbState by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
     val busy by LocalAdbMiddleware.busy.collectAsState()
+    val foregroundBusy by AdbForegroundSetup.busy.collectAsState()
     val setupMessage by LocalAdbMiddleware.message.collectAsState()
     val lastSetupFailed by LocalAdbMiddleware.lastSetupFailed.collectAsState()
     val needsUsbBootstrap by LocalAdbMiddleware.needsUsbBootstrap.collectAsState()
@@ -72,7 +70,6 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
     val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
     var instructionsExpanded by remember { mutableStateOf(false) }
     var lastSetupTapAt by remember { mutableStateOf(0L) }
-    var setupTapInFlight by remember { mutableStateOf(false) }
     var recordingOn by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
     var devOptionsOn by remember { mutableStateOf(true) }
     var onWifi by remember { mutableStateOf(true) }
@@ -114,30 +111,16 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
 
     fun runSetup() {
         val now = SystemClock.elapsedRealtime()
-        if (setupTapInFlight || busy || adbState.busy || now - lastSetupTapAt < 1_500L) return
+        if (foregroundBusy || busy || adbState.busy || now - lastSetupTapAt < 1_500L) return
         lastSetupTapAt = now
-        setupTapInFlight = true
-        scope.launch {
-            try {
-                AdbForegroundSetup.startOrRepair(context)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                LocalAdbMiddleware.lastSetupFailed.value = true
-                LocalAdbMiddleware.message.value =
-                    "ADB setup could not complete: " +
-                    (failure.message ?: "unexpected error") +
-                    ". Check ADB diagnostics and retry."
-            } finally {
-                setupTapInFlight = false
-            }
-        }
+        // App-owned single-flight work survives Home -> Settings navigation.
+        AdbForegroundSetup.begin(context)
     }
 
     AdbDashboard(
         healthy = healthy,
         verified = verified,
-        working = busy || adbState.busy || helperState == AdbPrivilegedApiHelper.State.STARTING ||
+        working = foregroundBusy || busy || adbState.busy || helperState == AdbPrivilegedApiHelper.State.STARTING ||
             wireless.phase in setOf(LocalWirelessAdb.Phase.PAIRING, LocalWirelessAdb.Phase.CONNECTING,
                 LocalWirelessAdb.Phase.SWITCHING, LocalWirelessAdb.Phase.VERIFYING_TCP),
         failed = helperState == AdbPrivilegedApiHelper.State.ERROR,
@@ -236,11 +219,11 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             if (!healthy) {
                 Button(
                     onClick = { runSetup() },
-                    enabled = !setupTapInFlight && !busy && !adbState.busy,
+                    enabled = !foregroundBusy && !busy && !adbState.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(when {
-                        busy || adbState.busy -> "Waiting for authorization…"
+                        foregroundBusy || busy || adbState.busy -> "Waiting for authorization…"
                         wireless.pairingPort != null -> "Waiting for pairing code"
                         wireless.connectPort != null &&
                             ExperimentalRecording.wirelessWasPaired(context) -> "Restore wireless ADB"
