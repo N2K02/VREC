@@ -18,14 +18,14 @@ object AdbOnboardingPolicy {
         val paired: Boolean,
         val pairingPortFound: Boolean,
         val wirelessPortFound: Boolean,
-        val tcpApproved: Boolean,
+        val tcpEnabled: Boolean,
         val awaitingManualRetry: Boolean,
     )
 
     fun next(s: Signals): Step = when {
         s.helperHealthy -> Step.READY
         s.awaitingManualRetry -> Step.MANUAL_RETRY
-        s.shellUid == 2000 && s.tcpApproved && !s.tcpListening -> Step.SWITCH_TO_TCP
+        s.shellUid == 2000 && s.tcpEnabled && !s.tcpListening -> Step.SWITCH_TO_TCP
         s.shellUid == 2000 -> Step.START_HELPER
         s.tcpListening -> Step.USE_EXISTING_TCP
         s.paired && s.wirelessPortFound -> Step.CONNECT_PAIRED_WIRELESS
