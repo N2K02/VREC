@@ -50,4 +50,22 @@ class RecordingIntegrityContractTest {
         assertTrue(list.contains("Could not save details"))
         assertTrue(list.contains("recording(s) could not be fully deleted"))
     }
+    @Test fun whatsappVideoAndContactMetadataSurviveImportAndReload() {
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        val journal = source("app/src/main/java/com/vrec/app/calls/ShellCallMetadataJournal.kt")
+        val store = source("app/src/main/java/com/vrec/app/recording/Recordings.kt")
+        val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        assertTrue(daemon.contains("journal.findForCellularTaggedVoip(context, started, identity.direction)"))
+        assertTrue(daemon.contains("callMediaType = caller?.mediaType"))
+        assertTrue(daemon.contains("contactName = contactName"))
+        assertTrue(daemon.contains("caller?.number?.let { number ->"))
+        assertTrue(journal.contains("selectCellularTaggedVoip("))
+        assertTrue(journal.contains("if (nearby.size != 1) return null"))
+        assertTrue(journal.contains("if (candidates") || journal.contains("if (nearby.size"))
+        assertTrue(monitor.contains("CallSourceConflictPolicy.suppressFallbackSimOffhook("))
+        assertTrue(store.contains(".put(\"callMediaType\""))
+        assertTrue(store.contains("callMediaType = meta?.optString(\"callMediaType\")"))
+        assertTrue(store.contains(".put(\"contactName\", contactName ?: JSONObject.NULL)"))
+        assertTrue(store.contains(".put(\"phoneNumber\", phoneNumber ?: JSONObject.NULL)"))
+    }
 }
