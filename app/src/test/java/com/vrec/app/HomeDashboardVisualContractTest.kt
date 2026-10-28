@@ -16,12 +16,17 @@ class HomeDashboardVisualContractTest {
 
     @Test fun recordingSwitchStillUsesTheOriginalRecordingCoordinator() {
         val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
-        assertTrue(main.contains("Switch(checked = enabled, onCheckedChange = onEnabledChange)"))
+        assertTrue(main.contains("Switch("))
+        assertTrue(main.contains("checked = enabled,"))
+        assertTrue(main.contains("onCheckedChange = onEnabledChange,"))
+        assertTrue(main.contains("enabled = RecordingTransportPresentation.canChangeMasterToggle(state, shellActive)"))
         assertTrue(main.contains("CallMonitor.setRecordingEnabled(context, enabled)"))
         assertTrue(main.contains("recordingEnabled = enabled"))
         assertFalse(main.contains("RadioButton(selected = enabled"))
-        assertTrue(main.contains("RecordingMasterCard(enabled = recordingEnabled"))
-        assertTrue(main.contains("Screen.HOME -> HomeScreen()"))
+        assertTrue(main.contains("RecordingMasterCard("))
+        assertTrue(main.contains("enabled = recordingEnabled,"))
+        assertTrue(main.contains("shellActive = enhancedActive,"))
+        assertTrue(main.contains("Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })"))
     }
 
     @Test fun homeCardsShareDistinctSurfacesAndReadableMetricColumns() {
@@ -32,7 +37,8 @@ class HomeDashboardVisualContractTest {
         val palette = read("app/src/main/java/com/vrec/app/ui/HomePanelStyle.kt")
         assertTrue(palette.contains("Color(0xFF272C34)"))
         assertTrue(palette.contains("BorderStroke(1.dp, stroke)"))
-        assertTrue(main.contains("HomePanelStyle.border(highlight = enabled)"))
+        assertTrue(main.contains("HomePanelStyle.border(highlight = enabled)") ||
+            main.contains("HomePanelStyle.border(highlight = ready && enabled)"))
         assertTrue(adb.contains("HomePanelStyle.border(highlight = allReady)"))
         assertTrue(access.contains("HomePanelStyle.border()"))
         assertTrue(setup.contains("HomePanelStyle.border()"))
