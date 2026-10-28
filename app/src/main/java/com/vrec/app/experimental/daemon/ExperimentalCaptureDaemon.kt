@@ -239,7 +239,7 @@ object ExperimentalCaptureDaemon {
             waitBetween = { attempt -> delay(400L * attempt) },
         )
 
-    suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun ensureStarted(context: Context, manualRepair: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val runningBanner = pingBanner(context)
             if (runningBanner?.startsWith("PONG 2") == true) {
@@ -251,10 +251,16 @@ object ExperimentalCaptureDaemon {
                         else "Recorder running; Home recording switch is off."
                         return@runCatching
                     }
-                    // A timeout is not proof that an existing daemon is obsolete.
-                    // Keep it alive so a call in progress is never interrupted.
-                    check(incompatibleProtocol.value) {
+                    // Background health checks must not restart the daemon just
+                    // because an acknowledgement timed out. An explicit Start/
+                    // Repair action may request one guarded Q replacement.
+                    check(ShellHelperRepairPolicy.shouldRequestReplacement(
+                        buildDecision, incompatibleProtocol.value, manualRepair,
+                    )) {
                         "Existing shell helper is answering, but configuration could not be confirmed: " + message.value
+                    }
+                    if (manualRepair && !incompatibleProtocol.value) {
+                        com.vrec.app.Log.i("Shell capture: user requested safe restart of unresponsive helper")
                     }
                 } else {
                     com.vrec.app.Log.i("Shell capture: running helper build differs from bundled APK; requesting safe upgrade")
