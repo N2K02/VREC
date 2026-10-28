@@ -87,6 +87,7 @@ class RecordingService : Service() {
             // microphone recorder or a duplicate recording from this facade.
             if (!ExperimentalCaptureDaemon.ready.value) {
                 Log.w("ADB shell capture unavailable; recording not started")
+                RecordingFailureNotice.warn(context, "Call detected, but the ADB recording helper is unavailable. No audio was recorded. Open VRec to restore ADB.")
             }
         }
 
