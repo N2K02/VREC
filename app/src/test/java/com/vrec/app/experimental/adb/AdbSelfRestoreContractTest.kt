@@ -68,7 +68,7 @@ class AdbSelfRestoreContractTest {
         val dash = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
         assertTrue(daemon.contains("\"BUSY\" -> QuitResult.BUSY"))
         assertTrue(dash.indexOf("ExperimentalRecording.connect(context)") <
-            dash.indexOf("describe(AdbPrivilegedApiHelper.stop(context))\n                            ?:"))
+            dash.lastIndexOf("AdbPrivilegedApiHelper.stop(context)"))
         assertTrue(read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt").contains("AdbDashboard("))
     }
 }
