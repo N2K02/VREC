@@ -12,7 +12,13 @@ import java.io.File
  * Only a unique time-matched VoIP session may enrich a shell file. Never guess a caller.
  */
 object ShellCallMetadataJournal {
-    data class Match(val name: String?, val number: String?, val numberSource: String?, val packageName: String?)
+    data class Match(
+        val name: String?,
+        val number: String?,
+        val numberSource: String?,
+        val packageName: String?,
+        val flowDirection: String?,
+    )
     private fun file(context: Context) = File(context.filesDir, "shell_call_metadata.json")
     internal const val WINDOW_MS = 90_000L
     internal fun matches(startedAt: Long, observedAt: Long, recordedPackage: String?, candidatePackage: String?): Boolean =
@@ -25,9 +31,11 @@ object ShellCallMetadataJournal {
 
     @Synchronized fun remember(context: Context, key: String, startedAt: Long,
                                direction: CallDirection, appPackage: String?,
-                               name: String?, number: String?, numberSource: String?) {
+                               name: String?, number: String?, numberSource: String?,
+                               flowDirection: CallDirection = CallDirection.UNKNOWN) {
         if (direction != CallDirection.VOIP || startedAt <= 0L ||
-            (name.isNullOrBlank() && number.isNullOrBlank())) return
+            (name.isNullOrBlank() && number.isNullOrBlank() &&
+                flowDirection == CallDirection.UNKNOWN)) return
         val entries = load(context)
         val now = System.currentTimeMillis()
         val existing = (0 until entries.length()).map { entries.getJSONObject(it) }
@@ -41,7 +49,10 @@ object ShellCallMetadataJournal {
             .put("appPackage", preferred(appPackage, existing?.optString("appPackage")))
             .put("name", preferred(name, existing?.optString("name")))
             .put("number", preferred(number, existing?.optString("number")))
-            .put("numberSource", preferred(numberSource, existing?.optString("numberSource"))))
+            .put("numberSource", preferred(numberSource, existing?.optString("numberSource")))
+            .put("flowDirection", preferred(
+                flowDirection.name.takeIf { it != CallDirection.UNKNOWN.name },
+                existing?.optString("flowDirection"))))
         save(context, result)
     }
 
@@ -56,7 +67,10 @@ object ShellCallMetadataJournal {
         return Match(entry.optString("name").ifBlank { null },
             entry.optString("number").ifBlank { null },
             entry.optString("numberSource").ifBlank { null },
-            entry.optString("appPackage").ifBlank { null })
+            entry.optString("appPackage").ifBlank { null },
+            entry.optString("flowDirection").takeIf {
+                it == CallDirection.INCOMING.name || it == CallDirection.OUTGOING.name
+            })
     }
 
     @Synchronized fun consume(context: Context, startedAt: Long, appPackage: String?) {
