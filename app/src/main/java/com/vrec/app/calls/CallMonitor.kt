@@ -26,6 +26,7 @@ import com.vrec.app.Prefs
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.recording.RecordingFailureNotice
 import com.vrec.app.recording.OverlayControlService
 import androidx.core.app.NotificationCompat
 import com.vrec.app.R
@@ -400,6 +401,11 @@ object CallMonitor {
         // candidate, NOT a confirmed recording owner: the compatibility
         // RecordingService.start() cannot start a shell recording.
         Log.i("Call observed for shell capture: " + selected.source.name)
+        if (!ExperimentalCaptureDaemon.ready.value) {
+            RecordingFailureNotice.warn(context,
+                "Call detected, but the recording helper is not ready. " +
+                    "No capture is confirmed. Open VRec to restore ADB.")
+        }
     }
 
     private fun rememberShellIdentity(context: Context, session: Session) {
@@ -495,6 +501,8 @@ object CallMonitor {
                     Log.i("Authenticated shell confirmed manual recording segment")
                 } else {
                     Log.w("Manual shell recording was not confirmed")
+                    RecordingFailureNotice.warn(app,
+                        "Manual recording did not start. Check helper readiness and Android permissions.")
                 }
             }
         }
