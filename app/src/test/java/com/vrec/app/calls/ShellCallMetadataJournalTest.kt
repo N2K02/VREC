@@ -1,5 +1,8 @@
 package com.vrec.app.calls
 
+import com.vrec.app.recording.CallDirection
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,5 +26,58 @@ class ShellCallMetadataJournalTest {
         // Time proximity alone could misidentify another caller during call waiting.
         assertFalse(ShellCallMetadataJournal.matches(100_000L, 108_000L, null, "com.whatsapp"))
         assertFalse(ShellCallMetadataJournal.matches(100_000L, 108_000L, "com.whatsapp", null))
+    }
+    private fun candidate(
+        key: String = "telecom-1",
+        whenMs: Long = 105_000L,
+        kind: CallDirection = CallDirection.VOIP,
+        flow: CallDirection = CallDirection.INCOMING,
+        pkg: String? = "com.whatsapp",
+        name: String? = "Known WhatsApp contact",
+        number: String? = null,
+        media: String? = "VIDEO",
+    ) = ShellCallMetadataJournal.Candidate(key, whenMs, kind, pkg, flow, name, number, media)
+
+    @Test fun mislabeledIncomingShellFileCanRecoverUniqueWhatsappContactAndVideo() {
+        val expected = candidate()
+        val matched = ShellCallMetadataJournal.selectCellularTaggedVoip(
+            100_000L, CallDirection.INCOMING, listOf(expected))
+        assertEquals(expected, matched)
+        assertEquals("VIDEO", matched?.mediaType)
+        assertEquals("com.whatsapp", matched?.packageName)
+    }
+
+    @Test fun trueSimCallNearVoipPreventsFalseContactAttribution() {
+        val voip = candidate()
+        val cellular = candidate(key = "sim-legacy", whenMs = 106_000L,
+            kind = CallDirection.INCOMING, pkg = null, name = null)
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedVoip(
+            100_000L, CallDirection.INCOMING, listOf(voip, cellular)))
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedVoip(
+            100_000L, CallDirection.INCOMING, listOf(cellular)))
+    }
+
+    @Test fun simultaneousDifferentVoipAppsOrCallsNeverGuessCaller() {
+        val first = candidate()
+        val second = candidate(key = "telecom-2", whenMs = 106_000L,
+            pkg = "org.telegram.messenger", name = "Different person")
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedVoip(
+            100_000L, CallDirection.INCOMING, listOf(first, second)))
+    }
+
+    @Test fun oldLateOppositeOrAnonymousCandidatesAreRejected() {
+        val select = ShellCallMetadataJournal::selectCellularTaggedVoip
+        assertNull(select(100_000L, CallDirection.INCOMING, listOf()))
+        assertNull(select(100_000L, CallDirection.INCOMING,
+            listOf(candidate(whenMs = 200_000L))))
+        assertNull(select(100_000L, CallDirection.OUTGOING, listOf(candidate())))
+        assertNull(select(100_000L, CallDirection.UNKNOWN, listOf(candidate())))
+        assertNull(select(100_000L, CallDirection.INCOMING,
+            listOf(candidate(name = null, number = null))))
+        assertNull(select(100_000L, CallDirection.INCOMING,
+            listOf(candidate(pkg = null))))
+        assertEquals(candidate(name = null, number = "+23051234567"),
+            select(100_000L, CallDirection.INCOMING,
+                listOf(candidate(name = null, number = "+23051234567"))))
     }
 }
