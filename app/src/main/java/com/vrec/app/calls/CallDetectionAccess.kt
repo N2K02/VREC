@@ -22,19 +22,22 @@ object CallDetectionAccess {
         val status = ExperimentalRecording.status.value
         if (!status.connected || status.shellUid != 2000) {
             return Result.failure(IllegalStateException(
-                "Connect USB-bootstrapped localhost TCP/5555 first to authorize the special access."))
+                "Authorize an Android ADB shell UID 2000 connection first."))
         }
         return runCatching {
-            val command = "appops set ${context.packageName} android:manage_ongoing_calls allow"
+            // Telecom checks a UID-scoped AppOp on recent Android versions.
+            // Use one scope consistently; setting both UID and package modes
+            // can yield conflicting persistent permissions on some OEM builds.
+            val command = "cmd appops set --uid ${context.packageName} MANAGE_ONGOING_CALLS allow"
             val output = AdbTransport.exec(command).getOrThrow()
-            repeat(4) {
+            repeat(6) {
                 if (isGranted(context)) return@runCatching Unit
-                delay(250L)
+                delay(300L)
             }
             error(
-                "Android did not confirm special access. " +
-                "Check the ADB connection or use the manual command. " +
-                output.take(180))
+                "Android did not confirm UID-scoped MANAGE_ONGOING_CALLS access. " +
+                    "This optional Telecom permission may be unavailable on this device. " +
+                    "Shell response: " + output.take(180))
         }
     }
 
