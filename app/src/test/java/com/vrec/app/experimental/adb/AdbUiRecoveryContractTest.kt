@@ -18,7 +18,9 @@ class AdbUiRecoveryContractTest {
         assertFalse(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
         assertFalse(home.contains("ExperimentalRecording.refreshConnectionStatus()"))
         assertFalse(card.contains("LocalAdbMiddleware.setup(context, userInitiated = false)"))
-        assertTrue(card.contains("AdbLifecycle.coordinateSetup"))
+        assertTrue(card.contains("AdbForegroundSetup.startOrRepair(context)"))
+        val foreground = source("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
+        assertTrue(foreground.contains("AdbLifecycle.coordinateSetup {"))
     }
 
     @Test fun foregroundAndBackgroundRecoveryShareCoordinator() {
