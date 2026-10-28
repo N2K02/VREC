@@ -539,6 +539,10 @@ fun RecordingsList() {
                     fontWeight = FontWeight.SemiBold)
                 Text(RecordingListLabels.contact(
                     rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
+                    source = rec.sourcePackage?.let { resolveCallAppName(context, it) }
+                        ?: if (rec.direction == CallDirection.VOIP) "VoIP" else "SIM",
+                    mediaType = rec.callMediaType,
                 ), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ListItem(headlineContent = { Text("Choose contact") },
@@ -673,14 +677,18 @@ private fun RecordingRow(
             }
         }
     }
-    val displayedContact = RecordingListLabels.contact(
-        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
-    )
     val callDirection = RecordingListLabels.direction(rec.direction, rec.callFlowDirection)
     val sourceKind = RecordingListLabels.sourceKind(rec.direction, rec.sourcePackage, rec.callType)
     val callSource = RecordingListLabels.source(
         if (sourceKind == RecordingListLabels.SourceKind.APP) CallDirection.VOIP else rec.direction,
         callApp, rec.simSlot, rec.simLabel, rec.carrier,
+    )
+    val displayedContact = RecordingListLabels.contact(
+        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
+        direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
+        source = callSource,
+        mediaType = if (sourceKind == RecordingListLabels.SourceKind.APP)
+            rec.callMediaType else null,
     )
 
     // Deliberately stronger tonal separation from the near-black recordings page.
@@ -853,7 +861,18 @@ private fun RecordingDetailsDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(rec.displayName, style = MaterialTheme.typography.titleLarge,
+                Text(RecordingListLabels.contact(
+                    rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    direction = resolvedFlow,
+                    source = when {
+                        rec.sourcePackage != null -> callApp
+                        rec.direction == CallDirection.VOIP -> "VoIP"
+                        rec.direction == CallDirection.INCOMING ||
+                            rec.direction == CallDirection.OUTGOING -> "SIM"
+                        else -> null
+                    },
+                    mediaType = rec.callMediaType,
+                ), style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(callType ?: "Recording details", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
