@@ -15,6 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.AccessibilityNew
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +63,19 @@ internal object PermissionDashboardPolicy {
     fun grantedCount(grants: List<Boolean>): Int = grants.count { it }
 
     fun permissionBadge(granted: Boolean): String = if (granted) "Granted" else "Not granted"
+
+    enum class IconKind { PHONE, HISTORY, PEOPLE, NOTIFICATIONS, ACCESSIBILITY, OVERLAY, SECURITY, MIC, VISIBILITY }
+    fun iconKind(label: String): IconKind = when (label) {
+        "Phone state" -> IconKind.PHONE
+        "Call history" -> IconKind.HISTORY
+        "Contacts" -> IconKind.PEOPLE
+        "Notifications", "Call notification access" -> IconKind.NOTIFICATIONS
+        "Accessibility" -> IconKind.ACCESSIBILITY
+        "Floating controls" -> IconKind.OVERLAY
+        "Advanced detection" -> IconKind.VISIBILITY
+        "Microphone" -> IconKind.MIC
+        else -> IconKind.SECURITY
+    }
 
     fun badgeColor(granted: Boolean): Color = if (granted) Color(0xFF2E7D32) else Color(0xFFC62828)
 }
@@ -242,13 +264,27 @@ fun PermissionDashboardCard() {
                                 .then(if (!granted) Modifier.clickable { tryGrant(label) } else Modifier),
                         ) {
                             Row(
-                                Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
+                                Modifier.padding(horizontal = 8.dp, vertical = 11.dp),
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
                             ) {
+                                val icon = when (PermissionDashboardPolicy.iconKind(label)) {
+                                    PermissionDashboardPolicy.IconKind.PHONE -> Icons.Rounded.Phone
+                                    PermissionDashboardPolicy.IconKind.HISTORY -> Icons.Rounded.History
+                                    PermissionDashboardPolicy.IconKind.PEOPLE -> Icons.Rounded.People
+                                    PermissionDashboardPolicy.IconKind.NOTIFICATIONS -> Icons.Rounded.Notifications
+                                    PermissionDashboardPolicy.IconKind.ACCESSIBILITY -> Icons.Rounded.AccessibilityNew
+                                    PermissionDashboardPolicy.IconKind.OVERLAY -> Icons.Rounded.Layers
+                                    PermissionDashboardPolicy.IconKind.SECURITY -> Icons.Rounded.Security
+                                    PermissionDashboardPolicy.IconKind.MIC -> Icons.Rounded.Mic
+                                    PermissionDashboardPolicy.IconKind.VISIBILITY -> Icons.Rounded.Visibility
+                                }
+                                Icon(icon, contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp))
                                 Text(if (granted) "✓" else "✕",
                                     color = accent,
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold)
                                 Text(label, style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Medium,
