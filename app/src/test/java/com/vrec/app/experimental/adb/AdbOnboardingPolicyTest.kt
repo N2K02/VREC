@@ -7,8 +7,8 @@ class AdbOnboardingPolicyTest {
     private fun state(
         healthy: Boolean = false, tcp: Boolean = false, uid: Int? = null,
         paired: Boolean = false, pairing: Boolean = false, wireless: Boolean = false,
-        approved: Boolean = false, retry: Boolean = false,
-    ) = AdbOnboardingPolicy.Signals(healthy, tcp, uid, paired, pairing, wireless, approved, retry)
+        tcpEnabled: Boolean = false, retry: Boolean = false,
+    ) = AdbOnboardingPolicy.Signals(healthy, tcp, uid, paired, pairing, wireless, tcpEnabled, retry)
 
     @Test fun healthyDetachedHelperNeverReattachesBecauseOfNavigation() {
         assertEquals(AdbOnboardingPolicy.Step.READY, AdbOnboardingPolicy.next(state(healthy = true)))
@@ -25,9 +25,9 @@ class AdbOnboardingPolicyTest {
             AdbOnboardingPolicy.next(state(paired = true, wireless = true)))
     }
 
-    @Test fun verifiedShellSwitchesOnlyWhenTcpWasApproved() {
+    @Test fun verifiedShellSwitchesWhenTcpModeIsEnabled() {
         assertEquals(AdbOnboardingPolicy.Step.SWITCH_TO_TCP,
-            AdbOnboardingPolicy.next(state(uid = 2000, approved = true)))
+            AdbOnboardingPolicy.next(state(uid = 2000, tcpEnabled = true)))
         assertEquals(AdbOnboardingPolicy.Step.START_HELPER,
             AdbOnboardingPolicy.next(state(uid = 2000)))
     }
