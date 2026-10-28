@@ -73,14 +73,19 @@ object LocalAdbMiddleware {
             // Returning to Home must not reattach an already healthy helper.
             // Only probe/reconnect when the helper is genuinely unavailable.
             if (ExperimentalCaptureDaemon.ready.value &&
-                AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING) {
+                AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING &&
+                // Explicit Start must not trust an out-of-date StateFlow after
+                // Android kills the helper. Check the authenticated daemon.
+                AdbPrivilegedApiHelper.reconnect(app)) {
                 message.value = "Enhanced recording helper is connected and ready."
+                LocalWirelessAdb.promoteVerifiedShellToTcp(app)
                 return@withLock true
             }
             // Detached helper can survive ADB disconnect and needs no new bootstrap.
             if (AdbPrivilegedApiHelper.reconnect(app)) {
                 Log.i("ADB setup: previously started recording helper reattached")
                 message.value = "Enhanced recording helper is connected and ready."
+                LocalWirelessAdb.promoteVerifiedShellToTcp(app)
                 return@withLock true
             }
             if (!userInitiated && ExperimentalRecording.awaitingManualRetry) {
@@ -109,8 +114,12 @@ object LocalAdbMiddleware {
                     message.value = if (result.isSuccess)
                         "Enhanced helper started. Permissions needing attention: ${permissions.unavailable.size}"
                         else "Could not start helper: ${result.exceptionOrNull()?.message}"
-                    if (result.isSuccess) Log.i("ADB setup: existing shell session restored helper")
-                    else Log.w("ADB setup: helper restore failed: ${result.exceptionOrNull()?.message}")
+                    if (result.isSuccess) {
+                        Log.i("ADB setup: existing shell session restored helper")
+                        // Finish promoting a previously authorized TLS session
+                        // automatically when the foreground setup lock is free.
+                        LocalWirelessAdb.promoteVerifiedShellToTcp(app)
+                    } else Log.w("ADB setup: helper restore failed: ${result.exceptionOrNull()?.message}")
                     result.isSuccess
                 }
                 LocalAdbSetupPolicy.Next.CONNECT_TCP -> {
