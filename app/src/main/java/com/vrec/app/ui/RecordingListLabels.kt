@@ -8,6 +8,33 @@ import java.util.Locale
  * misidentifying an app, a SIM, or the direction of a VoIP call.
  */
 internal object RecordingListLabels {
+    enum class SourceKind { APP, PHONE, UNKNOWN }
+
+    /**
+     * A call can be incoming/outgoing and still be VoIP. Prefer explicit call
+     * metadata and known VoIP packages; never label an ordinary SIM call as
+     * WhatsApp just because its dialer package was stored.
+     */
+    fun sourceKind(
+        direction: CallDirection,
+        sourcePackage: String?,
+        callType: String?,
+    ): SourceKind {
+        val pkg = sourcePackage?.trim()?.lowercase(Locale.ROOT)
+        if (direction == CallDirection.VOIP ||
+            callType?.equals("VOIP", ignoreCase = true) == true ||
+            pkg in setOf(
+                "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger",
+                "org.thoughtcrime.securesms", "com.facebook.orca",
+                "com.viber.voip", "com.skype.raider", "com.google.android.apps.tachyon",
+            )
+        ) return SourceKind.APP
+        if (direction == CallDirection.INCOMING || direction == CallDirection.OUTGOING) {
+            return SourceKind.PHONE
+        }
+        return if (!pkg.isNullOrBlank()) SourceKind.APP else SourceKind.UNKNOWN
+    }
+
     fun contact(
         savedName: String?,
         lookedUpName: String?,
