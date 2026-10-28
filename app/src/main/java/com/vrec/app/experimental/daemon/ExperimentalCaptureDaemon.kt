@@ -457,7 +457,7 @@ object ExperimentalCaptureDaemon {
                 val direction = if (caller != null) CallDirection.VOIP else identity.direction
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
                 if (dest.exists() && dest.length() > 100L &&
-                    File(dest.parentFile, dest.name + ".json").exists()) {
+                    RecordingStore.hasValidMetadata(dest)) {
                     // A completed import already has audio AND metadata.
                     // Preserve the shell original if a prior import crashed
                     // after publishing audio but before metadata was written.
@@ -466,7 +466,7 @@ object ExperimentalCaptureDaemon {
                 }
                 val temp = File(dest.parentFile, dest.name + ".tmp")
                 // Never leave a stale partial import as a valid recording.
-                if (dest.exists() && !File(dest.parentFile, dest.name + ".json").exists()) {
+                if (dest.exists() && !RecordingStore.hasValidMetadata(dest)) {
                     check(dest.delete()) { "Cannot remove incomplete previous import" }
                 }
                 temp.delete()
@@ -517,10 +517,10 @@ object ExperimentalCaptureDaemon {
                         contactName = caller?.name,
                         numberSource = caller?.numberSource,
                         recordingType = RecordingType.ADB,
+                        startedAtOverride = started,
+                        endedAtOverride = started + durationMs,
+                        audioHealth = health,
                     )) { "Cannot save recording metadata" }
-                    check(RecordingStore.finalizeImportedMeta(
-                        dest, started, started + durationMs, label, health,
-                    )) { "Cannot finalize recording metadata" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     com.vrec.app.calls.ShellCallMetadataJournal.consume(
                         context, started, identity.appPackage)
