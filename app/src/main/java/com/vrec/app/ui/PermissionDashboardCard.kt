@@ -36,9 +36,8 @@ import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.Prefs
 import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.VrecAccessibilityService
-import com.vrec.app.experimental.adb.AdbLifecycle
+import com.vrec.app.experimental.adb.AdbForegroundSetup
 import com.vrec.app.experimental.adb.LocalAdbMiddleware
-import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
@@ -171,13 +170,16 @@ fun PermissionDashboardCard() {
             scope.launch {
                 working = true
                 try {
-                    val restored = AdbLifecycle.coordinateSetup {
-                        LocalAdbMiddleware.setup(context, userInitiated = true)
+                    val outcome = AdbForegroundSetup.startOrRepair(context)
+                    actionMessage = when (outcome) {
+                        AdbForegroundSetup.Outcome.HELPER_READY -> "Recording helper is ready."
+                        AdbForegroundSetup.Outcome.WIRELESS_CONNECTING ->
+                            "Connecting the paired Wireless ADB shell; checking UID 2000 and helper health."
+                        AdbForegroundSetup.Outcome.DISCOVERING ->
+                            "Searching for Wireless debugging. Enable it in Android Developer options."
+                        AdbForegroundSetup.Outcome.USER_ACTION_REQUIRED ->
+                            LocalAdbMiddleware.message.value
                     }
-                    if (!restored && !ExperimentalRecording.tcpPortListening())
-                        LocalWirelessAdb.start(context, userInitiated = true)
-                    actionMessage = if (restored) "Recording helper is ready."
-                        else LocalAdbMiddleware.message.value
                 } finally {
                     working = false
                     tick++
