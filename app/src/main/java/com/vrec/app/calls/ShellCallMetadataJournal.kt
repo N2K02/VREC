@@ -20,6 +20,7 @@ object ShellCallMetadataJournal {
         val flowDirection: String?,
         val mediaType: String?,
         val direction: CallDirection,
+        val key: String? = null,
     )
     private fun file(context: Context) = File(context.filesDir, "shell_call_metadata.json")
     internal const val WINDOW_MS = 90_000L
@@ -46,10 +47,8 @@ object ShellCallMetadataJournal {
         val mediaType: String?,
     )
 
-    internal fun selectCellularTaggedVoip(
-        startedAt: Long,
-        shellDirection: CallDirection,
-        entries: List<Candidate>,
+    private fun singleNearbyCandidate(
+        startedAt: Long, shellDirection: CallDirection, entries: List<Candidate>,
     ): Candidate? {
         if (shellDirection !in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) return null
         val nearby = entries.filter { candidate ->
@@ -59,13 +58,24 @@ object ShellCallMetadataJournal {
                     candidate.flowDirection == shellDirection)
         }
         // A second SIM/VoIP call, even with no caller identity, is ambiguous.
-        if (nearby.size != 1) return null
-        return nearby.single().takeIf {
-            it.direction == CallDirection.VOIP &&
-                !it.packageName.isNullOrBlank() &&
-                (!it.name.isNullOrBlank() || !it.number.isNullOrBlank()) &&
-                it.flowDirection == shellDirection
-        }
+        return nearby.singleOrNull()
+    }
+
+    internal fun selectCellularTaggedVoip(
+        startedAt: Long, shellDirection: CallDirection, entries: List<Candidate>,
+    ): Candidate? = singleNearbyCandidate(startedAt, shellDirection, entries)?.takeIf {
+        it.direction == CallDirection.VOIP &&
+            !it.packageName.isNullOrBlank() &&
+            (!it.name.isNullOrBlank() || !it.number.isNullOrBlank()) &&
+            it.flowDirection == shellDirection
+    }
+
+    internal fun selectCellularTaggedSim(
+        startedAt: Long, shellDirection: CallDirection, entries: List<Candidate>,
+    ): Candidate? = singleNearbyCandidate(startedAt, shellDirection, entries)?.takeIf {
+        it.direction == shellDirection && it.packageName.isNullOrBlank() &&
+            (!it.name.isNullOrBlank() || !it.number.isNullOrBlank()) &&
+            it.flowDirection == shellDirection
     }
 
     private fun JSONObject.asCandidate(): Candidate {
@@ -98,6 +108,7 @@ object ShellCallMetadataJournal {
         optString("mediaType").takeIf { it == "VIDEO" || it == "VOICE" },
         runCatching { CallDirection.valueOf(optString("direction")) }
             .getOrDefault(CallDirection.UNKNOWN),
+        optString("key").ifBlank { null },
     )
 
     /** Called only for a generic shell filename; legacy journal entries are
@@ -107,6 +118,15 @@ object ShellCallMetadataJournal {
     ): Match? {
         val candidates = entries(context).filter { it.optInt("version") >= 2 }
         val selected = selectCellularTaggedVoip(
+            startedAt, direction, candidates.map { it.asCandidate() }) ?: return null
+        return candidates.firstOrNull { it.optString("key") == selected.key }?.asMatch()
+    }
+
+    @Synchronized fun findForCellularTaggedSim(
+        context: Context, startedAt: Long, direction: CallDirection,
+    ): Match? {
+        val candidates = entries(context).filter { it.optInt("version") >= 2 }
+        val selected = selectCellularTaggedSim(
             startedAt, direction, candidates.map { it.asCandidate() }) ?: return null
         return candidates.firstOrNull { it.optString("key") == selected.key }?.asMatch()
     }
@@ -147,6 +167,11 @@ object ShellCallMetadataJournal {
         }
         if (matches.size != 1) return null
         return matches.single().asMatch()
+    }
+
+    /** Remove only the precise imported call, never another nearby recording. */
+    @Synchronized fun consumeMatch(context: Context, match: Match) {
+        match.key?.let { forget(context, it) }
     }
 
     /** An adopted notification identity is superseded by Telecom for the same call. */
