@@ -113,7 +113,9 @@ object CallMonitor {
         val session = sessions.getOrPut(id) { Session(id, Source.TELECOM) }
         session.packageName = packageName
         session.direction = if (voip) CallDirection.VOIP else flow
-        session.flowDirection = flow
+        if (flow == CallDirection.INCOMING || flow == CallDirection.OUTGOING) {
+            session.flowDirection = flow
+        }
         session.accountId = accountId ?: session.accountId
         if (!number.isNullOrBlank()) {
             session.number = number
@@ -149,6 +151,10 @@ object CallMonitor {
         if (legacy != null) {
             if (session.number == null) { session.number = legacy.number; session.numberSource = legacy.numberSource }
             if (session.name == null) { session.name = legacy.name; session.nameSource = legacy.nameSource }
+            if (session.flowDirection == CallDirection.UNKNOWN &&
+                legacy.flowDirection in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
+                session.flowDirection = legacy.flowDirection
+            }
             if (recordingId == legacy.id) recordingId = id
             if (suppressed.remove(legacy.id)) suppressed.add(id)
             if (autoAttempted.remove(legacy.id)) autoAttempted.add(id)
