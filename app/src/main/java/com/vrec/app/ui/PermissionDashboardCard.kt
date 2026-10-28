@@ -22,7 +22,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -43,7 +42,6 @@ import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Actual Android grants, not the permissions we merely requested. */
@@ -90,12 +88,12 @@ fun PermissionDashboardCard() {
         lifecycle.lifecycle.addObserver(observer)
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(Unit) {
-        while (true) { delay(5_000L); tick++ }
-    }
+    // Observe real grant/helper transitions instead of polling Android every
+    // five seconds while Home is visible. ON_RESUME still catches Settings changes.
+    val grants by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
-    val permissions = remember(tick, helperReady, helperState) {
+    val permissions = remember(tick, helperReady, helperState, grants) {
         fun granted(name: String) =
             context.checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED
         buildList {
@@ -121,15 +119,16 @@ fun PermissionDashboardCard() {
         if (working) return
         actionMessage = null
         val runtime = runtimePermission[label]
-        if (true &&
-            label in setOf("Phone state", "Call history", "Contacts", "Notifications", "Advanced detection")) {
+        if (label in setOf("Phone state", "Call history", "Contacts", "Notifications", "Advanced detection")) {
             scope.launch {
                 working = true
                 val result = com.vrec.app.experimental.adb.AdbPermissionBootstrap.grantEligible(context)
                 val stillDenied = runtime != null &&
                     context.checkSelfPermission(runtime) != PackageManager.PERMISSION_GRANTED
-                actionMessage = if (result.unavailable.isEmpty()) "ADB access checks completed."
-                    else result.unavailable.joinToString("; ")
+                actionMessage = if (!result.finished)
+                    "First authorize Android shell UID 2000 from Home, or request a permitted Android runtime grant."
+                else if (result.unavailable.isEmpty()) "ADB permission checks completed."
+                else result.unavailable.joinToString("; ")
                 working = false
                 // READ_CALL_LOG is restricted on some Android installers. ADB
                 // shell UID 2000 does not override installer allowlisting.
@@ -194,7 +193,7 @@ fun PermissionDashboardCard() {
                 Surface(shape = RoundedCornerShape(50),
                     color = if (count == permissions.size) Color(0xFF146B3C)
                         else Color(0xFF8A2828)) {
-                    Text("$count / ${permissions.size} granted",
+                    Text("$count / ${permissions.size} enabled",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         color = Color.White, style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold)
@@ -234,7 +233,7 @@ fun PermissionDashboardCard() {
             }
             if (count != permissions.size) {
                 Text(if (working) "Checking ADB grants…" else
-                    "Tap any red ✕ permission badge to request access manually. VRec automatically tries supported grants when ADB shell UID 2000 connects; Android may still require your approval.",
+                    "Tap a red ✕ for the available Android approval steps. VRec requests eligible grants after verified ADB UID 2000; Accessibility, notification access and overlays are Android-controlled and optional for some features.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
