@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 object RecordingFailureNotice {
     private const val CHANNEL = "vrec_recording_failures"
     private const val NOTIFICATION_ID = 8602
+    private const val HELPER_START_FAILURE =
+        "Recording helper could not start after ADB authorization. Calls will not be captured until recovery succeeds."
     val warning = MutableStateFlow<String?>(null)
     @Volatile private var persistent = false
 
@@ -49,6 +51,13 @@ object RecordingFailureNotice {
                 .setAutoCancel(true)
                 .build())
         }
+    }
+
+    fun helperStartFailed(context: Context) = warn(context, HELPER_START_FAILURE)
+
+    /** Clear only the resolved startup warning; preserve failed imports and call warnings. */
+    fun clearAfterHelperRecovered(context: Context) {
+        if (warning.value == HELPER_START_FAILURE) dismiss(context)
     }
 
     fun dismiss(context: Context) {
