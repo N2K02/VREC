@@ -1,6 +1,10 @@
 package com.vrec.app.experimental.daemon
 
 import android.content.Context
+import android.content.ContentValues
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import com.vrec.app.Prefs
 import android.media.MediaMuxer
 import android.util.Log
@@ -133,6 +137,50 @@ object ExperimentalCaptureDaemon {
         }.absolutePath
     }
 
+    private data class ShellStagedJar(val path: String, val cleanup: () -> Unit)
+
+    /**
+     * Scoped-storage fallback: on some phones UID 2000 cannot read
+     * /sdcard/Android/data/<package>/files even though the app can write it.
+     * MediaStore Downloads allows the app to publish an ephemeral asset without
+     * any broad storage permission. Remove it immediately after shell copying.
+     * No keys, pairing codes or call data are included in this static JAR.
+     */
+    private fun stageViaDownloads(context: Context): ShellStagedJar {
+        check(Build.VERSION.SDK_INT >= 29) { "MediaStore Downloads needs Android 10+" }
+        val name = "vrec-shell-" + java.util.UUID.randomUUID().toString() + ".jar"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/java-archive")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("Android did not allow temporary Downloads staging")
+        try {
+            val output = resolver.openOutputStream(uri)
+                ?: error("Android could not open the temporary JAR destination")
+            output.use { target ->
+                context.assets.open(ASSET).use { source -> source.copyTo(target) }
+            }
+        } catch (failure: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw failure
+        }
+        val sharedPath = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), name,
+        ).absolutePath
+        return ShellStagedJar(sharedPath) {
+            runCatching { resolver.delete(uri, null, null) }
+        }
+    }
+
+    private suspend fun shellCanRead(path: String): Boolean {
+        if (path.contains("'")) return false
+        return runShell("if test -r '$path'; then echo READABLE; else echo UNREADABLE; fi")
+            .lineSequence().any { it.trim() == "READABLE" }
+    }
+
     private suspend fun runShell(command: String): String =
         AdbTransport.exec(command, timeoutMs = 30_000).getOrThrow()
 
@@ -198,14 +246,32 @@ object ExperimentalCaptureDaemon {
                 }
                 check(exited) { "Old helper did not release its authenticated socket." }
             }
-            val staged = stage(context)
-            // External files are used only to move the executable into shell-private
-            // storage. We never download shell code or run scripts from a URL.
-            require(!staged.contains("'")) { "Unexpected shell staging path" }
-            val copy = runShell(
-                "cp '" + staged + "' " + DEVICE_PATH +
-                    " && chmod 600 " + DEVICE_PATH + " && echo STAGED")
-            check("STAGED" in copy) { "Could not stage capture jar: " + copy }
+            val appStage = runCatching { stage(context) }.getOrNull()
+            val directReadable = appStage != null && shellCanRead(appStage)
+            val stagingRoute = ShellJarStagingPolicy.choose(directReadable, Build.VERSION.SDK_INT)
+            val sharedStage = if (stagingRoute == ShellJarStagingPolicy.Route.MEDIASTORE_DOWNLOADS)
+                stageViaDownloads(context) else null
+            val staged = when (stagingRoute) {
+                ShellJarStagingPolicy.Route.APP_EXTERNAL -> appStage
+                    ?: error("App-specific shell staging path unavailable")
+                ShellJarStagingPolicy.Route.MEDIASTORE_DOWNLOADS ->
+                    sharedStage?.path ?: error("Temporary Downloads staging unavailable")
+                ShellJarStagingPolicy.Route.UNSUPPORTED ->
+                    error("Android shell cannot read VRec's staging file. Check external storage availability.")
+            }
+            try {
+                // Only move the bundled static asset to shell-private storage.
+                // The optional shared Downloads copy is deleted in finally.
+                check(shellCanRead(staged)) {
+                    "Android shell cannot read the temporary capture JAR (scoped storage)."
+                }
+                val copy = runShell(
+                    "cp '" + staged + "' " + DEVICE_PATH +
+                        " && chmod 600 " + DEVICE_PATH + " && echo STAGED")
+                check("STAGED" in copy) { "Could not stage capture jar: " + copy }
+            } finally {
+                sharedStage?.cleanup?.invoke()
+            }
             val launch = "VREC_TOKEN=" + token(context) +
                 " VREC_MODE=" + (if (shouldArmForNextCall(context)) "1" else "0") +
                 " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
