@@ -38,6 +38,9 @@ class AdbUiRecoveryContractTest {
         assertTrue(onboarding.contains("Other devices on the network may reach TCP/5555"))
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(wireless.contains("if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)"))
+        assertTrue(wireless.contains("lastTcpPromotionAtMs != 0L"))
+        assertTrue(wireless.contains("CallMonitor.hasLiveCall()"))
+        assertTrue(wireless.contains("AdbLifecycle.coordinateSetup {"))
     }
 
     @Test fun detachedHelperDoesNotFalselyShowVerifiedShellUid() {
