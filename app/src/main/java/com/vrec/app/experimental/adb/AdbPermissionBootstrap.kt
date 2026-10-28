@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import kotlinx.coroutines.CancellationException
 import com.vrec.app.calls.CallDetectionAccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -27,7 +28,25 @@ object AdbPermissionBootstrap {
     private val mutex = Mutex()
 
     suspend fun grantEligible(context: Context): ResultSummary = mutex.withLock {
-        grantLocked(context.applicationContext)
+        try {
+            grantLocked(context.applicationContext)
+        } catch (cancelled: CancellationException) {
+            // Leaving a Settings screen or Quit must not leave the dashboard
+            // perpetually showing permission setup as in progress.
+            status.value = ResultSummary(
+                unavailable = listOf("Android permission checks interrupted; retry when ADB is ready"),
+                finished = false,
+            )
+            throw cancelled
+        } catch (failure: Exception) {
+            // A device-specific failure in permission management is not a
+            // reason to abandon the independent helper launch.
+            ResultSummary(
+                unavailable = listOf("Android permission setup incomplete: " +
+                    (failure.message ?: "check App info > Permissions")),
+                finished = true,
+            ).also { status.value = it }
+        }
     }
 
     private suspend fun grantLocked(app: Context): ResultSummary {
