@@ -187,7 +187,11 @@ object ExperimentalRecording {
         Log.i("ADB: supported permissions verified — ${permissionResult.granted.size} granted, ${permissionResult.unavailable.size} unavailable")
         val helper = startHelperTyped(context)
         if (helper.isSuccess) Log.i("ADB: recording helper started and verified")
-        else Log.w("ADB: recording helper failed — ${helper.exceptionOrNull()?.message ?: "unknown error"}")
+        else {
+            Log.w("ADB: recording helper failed — ${helper.exceptionOrNull()?.message ?: "unknown error"}")
+            com.vrec.app.recording.RecordingFailureNotice.warn(context,
+                "Recording helper could not start after ADB authorization. Calls will not be captured until recovery succeeds.")
+        }
         status.value = status.value.copy(busy = false, message = when {
             helper.isFailure -> "Shell UID 2000 verified, but recorder helper failed: ${helper.exceptionOrNull()?.message}"
             permissionResult.unavailable.isNotEmpty() ->
