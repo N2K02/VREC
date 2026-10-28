@@ -21,12 +21,12 @@ class AdbHelperTcpRecoveryContractTest {
             .substringAfter("private suspend fun connectAndSwitch(")
             .substringBefore("fun shutdown(")
         assertTrue(coordinator.contains("deferHelperUntilTcp = switchToTcp"))
-        assertTrue(coordinator.contains("if (switchToTcp) return switchToLocalTcp(app)"))
+        assertTrue(coordinator.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
         val tcp = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
             .substringAfter("private suspend fun switchToLocalTcp(")
-        assertTrue(tcp.contains("reconnectTcp(context, automatic = false)"))
+        assertTrue(tcp.contains("reconnectTcpWithinSetup(context, automatic = automatic)"))
         assertTrue(tcp.indexOf("ExperimentalRecording.refreshConnectionStatus()") <
-            tcp.indexOf("reconnectTcp(context, automatic = false)"))
+            tcp.indexOf("reconnectTcpWithinSetup(context, automatic = automatic)"))
     }
 
     @Test fun startButtonDoesNotTrustAnOldUidBadge() {
