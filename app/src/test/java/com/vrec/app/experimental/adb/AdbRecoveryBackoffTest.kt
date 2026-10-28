@@ -52,6 +52,6 @@ class BackgroundRecoveryContractTest {
         assertTrue(wireless.contains("emptySearches >= MAX_EMPTY_SEARCHES || now < nextAutoSearchAt"))
         assertTrue(wireless.contains("private const val AUTO_SEARCH_MS = 60_000L"))
         assertTrue(wireless.contains("repeat(20) { if (!listening)"))
-        assertTrue(wireless.contains(".reconnectTcp(context, automatic = false) == null"))
+        assertTrue(wireless.contains(".reconnectTcpWithinSetup(context, automatic = automatic) == null"))
     }
 }
