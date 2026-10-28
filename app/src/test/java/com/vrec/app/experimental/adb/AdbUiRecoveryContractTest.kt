@@ -40,7 +40,7 @@ class AdbUiRecoveryContractTest {
         assertTrue(onboarding.contains("Other devices on the network may reach TCP/5555"))
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(wireless.contains("val switchToTcp = AdbUserChoices.tcpMode(app)"))
-        assertTrue(wireless.contains("if (switchToTcp) return switchToLocalTcp(app)"))
+        assertTrue(wireless.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
         assertTrue(wireless.contains("lastTcpPromotionAtMs != 0L"))
         assertTrue(wireless.contains("CallMonitor.hasLiveCall()"))
         assertTrue(wireless.contains("AdbLifecycle.coordinateSetup {"))
