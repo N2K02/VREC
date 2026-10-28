@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.AdbLifecycle
+import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
@@ -156,11 +157,22 @@ fun AdbDashboard(
                     scope.launch {
                         acting = true; note = null
                         note = AdbLifecycle.coordinateSetup {
-                            val session = verified || ExperimentalRecording.connect(context).isSuccess
-                            if (!session) "Restart needs ADB, so the helper was left running."
-                            else describe(AdbPrivilegedApiHelper.stop(context))
-                                ?: AdbPrivilegedApiHelper.startWithAdb(context)
-                                    .exceptionOrNull()?.let { it.message ?: "Helper didn't start again." }
+                            // A cached verified badge is insufficient after adbd restarts.
+                            // Do not stop a working helper until a live shell can restart it.
+                            val verifiedLive = verified && AdbTransport.isConnected &&
+                                AdbTransport.exec("id -u", timeoutMs = 3_000).getOrNull()
+                                    ?.lineSequence()?.any { it.trim() == "2000" } == true
+                            val authorized = verifiedLive ||
+                                (ExperimentalRecording.tcpPortListening() &&
+                                    ExperimentalRecording.connect(context, automatic = false).isSuccess)
+                            if (!authorized) {
+                                "Restart needs a live UID 2000 ADB session. Repair ADB first; the working helper was preserved."
+                            } else {
+                                val problem = describe(AdbPrivilegedApiHelper.stop(context))
+                                if (problem != null) problem
+                                else AdbPrivilegedApiHelper.startWithAdb(context)
+                                    .exceptionOrNull()?.message
+                            }
                         }
                         acting = false
                     }
