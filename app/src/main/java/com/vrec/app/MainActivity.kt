@@ -259,6 +259,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 // dismiss floating controls, and disable ADB capture.
                                 CallMonitor.setRecordingEnabled(quitContext, false)
                                 LiveUpdater.controller.cancel()
+                                RecordingFailureNotice.dismiss(quitContext)
                                 // Stops recovery loop, Wi-Fi listener, discovery, in-flight
                                 // connects and closes VRec's ADB session.
                                 com.vrec.app.experimental.adb.AdbLifecycle.quit(quitContext)
