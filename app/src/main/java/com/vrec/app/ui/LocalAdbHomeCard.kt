@@ -86,6 +86,12 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             wireless.connectPort == null && wireless.pairingPort == null
     }
 
+    val wirelessWorking = wireless.phase in setOf(
+        LocalWirelessAdb.Phase.PAIRING,
+        LocalWirelessAdb.Phase.CONNECTING,
+        LocalWirelessAdb.Phase.SWITCHING,
+        LocalWirelessAdb.Phase.VERIFYING_TCP,
+    )
     val healthy = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
     val verified = adbState.connected && adbState.shellUid == 2000
     val onboarding = AdbOnboardingPolicy.next(AdbOnboardingPolicy.Signals(
@@ -111,7 +117,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
 
     fun runSetup() {
         val now = SystemClock.elapsedRealtime()
-        if (foregroundBusy || busy || adbState.busy || now - lastSetupTapAt < 1_500L) return
+        if (foregroundBusy || busy || adbState.busy || wirelessWorking || now - lastSetupTapAt < 1_500L) return
         lastSetupTapAt = now
         // App-owned single-flight work survives Home -> Settings navigation.
         AdbForegroundSetup.begin(context)
@@ -121,8 +127,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         healthy = healthy,
         verified = verified,
         working = foregroundBusy || busy || adbState.busy || helperState == AdbPrivilegedApiHelper.State.STARTING ||
-            wireless.phase in setOf(LocalWirelessAdb.Phase.PAIRING, LocalWirelessAdb.Phase.CONNECTING,
-                LocalWirelessAdb.Phase.SWITCHING, LocalWirelessAdb.Phase.VERIFYING_TCP),
+            wirelessWorking,
         failed = helperState == AdbPrivilegedApiHelper.State.ERROR,
         canReconnect = verified || adbState.tcpPortOpen,
         recordingOn = recordingOn,
@@ -219,11 +224,11 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             if (!healthy) {
                 Button(
                     onClick = { runSetup() },
-                    enabled = !foregroundBusy && !busy && !adbState.busy,
+                    enabled = !foregroundBusy && !busy && !adbState.busy && !wirelessWorking,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(when {
-                        foregroundBusy || busy || adbState.busy -> "Waiting for authorization…"
+                        foregroundBusy || busy || adbState.busy || wirelessWorking -> "Waiting for authorization…"
                         wireless.pairingPort != null -> "Waiting for pairing code"
                         wireless.connectPort != null &&
                             ExperimentalRecording.wirelessWasPaired(context) -> "Restore wireless ADB"
