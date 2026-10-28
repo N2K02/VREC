@@ -206,7 +206,28 @@ object ExperimentalCaptureDaemon {
                     if (probe(context)) started = true
                 }
             }
-            check(started) { "Shell recorder did not start. Check capture log." }
+            if (!started) {
+                // The shell command can exit successfully even when the detached
+                // app_process immediately crashes. Classify the shell-side log
+                // without exposing call metadata or full logs in the UI.
+                val tail = runCatching {
+                    runShell("tail -n 16 " + LOG_PATH)
+                }.getOrDefault("")
+                val cause = when {
+                    tail.contains("ClassNotFoundException", ignoreCase = true) ->
+                        "capture jar missing a required class"
+                    tail.contains("Permission denied", ignoreCase = true) ||
+                        tail.contains("EACCES", ignoreCase = true) ->
+                        "Android denied shell file or audio access"
+                    tail.contains("Address already in use", ignoreCase = true) ->
+                        "capture control port is already occupied"
+                    tail.contains("Exception", ignoreCase = true) ||
+                        tail.contains("FATAL", ignoreCase = true) ->
+                        "shell runtime error (see ADB diagnostics)"
+                    else -> "no authenticated response (check ADB diagnostics)"
+                }
+                error("Shell recorder did not start: $cause")
+            }
             check(setMode(context, Prefs.recordingEnabled(context))) {
                 "Shell recorder started, but its recording mode was not confirmed."
             }
@@ -247,10 +268,14 @@ object ExperimentalCaptureDaemon {
                 }.getOrDefault("")
             } else ""
             simSourceMessage.value = when {
+                configuredSource == "SOURCE BUSY" ->
+                    "SIM source retained during an active call; reconfigure when idle."
                 configuredSource.startsWith("SOURCE ") -> configuredSource
                 else -> "SIM source unavailable: reconnect ADB to upgrade the helper."
             }
-            // A source change requested during a live call applies on the next idle sync.
+            // SOURCE BUSY is a healthy running helper protecting an active
+            // capture. Never mark it failed or try to replace it mid-call.
+            // The requested source can be applied on the next idle mode sync.
             val sourceOk = configuredSource.startsWith("SOURCE ") &&
                 configuredSource != "SOURCE INVALID"
             val requestedApps = if (allowed) EnhancedCapturePreferences.voipPackages(context)
