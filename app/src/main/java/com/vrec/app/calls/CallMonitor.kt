@@ -245,7 +245,14 @@ object CallMonitor {
                 // Some VoIP calls also produce a cellular OFFHOOK broadcast.
                 // A live, already identified Telecom VoIP call is authoritative;
                 // never invent a second SIM owner for that same event.
-                if (sessions.values.any { it.source == Source.TELECOM && it.isVoip && it.active }) {
+                if (CallSourceConflictPolicy.suppressFallbackSimOffhook(
+                        activeTelecomVoip = sessions.values.any {
+                            it.source == Source.TELECOM && it.isVoip && it.active
+                        },
+                        knownCellularTelecom = sessions.values.any {
+                            it.source == Source.TELECOM && !it.isVoip
+                        },
+                    )) {
                     Log.i("Ignoring phone-state OFFHOOK while a Telecom VoIP call is active")
                     return
                 }
