@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -163,7 +164,9 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color()),
+        border = HomePanelStyle.border(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -328,11 +331,11 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
 /** Badge represents a verified current shell session, not merely an open TCP socket. */
 @Composable
 private fun AdbUidBadge(state: AdbBadgePolicy.State, needsUsbBootstrap: Boolean) {
-    val background = when (state) {
-        AdbBadgePolicy.State.SUCCESS -> Color(0xFF2E7D32)
-        AdbBadgePolicy.State.FAILED -> Color(0xFFC62828)
-        AdbBadgePolicy.State.IN_PROGRESS -> Color(0xFFF9A825)
-        AdbBadgePolicy.State.DISCONNECTED -> Color(0xFF757575)
+    val accent = when (state) {
+        AdbBadgePolicy.State.SUCCESS -> Color(0xFF91E3AF)
+        AdbBadgePolicy.State.FAILED -> MaterialTheme.colorScheme.error
+        AdbBadgePolicy.State.IN_PROGRESS -> Color(0xFFFFD18A)
+        AdbBadgePolicy.State.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when (state) {
         AdbBadgePolicy.State.SUCCESS -> "UID 2000 ✓"
@@ -340,11 +343,16 @@ private fun AdbUidBadge(state: AdbBadgePolicy.State, needsUsbBootstrap: Boolean)
         AdbBadgePolicy.State.IN_PROGRESS -> "Connecting…"
         AdbBadgePolicy.State.DISCONNECTED -> if (needsUsbBootstrap) "USB setup" else "Connect"
     }
-    androidx.compose.material3.Surface(shape = RoundedCornerShape(50), color = background) {
+    androidx.compose.material3.Surface(
+        shape = RoundedCornerShape(50),
+        color = accent.copy(alpha = 0.12f),
+        border = BorderStroke(0.75.dp, accent.copy(alpha = 0.32f)),
+    ) {
         Text(
-            label, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            color = if (state == AdbBadgePolicy.State.IN_PROGRESS) Color.Black else Color.White,
-            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+            label, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = accent,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
