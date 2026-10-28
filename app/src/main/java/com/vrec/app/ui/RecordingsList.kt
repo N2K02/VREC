@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextAlign
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +46,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Call
@@ -490,7 +493,7 @@ fun RecordingsList() {
         visibleRecordings.isEmpty() -> Text("No recordings match this search or filter.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         else -> LazyColumn(modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(visibleRecordings, key = { it.file.absolutePath }) { rec ->
                 val active = playingPath == rec.file.absolutePath
                 RecordingRow(rec = rec, active = active, playing = active && !playbackPaused,
@@ -680,15 +683,33 @@ private fun RecordingRow(
         callApp, rec.simSlot, rec.simLabel, rec.carrier,
     )
 
-    Card(shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor =
-            if (active) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // Deliberately stronger tonal separation from the near-black recordings page.
+    // The outline also defines the card when elevation shadows are barely visible.
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                dark && active -> Color(0xFF303946)
+                dark -> Color(0xFF272C34)
+                active -> MaterialTheme.colorScheme.secondaryContainer
+                else -> MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (dark) Color(0xFF596372).copy(alpha = if (active) 0.94f else 0.64f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (selectionMode) {
                     androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onSelect() })
                 } else {
@@ -702,9 +723,9 @@ private fun RecordingRow(
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(dateFmt.format(Date(rec.startedAt)), style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(displayedContact, style = MaterialTheme.typography.titleSmall,
+                    Text(displayedContact, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                 }
+                }
                 if (!selectionMode) {
                     IconButton(onClick = onShare) {
                         Icon(Icons.Filled.Share, contentDescription = "Share recording")
