@@ -28,6 +28,13 @@ object AdbPrivilegedApiHelper {
             state.value = State.NEEDS_ADB
             return@withLock false
         }
+        if (ExperimentalCaptureDaemon.runningBuildStatus(context.applicationContext) ==
+            ShellHelperBuildPolicy.Decision.STALE) {
+            state.value = State.NEEDS_ADB
+            ExperimentalCaptureDaemon.ready.value = false
+            Log.i("ADB helper: running daemon is from an older APK; awaiting safe upgrade over verified ADB")
+            return@withLock false
+        }
         val armed = Prefs.recordingEnabled(context)
         val ok = ExperimentalCaptureDaemon.setMode(context.applicationContext, armed)
         state.value = if (ok) State.RUNNING else State.ERROR
@@ -113,8 +120,10 @@ object AdbPrivilegedApiHelper {
         // A process-level ERROR may be stale (permission or Telecom mode was
         // fixed since the last probe). Re-verify the authenticated mode handshake
         // before declaring RUNNING. A plain PONG must NEVER reset ERROR.
+        val stale = available &&
+            ExperimentalCaptureDaemon.runningBuildStatus(app) == ShellHelperBuildPolicy.Decision.STALE
         val armed = available && Prefs.recordingEnabled(app)
-        val verified = available && ExperimentalCaptureDaemon.setMode(app, armed)
+        val verified = available && !stale && ExperimentalCaptureDaemon.setMode(app, armed)
         state.value = HelperHealthPolicy.nextState(available, verified)
         ExperimentalCaptureDaemon.ready.value = verified
         if (verified) RecordingFailureNotice.clearAfterHelperRecovered(app)
