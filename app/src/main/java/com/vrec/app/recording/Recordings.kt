@@ -174,6 +174,7 @@ object RecordingStore {
         countryCode: String? = recording.countryCode,
         simLabel: String? = recording.simLabel,
         carrier: String? = recording.carrier,
+        callFlowDirection: String? = recording.callFlowDirection,
     ): Boolean = synchronized(metadataLock) {
         val json = readJson(recording.file) ?: JSONObject()
             .put("startedAt", recording.startedAt)
@@ -190,6 +191,11 @@ object RecordingStore {
             .put("countryCode", countryCode?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
             .put("simLabel", simLabel?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
             .put("carrier", carrier?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put("callFlowDirection", when (callFlowDirection?.uppercase(Locale.ROOT)) {
+                "INCOMING" -> "INCOMING"
+                "OUTGOING" -> "OUTGOING"
+                else -> JSONObject.NULL
+            })
         writeJsonAtomic(recording.file, json)
     }
 
