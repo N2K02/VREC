@@ -217,7 +217,12 @@ object RecordingStore {
             return false
         }
         val metadata = sidecar(recording.file)
-        val metadataDeleted = !metadata.exists() || metadata.delete()
+        val metadataDeleted = runCatching {
+            // Also removes AtomicFile's .new/.bak recovery files.
+            AtomicFile(metadata).delete()
+            !metadata.exists() && !File(metadata.path + ".new").exists() &&
+                !File(metadata.path + ".bak").exists()
+        }.getOrDefault(false)
         if (!metadataDeleted) Log.w("Recording deletion partially failed: metadata is still present")
         return metadataDeleted
     }
@@ -243,7 +248,7 @@ object RecordingStore {
             atomic.finishWrite(stream)
             true
         } catch (t: Exception) {
-            if (stream != null) atomic.failWrite(stream)
+            if (stream != null) runCatching { atomic.failWrite(stream) }
             Log.w("Recording metadata could not be saved", t)
             false
         }
