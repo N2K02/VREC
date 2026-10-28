@@ -623,6 +623,7 @@ object ExperimentalCaptureDaemon {
                         // _in/_out shell filename. Restore source/caller only when
                         // one new-format VoIP session matches and no SIM competes.
                         journal.findForCellularTaggedVoip(context, started, identity.direction)
+                            ?: journal.findForCellularTaggedSim(context, started, identity.direction)
                     } else null
                 val direction = if (caller?.direction == CallDirection.VOIP)
                     CallDirection.VOIP else identity.direction
@@ -709,7 +710,8 @@ object ExperimentalCaptureDaemon {
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // Consume by the verified source package, including when
                     // a generic shell filename was reclassified as VoIP.
-                    journal.consume(context, started, caller?.packageName ?: identity.appPackage)
+                    if (caller != null) journal.consumeMatch(context, caller)
+                    else journal.consume(context, started, identity.appPackage)
                     delete(context, name)
                     RecordingStore.notifySaved()
                     collected++
