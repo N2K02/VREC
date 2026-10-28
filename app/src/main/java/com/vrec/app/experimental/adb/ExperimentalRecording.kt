@@ -183,9 +183,11 @@ object ExperimentalRecording {
         status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
             shellUid = 2000, tcpPortOpen = true,
             message = "Android shell UID 2000 verified. Configuring supported permissions…")
-        val permissionResult = grantSafely(context)
-        Log.i("ADB: supported permissions verified — ${permissionResult.granted.size} granted, ${permissionResult.unavailable.size} unavailable")
+        // startWithAdb performs the same live UID check and permission bootstrap
+        // for every entry point; do not repeat grants in this transport wrapper.
         val helper = startHelperTyped(context)
+        val permissionResult = AdbPermissionBootstrap.status.value
+        Log.i("ADB: eligible permission check — ${permissionResult.granted.size} granted, ${permissionResult.unavailable.size} unavailable")
         if (helper.isSuccess) Log.i("ADB: recording helper started and verified")
         else {
             Log.w("ADB: recording helper failed — ${helper.exceptionOrNull()?.message ?: "unknown error"}")
@@ -244,8 +246,8 @@ object ExperimentalRecording {
         Log.i("ADB: wireless TLS Android shell UID 2000 verified")
         status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
             shellUid = 2000, message = "Wireless ADB UID 2000 verified; granting eligible permissions…")
-        val permissions = grantSafely(context)
         val helper = startHelperTyped(context)
+        val permissions = AdbPermissionBootstrap.status.value
         Log.i("ADB: wireless setup ${if (helper.isSuccess) "helper ready" else "helper failed"}; ${permissions.unavailable.size} unavailable permissions")
         status.value = status.value.copy(busy = false, message = when {
             helper.isFailure -> "Wireless UID 2000 verified; helper failed: ${helper.exceptionOrNull()?.message}"
@@ -287,16 +289,6 @@ object ExperimentalRecording {
             Result.failure(AdbConnectionException(AdbFailure.HELPER_UNAVAILABLE,
                 it.message ?: "Recording helper failed", it))
         })
-    }
-
-    /** Permission grants after UID 2000; cancellation propagates instead of being swallowed. */
-    private suspend fun grantSafely(context: Context): AdbPermissionBootstrap.ResultSummary = try {
-        AdbPermissionBootstrap.grantEligible(context)
-    } catch (c: kotlin.coroutines.cancellation.CancellationException) {
-        throw c
-    } catch (t: Throwable) {
-        AdbPermissionBootstrap.ResultSummary(
-            unavailable = listOf("Permission setup failed: ${t.message}"), finished = true)
     }
 
     /** Actionable text per failure type. */
