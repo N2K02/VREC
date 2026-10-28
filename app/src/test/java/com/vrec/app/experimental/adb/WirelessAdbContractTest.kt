@@ -17,11 +17,17 @@ class WirelessAdbContractTest {
         assertTrue(transport.contains("pair(LOOPBACK, port, code)"))
         assertTrue(transport.contains("connect(LOOPBACK, port)"))
         assertTrue(wireless.contains("belongsToThisPhone(host)"))
-        assertTrue(controller.contains("connectWireless(context: Context, port: Int"))
+        assertTrue(controller.contains("suspend fun connectWireless("))
+        assertTrue(controller.contains("context: Context, port: Int, automatic: Boolean = false"))
         assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
         assertTrue(controller.substringAfter("suspend fun connectWireless(").contains("verifyShellUid()"))
-        assertTrue(controller.contains("AdbPermissionBootstrap.grantEligible(context)"))
-        assertTrue(controller.contains("AdbPrivilegedApiHelper.startWithAdb(context)"))
+        assertTrue(controller.contains("deferHelperUntilTcp"))
+        assertTrue(controller.contains("val helper = startHelperTyped(context)"))
+        val helper = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
+        val flow = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperStartFlow.kt")
+        assertTrue(helper.contains("AdbPermissionBootstrap.grantEligible(app)"))
+        assertTrue(flow.indexOf("steps.verifyUid2000()") in
+            0 until flow.indexOf("steps.configurePermissions()"))
     }
 
     @Test fun explicitSetupStartsDiscoveryAndNotificationCodeIsSupported() {
