@@ -122,8 +122,11 @@ object RecordingStore {
         simSlot: Int? = null,
         carrier: String? = null,
         recordingType: RecordingType = RecordingType.STANDARD,
+        startedAtOverride: Long? = null,
+        endedAtOverride: Long? = null,
+        audioHealth: String? = null,
     ): Boolean {
-        val started = runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
+        val started = startedAtOverride ?: runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
             ?: System.currentTimeMillis()
         val json = JSONObject()
@@ -134,7 +137,7 @@ object RecordingStore {
             .put("callDurationMs", if (callConnectedAt != null && callEndedAt != null && callEndedAt >= callConnectedAt) callEndedAt - callConnectedAt else JSONObject.NULL)
             .put("callTimingEstimated", true)
             .put("startedAt", started)
-            .put("endedAt", System.currentTimeMillis())
+            .put("endedAt", endedAtOverride ?: System.currentTimeMillis())
             .put("direction", direction.name)
             .put("peer", peer ?: JSONObject.NULL)
             .put("phoneNumber", phoneNumber ?: JSONObject.NULL)
@@ -154,6 +157,11 @@ object RecordingStore {
             .put("notes", "")
             .put("favorite", false)
             .put("bookmarksMs", JSONArray())
+        if (audioHealth != null) {
+            json.put("audioHealth", audioHealth)
+                .put("audioHealthWarning", audioHealth.contains("QUIET") ||
+                    audioHealth.contains("CLIPPING") || audioHealth.contains("NO_AUDIO"))
+        }
         return writeJsonAtomic(file, json)
     }
 
@@ -248,21 +256,9 @@ object RecordingStore {
         }.getOrNull()
     }
 
-    /** Import metadata updates must complete before deleting the shell original. */
-    fun finalizeImportedMeta(
-        file: File, startedAt: Long, endedAt: Long, source: String, health: String?,
-    ): Boolean = synchronized(metadataLock) {
-        val json = readJson(file) ?: return@synchronized false
-        json.put("startedAt", startedAt)
-            .put("endedAt", endedAt)
-            .put("source", source)
-        if (health != null) {
-            json.put("audioHealth", health)
-                .put("audioHealthWarning", health.contains("QUIET") ||
-                    health.contains("CLIPPING") || health.contains("NO_AUDIO"))
-        }
-        writeJsonAtomic(file, json)
-    }
+    /** AtomicFile recovers the previous completed state on interrupted writes. */
+    fun hasValidMetadata(file: File): Boolean =
+        readJson(file)?.optInt("schemaVersion", 0) == 3
 
     private fun read(file: File): Recording {
         val meta = readJson(file)
