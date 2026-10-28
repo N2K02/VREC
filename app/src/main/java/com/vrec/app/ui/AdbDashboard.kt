@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -124,23 +126,25 @@ fun AdbDashboard(
                 }
                 androidx.compose.material3.HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Stat("Connection", when {
-                            verified -> "Connected"
-                            healthy -> "Detached"
-                            else -> "Offline"
-                        }, Modifier.weight(1f))
-                        Stat("Recording", when {
-                            !recordingOn -> "Off"
-                            !healthy -> "Waiting"
-                            else -> "Armed"
-                        }, Modifier.weight(1f))
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Stat("Recovery", restore, Modifier.weight(1f))
-                        Stat("Shell UID", if (verified) "2000" else "Detached", Modifier.weight(1f))
-                    }
+                // Exactly one row of four equal-width status tiles on phones.
+                // Labels and values can ellipsize at large font sizes; the
+                // full status is still available to accessibility services.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Stat("Connection", when {
+                        verified -> "Connected"
+                        healthy -> "Detached"
+                        else -> "Offline"
+                    }, Modifier.weight(1f))
+                    Stat("Recording", when {
+                        !recordingOn -> "Off"
+                        !healthy -> "Waiting"
+                        else -> "Armed"
+                    }, Modifier.weight(1f))
+                    Stat("Recovery", restore, Modifier.weight(1f))
+                    Stat("Shell UID", if (verified) "2000" else "Detached", Modifier.weight(1f))
                 }
             }
         }
@@ -236,21 +240,39 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
         else -> if (value == "2000") Color(0xFFB27DDA) else Color(0xFFCF5454)
     }
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(15.dp),
+        modifier = modifier
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$label: $value"
+            },
+        shape = RoundedCornerShape(13.dp),
         color = accent.copy(alpha = 0.09f),
         border = BorderStroke(0.75.dp, accent.copy(alpha = 0.28f)),
     ) {
         Column(
-            Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
-            horizontalAlignment = Alignment.Start,
+            Modifier.padding(horizontal = 5.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text(label, style = MaterialTheme.typography.labelSmall,
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium, maxLines = 1)
-            Text(value, style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold, color = accent, maxLines = 1)
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
