@@ -39,4 +39,34 @@ class RecordingListLabelsTest {
         assertEquals("Signal", RecordingListLabels.source(CallDirection.UNKNOWN, "Signal", null, null, null))
         assertEquals("Unknown source", RecordingListLabels.source(CallDirection.UNKNOWN, null, null, null, null))
     }
+    @Test fun sourceBadgesMatchSavedAppInsteadOfAssumingEveryIncomingCallIsSim() {
+        val source = RecordingListLabels::sourceKind
+        assertEquals(RecordingListLabels.SourceKind.APP,
+            source(CallDirection.VOIP, "com.whatsapp", "VOIP"))
+        assertEquals(RecordingListLabels.SourceKind.APP,
+            source(CallDirection.INCOMING, "com.whatsapp", null))
+        assertEquals(RecordingListLabels.SourceKind.APP,
+            source(CallDirection.OUTGOING, "org.telegram.messenger", null))
+        assertEquals(RecordingListLabels.SourceKind.APP,
+            source(CallDirection.OUTGOING, "com.example.newvoip", "VoIP"))
+        assertEquals(RecordingListLabels.SourceKind.PHONE,
+            source(CallDirection.INCOMING, "com.android.dialer", null))
+        assertEquals(RecordingListLabels.SourceKind.PHONE,
+            source(CallDirection.OUTGOING, null, null))
+    }
+
+    @Test fun missingLegacySourceMetadataKeepsNeutralFallbackInsteadOfInventingApp() {
+        val source = RecordingListLabels::sourceKind
+        assertEquals(RecordingListLabels.SourceKind.APP,
+            source(CallDirection.VOIP, null, null))
+        assertEquals(RecordingListLabels.SourceKind.APP,
+            source(CallDirection.UNKNOWN, "com.example.app", null))
+        assertEquals(RecordingListLabels.SourceKind.UNKNOWN,
+            source(CallDirection.UNKNOWN, null, null))
+        assertEquals(RecordingListLabels.SourceKind.UNKNOWN,
+            source(CallDirection.UNKNOWN, " ", null))
+        assertEquals("VoIP", RecordingListLabels.direction(CallDirection.VOIP, "UNKNOWN"))
+        assertEquals("Incoming", RecordingListLabels.direction(CallDirection.VOIP, "incoming"))
+        assertEquals("Outgoing", RecordingListLabels.direction(CallDirection.VOIP, "outgoing"))
+    }
 }
