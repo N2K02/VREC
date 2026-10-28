@@ -54,6 +54,8 @@ object Log {
 
     @Synchronized
     fun setEnabled(on: Boolean) {
+        // An off-to-on transition after midnight must not expose yesterday's entries.
+        rollDay()
         if (_enabled.value == on) return
         _enabled.value = on
         context?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()
