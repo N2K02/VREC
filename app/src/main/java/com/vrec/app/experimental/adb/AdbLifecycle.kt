@@ -35,12 +35,16 @@ object AdbLifecycle {
         private set
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
+    // Periodic recovery is single-flight, but may await wireless discovery.
+    // Never hold transportMutex across that wait: the mDNS callback must be
+    // able to finish pairing and switching while recovery observes it.
     private val recoveryMutex = Mutex()
+    private val transportMutex = Mutex()
     private val wifiRecoveryJobs = mutableSetOf<Job>()
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
-    /** Serialize foreground setup with periodic and Wi-Fi-triggered recovery. */
-    suspend fun <T> coordinateSetup(block: suspend () -> T): T = recoveryMutex.withLock { block() }
+    /** Serialize all ADB transport changes, including foreground and wireless setup. */
+    suspend fun <T> coordinateSetup(block: suspend () -> T): T = transportMutex.withLock { block() }
 
     /** Idempotent. Called at process start and when VRec is opened after Quit. */
     @Synchronized fun startBackground(context: Context) {
