@@ -134,6 +134,7 @@ object AdbLifecycle {
             }
         }
         wifiCallback = null
+        AdbForegroundSetup.shutdown()
         LocalWirelessAdb.shutdown(app)
         CoroutineScope(Dispatchers.IO).launch {
             withContext(NonCancellable) { AdbTransport.close() }
