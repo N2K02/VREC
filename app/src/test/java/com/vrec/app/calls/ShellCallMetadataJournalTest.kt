@@ -19,7 +19,9 @@ class ShellCallMetadataJournalTest {
             100_000L, 108_000L, "com.whatsapp", "org.telegram.messenger"))
     }
 
-    @Test fun allowsLegacyShellFilenameWithoutPackage() {
-        assertTrue(ShellCallMetadataJournal.matches(100_000L, 108_000L, null, "com.whatsapp"))
+    @Test fun legacyShellFilenameWithoutVerifiedPackageMustNotInheritVoipIdentity() {
+        // Time proximity alone could misidentify another caller during call waiting.
+        assertFalse(ShellCallMetadataJournal.matches(100_000L, 108_000L, null, "com.whatsapp"))
+        assertFalse(ShellCallMetadataJournal.matches(100_000L, 108_000L, "com.whatsapp", null))
     }
 }
