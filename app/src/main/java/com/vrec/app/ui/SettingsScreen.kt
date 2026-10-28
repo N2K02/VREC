@@ -406,7 +406,9 @@ private fun AdbSecurityChoices() {
                     note = "Automatic TCP/5555 enabled. It applies on the next verified wireless connection."
                 } else if (connection.tcpPortOpen && verified) {
                     scope.launch {
-                        note = ExperimentalRecording.disableTcp(context).fold(
+                        note = com.vrec.app.experimental.adb.AdbLifecycle.coordinateSetup {
+                            ExperimentalRecording.disableTcp(context)
+                        }.fold(
                             { "TCP/5555 closed. Automatic TCP switching is off." },
                             { "Automatic switching is off, but TCP/5555 may still be open: " +
                                 (it.message ?: "check Developer options.") })
@@ -421,7 +423,9 @@ private fun AdbSecurityChoices() {
         if (connection.tcpPortOpen && verified) {
             OutlinedButton(onClick = {
                 scope.launch {
-                    note = ExperimentalRecording.disableTcp(context).fold(
+                    note = com.vrec.app.experimental.adb.AdbLifecycle.coordinateSetup {
+                            ExperimentalRecording.disableTcp(context)
+                        }.fold(
                         { "TCP/5555 is closed." }, { it.message ?: "Couldn't close TCP/5555." })
                 }
             }, enabled = !connection.busy, modifier = Modifier.fillMaxWidth()) { Text("Disable TCP/5555") }
