@@ -111,4 +111,16 @@ class RecordingListLabelsTest {
         assertEquals(RecordingListLabels.SourceAccent.NEUTRAL,
             RecordingListLabels.sourceAccent(unknown, null))
     }
+    @Test fun videoCallUsesCameraBadgeAudioAndLegacyCallsUseCallBadge() {
+        assertEquals(RecordingListLabels.MediaBadge.VIDEO,
+            RecordingListLabels.mediaBadge("VIDEO"))
+        assertEquals(RecordingListLabels.MediaBadge.VIDEO,
+            RecordingListLabels.mediaBadge("video"))
+        assertEquals(RecordingListLabels.MediaBadge.CALL,
+            RecordingListLabels.mediaBadge("VOICE"))
+        assertEquals(RecordingListLabels.MediaBadge.CALL,
+            RecordingListLabels.mediaBadge(null))
+        assertEquals(RecordingListLabels.MediaBadge.CALL,
+            RecordingListLabels.mediaBadge("UNKNOWN"))
+    }
 }
