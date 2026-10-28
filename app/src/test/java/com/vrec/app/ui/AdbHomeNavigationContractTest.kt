@@ -27,7 +27,7 @@ class AdbHomeNavigationContractTest {
         assertTrue(home.contains("Recording dashboard"))
         assertTrue(source.contains("com.vrec.app.ui.LocalAdbHomeCard("))
         assertFalse(home.contains("onOpenExperimental"))
-        assertTrue(source.contains("Screen.HOME -> HomeScreen()"))
+        assertTrue(source.contains("Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })"))
         val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(card.contains("AdbForegroundSetup.begin(context)"))
         val foreground = read("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
