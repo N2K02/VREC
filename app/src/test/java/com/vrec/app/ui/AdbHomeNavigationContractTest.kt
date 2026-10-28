@@ -77,7 +77,7 @@ class AdbHomeNavigationContractTest {
         // check, which happens before any optional permission grants.
         val connectBody = controller.substringAfter("suspend fun connect(context: Context")
         assertTrue(connectBody.indexOf("verifyShellUid()") in
-            0 until connectBody.indexOf("startHelperTyped(context)"))
+            0 until connectBody.indexOf("startHelperTyped(context, manualRepair = !automatic)"))
         assertTrue(flow.indexOf("steps.verifyUid2000()") in
             0 until flow.indexOf("steps.configurePermissions()"))
         assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
