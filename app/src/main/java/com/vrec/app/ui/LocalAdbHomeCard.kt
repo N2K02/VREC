@@ -181,7 +181,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
                 }
                 AdbUidBadge(badge, needsUsbBootstrap)
             }
-            if (!devOptionsOn) {
+            if (!devOptionsOn && !verified) {
                 Text(
                     "Developer options are off. In About phone, tap Build number 7 times, then come back.",
                     style = MaterialTheme.typography.bodyMedium,
