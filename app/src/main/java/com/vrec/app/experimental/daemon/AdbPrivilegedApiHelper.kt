@@ -6,6 +6,7 @@ import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -49,7 +50,8 @@ object AdbPrivilegedApiHelper {
             ))
         }
         state.value = State.STARTING
-        when (val outcome = AdbHelperStartFlow.run(object : AdbHelperStartFlow.Steps {
+        val startup = try {
+            AdbHelperStartFlow.run(object : AdbHelperStartFlow.Steps {
             override suspend fun verifyUid2000(): Boolean =
                 AdbTransport.exec("id -u", timeoutMs = 3_000).getOrNull()
                     ?.lineSequence()?.any { it.trim() == "2000" } == true
@@ -62,7 +64,15 @@ object AdbPrivilegedApiHelper {
 
             override suspend fun probeHelper(): Boolean =
                 ExperimentalCaptureDaemon.probe(app)
-        })) {
+        })
+        } catch (cancelled: CancellationException) {
+            // The foreground operation may be cancelled by Quit. Never leave
+            // STARTING stuck on-screen, and don't report a false launch error.
+            state.value = State.STOPPED
+            ExperimentalCaptureDaemon.ready.value = false
+            throw cancelled
+        }
+        when (val outcome = startup) {
             is AdbHelperStartFlow.Outcome.Ready -> {
                 state.value = State.RUNNING
                 ExperimentalCaptureDaemon.ready.value = true
