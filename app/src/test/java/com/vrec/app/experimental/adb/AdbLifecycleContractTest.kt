@@ -48,7 +48,8 @@ class AdbLifecycleContractTest {
         assertTrue(boot.contains("suspend fun grantEligible(context: Context): ResultSummary = mutex.withLock {"))
         assertTrue(boot.indexOf("AdbTransport.exec(\"id -u\"") in 0 until boot.indexOf("AdbTransport.exec(\"pm grant"))
         assertFalse(boot.contains("runCatching"))
-        assertTrue(boot.contains("unavailable.add(\"\$short (Android denied the grant)\")"))
+        assertTrue(boot.contains("unavailable.add(\"\$short (\$instruction)\")"))
+        assertTrue(boot.contains("restricted call-log access"))
     }
 
     @Test fun manualRetryLatchOnlyForAuthorizationFailures() {
