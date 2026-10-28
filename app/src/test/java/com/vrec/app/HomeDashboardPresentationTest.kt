@@ -37,4 +37,14 @@ class HomeDashboardPresentationTest {
         assertEquals("The shell helper needs attention before new calls can be captured.",
             HomeDashboardPresentation.detail(HomeDashboardPresentation.State.SETUP_NEEDED))
     }
+    @Test fun preparingAndSavingNeverClaimSuccessfulCapture() {
+        val starting = HomeDashboardPresentation.resolve(enabled = true, ready = true,
+            recording = false, paused = false, starting = true)
+        val saving = HomeDashboardPresentation.resolve(enabled = true, ready = false,
+            recording = false, paused = false, saving = true)
+        assertEquals(HomeDashboardPresentation.State.STARTING, starting)
+        assertEquals("Preparing recording", HomeDashboardPresentation.title(starting))
+        assertEquals(HomeDashboardPresentation.State.SAVING, saving)
+        assertEquals("Saving recording", HomeDashboardPresentation.title(saving))
+    }
 }
