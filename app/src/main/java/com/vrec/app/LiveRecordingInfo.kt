@@ -6,6 +6,7 @@ import com.vrec.app.calls.ShellCallMetadataJournal
 import com.vrec.app.experimental.daemon.ShellRecordingIdentity
 import com.vrec.app.experimental.daemon.ShellVoipLabels
 import com.vrec.app.recording.CallDirection
+import com.vrec.app.ui.RecordingListLabels
 
 internal data class LiveRecordingInfo(
     val caller: String,
@@ -22,7 +23,7 @@ internal data class LiveRecordingInfo(
 internal object LiveRecordingInfoResolver {
     fun fromShellFile(context: Context, filename: String?): LiveRecordingInfo {
         val identity = filename?.let(ShellRecordingIdentity::fromName)
-            ?: return LiveRecordingInfo("Unknown caller", "ADB shell", null)
+            ?: return LiveRecordingInfo("Recording in progress", "ADB shell", null)
         val matched = if (identity.appPackage != null)
             ShellCallMetadataJournal.find(context.applicationContext,
                 identity.startedAt, identity.appPackage)
@@ -34,7 +35,6 @@ internal object LiveRecordingInfoResolver {
         val sourceDirection = if (matched?.direction == CallDirection.VOIP)
             CallDirection.VOIP else identity.direction
         val live = CallMonitor.liveCallerForShell(resolvedPackage, sourceDirection)
-        val caller = preferredCaller(live?.name, live?.number, matched?.name, matched?.number)
         val source = ShellVoipLabels.forPackage(resolvedPackage)
             ?: when (sourceDirection) {
                 CallDirection.INCOMING, CallDirection.OUTGOING -> "SIM call"
@@ -45,10 +45,15 @@ internal object LiveRecordingInfoResolver {
             "OUTGOING" -> CallDirection.OUTGOING
             else -> identity.direction
         }
+        val caller = preferredCaller(live?.name, live?.number, matched?.name, matched?.number)
+            ?: RecordingListLabels.callSummary(flow, source, matched?.mediaType)
         return LiveRecordingInfo(caller, source, identity.startedAt,
             resolvedPackage, flow)
     }
 
-    internal fun preferredCaller(vararg suggestions: String?): String =
-        suggestions.firstOrNull { !it.isNullOrBlank() }?.trim() ?: "Unknown caller"
+    internal fun preferredCaller(vararg suggestions: String?): String? =
+        suggestions.firstNotNullOfOrNull { suggestion ->
+            suggestion?.trim()?.takeIf { it.isNotEmpty() &&
+                !it.equals("unknown caller", true) && !it.equals("unknown contact", true) }
+        }
 }
