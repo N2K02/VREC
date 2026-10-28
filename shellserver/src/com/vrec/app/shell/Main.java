@@ -1114,8 +1114,8 @@ public final class Main {
      * watches nothing.
      */
     private static final int COMMAND_SET_VOIP = 'V';
-    /** Set the next SIM call's AudioRecord source without restarting the shell helper. */
-    private static final int COMMAND_SET_SIM_SOURCE = 'Y';
+    /** Dedicated, non-overlapping command for the next SIM AudioRecord source. */
+    private static final int COMMAND_SET_SIM_SOURCE = 'J';
     /** Read the completed recording's short diagnostic sidecar. */
     private static final int COMMAND_HEALTH = 'H';
     private static volatile int simCaptureMode = SimAudioCapture.VOICE_CALL;
@@ -1177,8 +1177,8 @@ public final class Main {
      * message; 'G' handles the greeting and 'X' the diagnostics.
      */
     private static final int COMMAND_ANSWER_SETTINGS = 'N';
-    private static final int COMMAND_GO_AHEAD = 'Y';
-    private static final int COMMAND_HANDOVER = 'H';
+    private static final int COMMAND_GO_AHEAD = 'O';
+    private static final int COMMAND_HANDOVER = 'B';
     private static final int COMMAND_GREETING = 'G';
     private static final int COMMAND_DIAGNOSE = 'X';
     private static final String ANSWER_ENV = "VREC_ANSWER";
