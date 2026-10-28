@@ -680,6 +680,7 @@ object ExperimentalCaptureDaemon {
                         phoneNumber = caller?.number,
                         contactName = caller?.name,
                         numberSource = caller?.numberSource,
+                        callFlowDirection = caller?.flowDirection,
                         recordingType = RecordingType.ADB,
                         startedAtOverride = started,
                         endedAtOverride = started + durationMs,
