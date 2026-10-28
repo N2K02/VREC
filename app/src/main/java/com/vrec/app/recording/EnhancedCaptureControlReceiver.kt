@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.vrec.app.Log
 import com.vrec.app.calls.CallMonitor
 
@@ -19,12 +20,25 @@ class EnhancedCaptureControlReceiver : BroadcastReceiver() {
         // BroadcastReceiver instances are not stable across deliveries. Serialize
         // notification actions globally so Pause/Resume/Stop cannot overtake.
         private val controlMutex = Mutex()
+        /** Shared between Home, mini-bar, notification and overlay. */
+        val pendingAction = MutableStateFlow<Char?>(null)
+
+        fun request(context: Context, action: Char) {
+            if (action !in "PRS" || !AdbFallbackNotice.enhancedActive.value ||
+                pendingAction.value != null) return
+            context.sendBroadcast(
+                Intent(context, EnhancedCaptureControlReceiver::class.java)
+                    .setAction("com.vrec.app.SHELL_CONTROL")
+                    .putExtra("control", action.toString())
+            )
+        }
     }
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "com.vrec.app.SHELL_CONTROL" ||
             !AdbFallbackNotice.enhancedActive.value) return
         val action = intent.getStringExtra("control")?.singleOrNull() ?: return
-        if (action !in "PRS") return
+        if (action !in "PRS" || pendingAction.value != null) return
+        pendingAction.value = action
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -54,6 +68,7 @@ class EnhancedCaptureControlReceiver : BroadcastReceiver() {
             } catch (failure: Exception) {
                 Log.w("Shell notification control failed", failure)
             } finally {
+                pendingAction.value = null
                 pending.finish()
             }
         }
