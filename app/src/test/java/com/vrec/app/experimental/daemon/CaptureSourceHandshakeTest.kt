@@ -41,6 +41,17 @@ class CaptureSourceHandshakeTest {
         assertEquals(1, reads)
     }
 
+    @Test fun diagnosticReportsSocketFailureWithoutTreatingItAsLegacy() = runBlocking {
+        var failureType: String? = null
+        val response = CaptureSourceHandshake.request(
+            read = { throw java.net.SocketException("Connection reset") },
+            waitBetween = { error("A socket reset must not spin an immediate retry") },
+            onTransportError = { failureType = it.javaClass.simpleName },
+        )
+        assertNull(response)
+        assertEquals("SocketException", failureType)
+    }
+
     @Test fun cancellationPropagatesSoQuitCanStopSetup() = runBlocking {
         var cancelled = false
         try {
