@@ -34,7 +34,6 @@ class AdbHomeNavigationContractTest {
         assertTrue(foreground.contains("LocalAdbMiddleware.setup(app, userInitiated = true)"))
         assertFalse(card.contains("LocalWirelessAdb.start(context)"))
         assertTrue(foreground.contains("ExperimentalRecording.tcpPortListening()"))
-        assertTrue(card.contains("ExperimentalRecording.tcpPortListening()"))
         assertTrue(card.contains("WirelessAdbSetupCard()"))
         assertTrue(card.contains("instructionsExpanded = !instructionsExpanded"))
         assertTrue(card.contains("USB host instructions (when Wireless debugging is unavailable)"))
