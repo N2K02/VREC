@@ -207,7 +207,10 @@ object ExperimentalRecording {
 
     /** Completes setup only after the same UID 2000 check used for USB.
      * Wireless connection has a separate dynamic Android TLS port. */
-    suspend fun connectWireless(context: Context, port: Int, automatic: Boolean = false): Result<Int> {
+    suspend fun connectWireless(
+        context: Context, port: Int, automatic: Boolean = false,
+        deferHelperUntilTcp: Boolean = false,
+    ): Result<Int> {
         if (automatic && awaitingManualRetry)
             return Result.failure(AdbConnectionException(
                 status.value.lastFailure ?: AdbFailure.AUTH_TIMEOUT, "ADB authorization stopped; press Retry on Home."))
@@ -245,7 +248,16 @@ object ExperimentalRecording {
         AdbUserChoices.rememberVerifiedWirelessBoot(context)
         Log.i("ADB: wireless TLS Android shell UID 2000 verified")
         status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
-            shellUid = 2000, message = "Wireless ADB UID 2000 verified; granting eligible permissions…")
+            shellUid = 2000, message = "Wireless ADB UID 2000 verified; configuring transport…")
+        if (deferHelperUntilTcp) {
+            // TCP promotion restarts adbd and drops the TLS stream. Starting the
+            // recording helper before this transition can fail and abort TCP
+            // setup, leaving a stale "UID 2000" badge with no usable transport.
+            // reconnectTcp() will grant permissions and start/verify the helper.
+            status.value = status.value.copy(busy = false,
+                message = "Wireless ADB verified (UID 2000); switching to TCP/5555 before helper startup.")
+            return attempt
+        }
         val helper = startHelperTyped(context)
         val permissions = AdbPermissionBootstrap.status.value
         Log.i("ADB: wireless setup ${if (helper.isSuccess) "helper ready" else "helper failed"}; ${permissions.unavailable.size} unavailable permissions")
