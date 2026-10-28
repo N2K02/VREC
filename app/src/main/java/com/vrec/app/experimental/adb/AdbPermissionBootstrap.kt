@@ -68,7 +68,18 @@ object AdbPermissionBootstrap {
             if (app.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
                 granted.add(short)
             } else {
-                unavailable.add("$short (Android denied the grant)")
+                val instruction = when (permission) {
+                    Manifest.permission.READ_CALL_LOG ->
+                        "restricted call-log access: check Android App info > Permissions; some installers require allowlisting"
+                    Manifest.permission.READ_PHONE_STATE ->
+                        "phone access: approve in Android App info > Permissions"
+                    Manifest.permission.READ_CONTACTS ->
+                        "contacts access: approve in Android App info > Permissions"
+                    Manifest.permission.POST_NOTIFICATIONS ->
+                        "notifications: approve in Android App info > Notifications"
+                    else -> "Android requires manual permission approval"
+                }
+                unavailable.add("$short ($instruction)")
             }
         }
         // Only for the user's opt-in "Restore after restart"; never requested otherwise.
