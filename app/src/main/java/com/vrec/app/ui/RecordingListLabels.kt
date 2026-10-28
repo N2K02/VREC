@@ -56,15 +56,23 @@ internal object RecordingListLabels {
         return raw.replace('_', ' ').trim().takeIf { it.isNotBlank() }
     }
 
-    fun direction(direction: CallDirection, callFlowDirection: String?): String = when (direction) {
-        CallDirection.INCOMING -> "Incoming"
-        CallDirection.OUTGOING -> "Outgoing"
-        CallDirection.VOIP, CallDirection.UNKNOWN -> when (callFlowDirection?.uppercase(Locale.ROOT)) {
-            "INCOMING" -> "Incoming"
-            "OUTGOING" -> "Outgoing"
+    /** Preserve VoIP identity separately from the direction of the call. */
+    fun flowDirection(direction: CallDirection, callFlowDirection: String?): CallDirection =
+        when (callFlowDirection?.uppercase(Locale.ROOT)) {
+            CallDirection.INCOMING.name -> CallDirection.INCOMING
+            CallDirection.OUTGOING.name -> CallDirection.OUTGOING
+            else -> when (direction) {
+                CallDirection.INCOMING, CallDirection.OUTGOING -> direction
+                else -> CallDirection.UNKNOWN
+            }
+        }
+
+    fun direction(direction: CallDirection, callFlowDirection: String?): String =
+        when (flowDirection(direction, callFlowDirection)) {
+            CallDirection.INCOMING -> "Incoming"
+            CallDirection.OUTGOING -> "Outgoing"
             else -> if (direction == CallDirection.VOIP) "VoIP" else "Unknown direction"
         }
-    }
 
     fun source(
         direction: CallDirection,
