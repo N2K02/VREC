@@ -83,6 +83,10 @@ class RecordingListLabelsTest {
             CallDirection.OUTGOING, null))
         assertEquals(CallDirection.UNKNOWN, RecordingListLabels.flowDirection(
             CallDirection.VOIP, null))
+        assertEquals(CallDirection.UNKNOWN, RecordingListLabels.flowDirection(
+            CallDirection.INCOMING, "UNKNOWN"))
+        assertEquals("Unknown direction", RecordingListLabels.direction(
+            CallDirection.OUTGOING, "UNKNOWN"))
         assertEquals(RecordingListLabels.SourceKind.APP, RecordingListLabels.sourceKind(
             CallDirection.VOIP, "com.whatsapp", "VOIP"))
     }
