@@ -538,7 +538,7 @@ object ExperimentalCaptureDaemon {
                     failures++
                     com.vrec.app.recording.RecordingFailureNotice.warn(
                         context, "A recording could not be saved. Check free storage and Diagnostics; " +
-                            "the original shell capture was kept for retry.")
+                            "the original shell capture was kept for retry.", keepUntilDismissed = true)
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
                     continue
                 }
