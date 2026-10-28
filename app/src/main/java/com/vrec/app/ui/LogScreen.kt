@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +51,8 @@ fun LogScreen() {
     val context = LocalContext.current
     val lines by Log.lines.collectAsStateWithLifecycle()
     val enabled by Log.enabled.collectAsStateWithLifecycle()
+    // Opening the page after midnight expires yesterday's persisted entries without polling.
+    LaunchedEffect(Unit) { Log.snapshot() }
     var page by rememberSaveable { mutableIntStateOf(0) }
     var followNewest by rememberSaveable { mutableStateOf(true) }
     var pages by remember { mutableIntStateOf(1) }
