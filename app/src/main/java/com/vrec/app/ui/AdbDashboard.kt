@@ -1,6 +1,7 @@
 package com.vrec.app.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
@@ -74,6 +75,7 @@ fun AdbDashboard(
     // The detached helper can keep recording without an active ADB transport.
     // Readiness is based on helper health and the armed recording state.
     val allReady = healthy && recordingOn && !busy
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
@@ -97,8 +99,9 @@ fun AdbDashboard(
                         androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                             Icon(if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
                                 contentDescription = if (allReady) "System ready" else "System needs attention",
-                                tint = if (allReady) Color(0xFF91E3AF)
-                                    else MaterialTheme.colorScheme.primary,
+                                tint = if (allReady) {
+                                    if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
+                                } else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp))
                         }
                     }
