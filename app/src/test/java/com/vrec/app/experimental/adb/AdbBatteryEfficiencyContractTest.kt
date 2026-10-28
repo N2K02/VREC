@@ -53,7 +53,10 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(log.contains("DUPLICATE_INFO_WINDOW_MS"))
         assertTrue(log.contains("redact(message)"))
         assertTrue(log.contains("lastInfoTimes[safe]"))
-        assertTrue(log.indexOf("lastInfoTimes[safe]") < log.indexOf("AndroidLog.i(TAG, safe)"))
+        val guarded = log.substringAfter("val previous = lastInfoTimes[safe]")
+        assertTrue(guarded.indexOf("lastInfoTimes[safe] = now") in
+            0 until guarded.indexOf("AndroidLog.i(TAG, safe)"))
+        assertTrue(log.contains("if (!_enabled.value)"))
     }
 
     @Test fun recoveryStatusAndRoutineLogsDoNotChurn() {
