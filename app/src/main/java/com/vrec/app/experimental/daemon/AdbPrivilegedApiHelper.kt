@@ -48,7 +48,7 @@ object AdbPrivilegedApiHelper {
      * eligible permissions first. A denied optional permission is not a fatal
      * helper failure.
      */
-    suspend fun startWithAdb(context: Context): Result<Unit> = lock.withLock {
+    suspend fun startWithAdb(context: Context, manualRepair: Boolean = false): Result<Unit> = lock.withLock {
         val app = context.applicationContext
         val connection = ExperimentalRecording.status.value
         if (!connection.connected || connection.shellUid != 2000 ||
@@ -69,7 +69,7 @@ object AdbPrivilegedApiHelper {
                 AdbPermissionBootstrap.grantEligible(app).unavailable
 
             override suspend fun ensureHelperStarted(): Result<Unit> =
-                ExperimentalCaptureDaemon.ensureStarted(app)
+                ExperimentalCaptureDaemon.ensureStarted(app, manualRepair = manualRepair)
 
             override suspend fun probeHelper(): Boolean =
                 ExperimentalCaptureDaemon.probe(app)
