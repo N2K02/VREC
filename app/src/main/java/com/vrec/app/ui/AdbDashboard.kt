@@ -14,7 +14,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -77,21 +77,35 @@ fun AdbDashboard(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
-            shape = RoundedCornerShape(26.dp),
-            color = if (healthy) MaterialTheme.colorScheme.secondaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(24.dp),
+            color = HomePanelStyle.color(highlight = allReady),
+            border = HomePanelStyle.border(highlight = allReady),
+            shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Icon(if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
-                        contentDescription = if (allReady) "System ready" else "System not ready",
-                        tint = if (allReady) Color(0xFF43A66A) else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(28.dp))
-                    Column {
-                        Text("System Status", style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold)
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(15.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        modifier = Modifier.size(46.dp),
+                    ) {
+                        androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                            Icon(if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                                contentDescription = if (allReady) "System ready" else "System needs attention",
+                                tint = if (allReady) Color(0xFF91E3AF)
+                                    else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("System Status", style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold)
                         Text(
                             when {
                                 busy -> "Working · Checking helper connection and readiness"
@@ -106,21 +120,24 @@ fun AdbDashboard(
                     }
                 }
                 androidx.compose.material3.HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Stat("Connection", when {
-                        verified -> "Connected"
-                        healthy -> "Detached"
-                        else -> "Offline"
-                    }, Modifier.weight(1f))
-                    Stat("Recording", when {
-                        !recordingOn -> "Off"
-                        !healthy -> "Waiting"
-                        else -> "Armed"
-                    }, Modifier.weight(1f))
-                    Stat("Recovery", restore, Modifier.weight(1f))
-                    Stat("Shell UID", if (verified) "2000" else "Detached",
-                        Modifier.weight(1f))
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Stat("Connection", when {
+                            verified -> "Connected"
+                            healthy -> "Detached"
+                            else -> "Offline"
+                        }, Modifier.weight(1f))
+                        Stat("Recording", when {
+                            !recordingOn -> "Off"
+                            !healthy -> "Waiting"
+                            else -> "Armed"
+                        }, Modifier.weight(1f))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Stat("Recovery", restore, Modifier.weight(1f))
+                        Stat("Shell UID", if (verified) "2000" else "Detached", Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -135,7 +152,7 @@ fun AdbDashboard(
                     onStart()
                 },
                 enabled = !busy && !recordingActive && !healthy,
-                modifier = Modifier.weight(1f).height(40.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
             ) { Text("Start") }
             Button(
                 onClick = {
@@ -150,7 +167,7 @@ fun AdbDashboard(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 ),
-                modifier = Modifier.weight(1f).height(40.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
             ) { Text("Stop") }
             Button(
                 onClick = {
@@ -178,7 +195,7 @@ fun AdbDashboard(
                     }
                 },
                 enabled = !busy && !recordingActive && healthy && canReconnect,
-                modifier = Modifier.weight(1f).height(40.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
             ) { Text("Restart") }
         }
         if (recordingActive) Text("Helper controls are temporarily disabled during an active recording.",
@@ -215,17 +232,22 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
         }
         else -> if (value == "2000") Color(0xFFB27DDA) else Color(0xFFCF5454)
     }
-    Surface(modifier = modifier, shape = RoundedCornerShape(12.dp),
-        color = accent.copy(alpha = 0.13f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.65f))) {
-        Column(Modifier.padding(horizontal = 3.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(15.dp),
+        color = accent.copy(alpha = 0.09f),
+        border = BorderStroke(0.75.dp, accent.copy(alpha = 0.28f)),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
             Text(label, style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(value, style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center, fontWeight = FontWeight.Bold,
-                color = accent, maxLines = 1)
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold, color = accent, maxLines = 1)
         }
     }
 }
