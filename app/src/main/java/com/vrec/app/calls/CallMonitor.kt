@@ -260,6 +260,7 @@ object CallMonitor {
         isPhoneDialer: Boolean,
         status: String,
         metadata: CallerMetadata?,
+        notificationFlow: CallDirection = CallDirection.UNKNOWN,
     ) {
         if (!Prefs.recordingEnabled(context)) return
         val candidates = sessions.values.filter { it.source == Source.TELECOM &&
@@ -269,7 +270,13 @@ object CallMonitor {
 
         if (target != null) {
             applyMetadata(target, metadata)
+            // Telecom remains authoritative; notification evidence may fill a gap.
+            if (target.isVoip && target.flowDirection == CallDirection.UNKNOWN &&
+                notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
+                target.flowDirection = notificationFlow
+            }
             if (target.id == recordingId) updateRecording(context, target)
+            else if (target.isVoip) rememberShellIdentity(context, target)
             return
         }
         if (isPhoneDialer) {
@@ -299,6 +306,10 @@ object CallMonitor {
                 direction = CallDirection.VOIP)
         }
         applyMetadata(session, metadata)
+        if (session.flowDirection == CallDirection.UNKNOWN &&
+            notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
+            session.flowDirection = notificationFlow
+        }
         if (status == "ACTIVE") {
             session.active = true
             session.connectedAt = session.connectedAt ?: System.currentTimeMillis()
@@ -413,7 +424,7 @@ object CallMonitor {
             ShellCallMetadataJournal.remember(context.applicationContext,
                 session.id + ":" + session.connectedAt, session.connectedAt!!,
                 CallDirection.VOIP, session.packageName, session.name, session.number,
-                session.numberSource)
+                session.numberSource, session.flowDirection)
         }
     }
 
