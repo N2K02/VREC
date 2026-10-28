@@ -1033,7 +1033,7 @@ private fun RecordingDetailsDialog(
                 TextButton(onClick = onDismiss) { Text("Close") }
                 if (editing) Button(onClick = {
                     onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel,
-                        carrier, callFlowDirection.takeUnless { it == "UNKNOWN" })
+                        carrier, callFlowDirection)
                 }) { Text("Save changes") }
             }
         }
