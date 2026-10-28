@@ -348,8 +348,8 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
 
 
 /**
- * Opt-in ADB behaviour with security impact. Both default off and can be
- * switched off again at any time.
+ * ADB network transport is automatic after UID 2000 verification.
+ * Users may disable TCP mode; reboot-restoration remains opt-in.
  */
 @Composable
 private fun AdbSecurityChoices() {
@@ -358,7 +358,6 @@ private fun AdbSecurityChoices() {
     val connection by ExperimentalRecording.status.collectAsState()
     var restore by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.restoreAfterRestart(context)) }
     var tcp by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context)) }
-    var confirmTcp by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     val verified = connection.connected && connection.shellUid == 2000
 
@@ -394,21 +393,28 @@ private fun AdbSecurityChoices() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Keep ADB without Wi-Fi (TCP/5555)", style = MaterialTheme.typography.bodyLarge)
-                Text("After one-time approval, automatically switches verified Wireless ADB to TCP/5555 on first setup, repair and reconnection. Other devices " +
-                    "on your network may reach ADB while it is on. Off keeps the encrypted Wireless " +
-                    "debugging connection.",
+                Text("Automatic after verified UID 2000 setup, repair or reconnection. " +
+                    "TCP/5555 may be reachable from other devices on your network. " +
+                    "Turn this off to use encrypted Wireless debugging instead.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(checked = tcp, onCheckedChange = { on ->
-                if (on) confirmTcp = true
-                else {
-                    tcp = false
-                    com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, false)
-                    note = if (connection.tcpPortOpen && !verified)
-                        "TCP/5555 is still listening. Retry on Home, then tap Disable TCP/5555, " +
-                            "or turn USB debugging off in Developer options."
-                        else "TCP/5555 mode is off."
+                tcp = on
+                com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, on)
+                if (on) {
+                    note = "Automatic TCP/5555 enabled. It applies on the next verified wireless connection."
+                } else if (connection.tcpPortOpen && verified) {
+                    scope.launch {
+                        note = ExperimentalRecording.disableTcp(context).fold(
+                            { "TCP/5555 closed. Automatic TCP switching is off." },
+                            { "Automatic switching is off, but TCP/5555 may still be open: " +
+                                (it.message ?: "check Developer options.") })
+                    }
+                } else {
+                    note = if (connection.tcpPortOpen)
+                        "Automatic switching is off. TCP/5555 is still listening; connect to disable it or turn USB debugging off."
+                    else "Automatic TCP/5555 switching is off."
                 }
             })
         }
@@ -426,23 +432,4 @@ private fun AdbSecurityChoices() {
         }
     }
 
-    if (confirmTcp) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { confirmTcp = false },
-            title = { Text("Allow ADB on TCP/5555?") },
-            text = { Text("ADB will listen on port 5555. Any device on the same network that you " +
-                "have authorized, or that Android lets connect, can then reach this phone's ADB. " +
-                "Use only on trusted networks. VRec re-verifies Android shell access after the " +
-                "switch, and you can turn this off here at any time.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmTcp = false
-                    tcp = true
-                    com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, true)
-                    note = "TCP/5555 approved. VRec will switch automatically after verified Wireless ADB setup or repair, then reconnect and verify UID 2000."
-                }) { Text("Allow") }
-            },
-            dismissButton = { TextButton(onClick = { confirmTcp = false }) { Text("Cancel") } },
-        )
-    }
 }
