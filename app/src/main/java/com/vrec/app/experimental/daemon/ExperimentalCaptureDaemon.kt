@@ -382,6 +382,7 @@ object ExperimentalCaptureDaemon {
                 }
             }.getOrNull()
             val selected = EnhancedCapturePreferences.simSource(context)
+            var sourceTransportError: String? = null
             val sourceReply = if (CaptureSetupProtocol.modeAccepted(modeReply, allowed, waitForAnswer)) {
                 CaptureSourceHandshake.request(
                     read = {
@@ -390,6 +391,7 @@ object ExperimentalCaptureDaemon {
                         }
                     },
                     waitBetween = { delay(150L) },
+                    onTransportError = { sourceTransportError = it.javaClass.simpleName },
                 )
             } else null
             val verdict = CaptureSetupProtocol.evaluate(
@@ -422,9 +424,11 @@ object ExperimentalCaptureDaemon {
             }
             ready.value = verified
             if (!verified) {
-                message.value = verdict.detail +
+                val detail = verdict.detail +
+                    (sourceTransportError?.let { " (SIM command transport: $it)" } ?: "")
+                message.value = detail +
                     ". The helper remains available for a safe retry; check diagnostics."
-                com.vrec.app.Log.w("Shell capture setup: " + verdict.detail)
+                com.vrec.app.Log.w("Shell capture setup: " + detail)
             } else if (verdict.source == CaptureSetupProtocol.Source.DEFERRED_DURING_CALL) {
                 message.value = verdict.detail
             }
