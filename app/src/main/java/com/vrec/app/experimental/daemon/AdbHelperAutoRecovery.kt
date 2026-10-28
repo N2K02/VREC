@@ -72,6 +72,9 @@ object AdbHelperAutoRecovery {
         if (AdbLifecycle.quitting) return Outcome.SKIPPED
         if (AdbPrivilegedApiHelper.reconnect(app)) {
             ExperimentalCaptureDaemon.collect(app)
+            // One-time upgrade of an already authorized TLS shell: don't
+            // require another pairing code just to enable the TCP default.
+            LocalWirelessAdb.promoteVerifiedShellToTcp(app)
             // The shell helper survives an ADB transport detach. Restore the
             // authorized transport opportunistically without restarting capture.
             val saved = ExperimentalRecording.recoveryAuthorization(app)
