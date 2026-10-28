@@ -10,6 +10,21 @@ import java.util.Locale
 internal object RecordingListLabels {
     enum class SourceKind { APP, PHONE, UNKNOWN }
 
+    /** Semantic source colors; actual Material colors are selected by the UI theme. */
+    enum class SourceAccent { GREEN, BLUE, VIOLET, NEUTRAL }
+
+    fun sourceAccent(kind: SourceKind, packageName: String?): SourceAccent =
+        when (kind) {
+            SourceKind.PHONE -> SourceAccent.BLUE
+            SourceKind.UNKNOWN -> SourceAccent.NEUTRAL
+            SourceKind.APP -> when (packageName?.trim()?.lowercase(Locale.ROOT)) {
+                "com.whatsapp", "com.whatsapp.w4b" -> SourceAccent.GREEN
+                "org.telegram.messenger", "org.thoughtcrime.securesms",
+                "com.facebook.orca", "com.google.android.apps.tachyon" -> SourceAccent.BLUE
+                else -> SourceAccent.VIOLET
+            }
+        }
+
     /**
      * A call can be incoming/outgoing and still be VoIP. Prefer explicit call
      * metadata and known VoIP packages; never label an ordinary SIM call as
