@@ -35,6 +35,7 @@ class VoipNotifListener : NotificationListenerService() {
         val status: String,
         val metadata: CallerMetadata?,
         val direction: CallDirection,
+        val mediaType: String?,
     )
     private val signals = mutableMapOf<String, MutableMap<String, Signal>>()
     private val handler = Handler(Looper.getMainLooper())
@@ -69,7 +70,7 @@ class VoipNotifListener : NotificationListenerService() {
                     val n = sbn.notification ?: return@mapNotNull null
                     val state = stateOf(n) ?: return@mapNotNull null
                     sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n),
-                        directionOf(n, state))
+                        directionOf(n, state), mediaTypeOf(n))
                 }
                 .toMap()
             if (latest.isEmpty()) {
@@ -138,7 +139,7 @@ class VoipNotifListener : NotificationListenerService() {
         expiry.remove(pkg)?.let(handler::removeCallbacks)
         val map = signals.getOrPut(pkg) { mutableMapOf() }
         map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n),
-            directionOf(n, state))
+            directionOf(n, state), mediaTypeOf(n))
         publish(pkg, phone)
         if (!phone) scheduleWatchdog()
     }
@@ -169,8 +170,14 @@ class VoipNotifListener : NotificationListenerService() {
             .filter { it == CallDirection.INCOMING || it == CallDirection.OUTGOING }
             .distinct()
         CallMonitor.onNotification(this, pkg, phone, status, metadata,
-            if (known.size == 1) known.single() else CallDirection.UNKNOWN)
+            if (known.size == 1) known.single() else CallDirection.UNKNOWN,
+            values.firstNotNullOfOrNull { it.mediaType })
     }
+
+    private fun mediaTypeOf(n: Notification): String? = VoipNotificationMedia.type(
+        n.extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+        n.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+    )
 
     private fun directionOf(n: Notification, state: String): CallDirection =
         VoipNotificationDirection.fromSignal(
