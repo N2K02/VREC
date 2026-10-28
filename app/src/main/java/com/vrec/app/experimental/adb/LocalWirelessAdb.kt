@@ -402,7 +402,14 @@ object LocalWirelessAdb {
 
     fun retry(context: Context) {
         val port = status.value.connectPort
-        if (port != null) scope.launch {
+        if (port != null) {
+            // Publish work immediately; a queued retry must disable duplicate
+            // Home Start taps before the background coroutine begins.
+            status.value = status.value.copy(
+                phase = Phase.CONNECTING,
+                message = "Restoring paired Wireless ADB and verifying UID 2000…",
+            )
+            scope.launch {
             // Waits for an automatic attempt in flight, then re-checks state.
             transition.withLock {
                 AdbLifecycle.coordinateSetup {
@@ -410,8 +417,8 @@ object LocalWirelessAdb {
                     connectAndSwitch(context.applicationContext, port, automatic = false)
                 }
             }
-        }
-        else status.value = status.value.copy(
+            }
+        } else status.value = status.value.copy(
             message = "Enable Wireless debugging and return here. Listening for the Android service.")
     }
 
