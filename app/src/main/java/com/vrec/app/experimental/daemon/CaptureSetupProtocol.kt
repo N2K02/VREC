@@ -62,7 +62,7 @@ internal object CaptureSetupProtocol {
                     else "Recording mode acknowledgement was incompatible",
             )
         }
-        return when (val source = sourceReply(sourceReply, requestedSource)) {
+        return when (val source = classifySource(sourceReply, requestedSource)) {
             Source.APPLIED -> Verdict(true, source, false, "Recording mode and SIM source verified")
             Source.DEFERRED_DURING_CALL -> Verdict(
                 true, source, false, "Recording mode verified; SIM source change deferred until call ends",
