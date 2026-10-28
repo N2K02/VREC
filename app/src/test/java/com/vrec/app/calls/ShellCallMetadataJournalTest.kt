@@ -80,4 +80,36 @@ class ShellCallMetadataJournalTest {
             select(100_000L, CallDirection.INCOMING,
                 listOf(candidate(name = null, number = "+23051234567"))))
     }
+    @Test fun genericShellSimFileUsesUniqueVerifiedSimNameOrNumber() {
+        val fromTelecom = candidate(
+            key = "telecom-sim-1", kind = CallDirection.INCOMING,
+            flow = CallDirection.INCOMING, pkg = null,
+            name = "Saved SIM contact", media = "VOICE")
+        assertEquals(fromTelecom, ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.INCOMING, listOf(fromTelecom)))
+        val justNumber = fromTelecom.copy(name = null, number = "+23051234567")
+        assertEquals(justNumber, ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.INCOMING, listOf(justNumber)))
+    }
+
+    @Test fun explicitlyPrivateSimNamePersistsButMissingNumberIsNotAutomaticallyPrivate() {
+        val restricted = candidate(kind = CallDirection.INCOMING, flow = CallDirection.INCOMING,
+            pkg = null, name = "Private number", number = null)
+        assertEquals(restricted, ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.INCOMING, listOf(restricted)))
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.INCOMING,
+            listOf(restricted.copy(name = null))))
+    }
+
+    @Test fun competingVoipCallPreventsGenericSimAttribution() {
+        val sim = candidate(key = "sim-1", kind = CallDirection.INCOMING,
+            pkg = null, name = "SIM caller")
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.INCOMING, listOf(sim, candidate())))
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.INCOMING, listOf(candidate())))
+        assertNull(ShellCallMetadataJournal.selectCellularTaggedSim(
+            100_000L, CallDirection.OUTGOING, listOf(sim)))
+    }
 }
