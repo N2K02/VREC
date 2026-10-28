@@ -151,12 +151,13 @@ fun RecordingsList() {
                     val resolvedNumber = previousNumber?.takeIf { it.isNotBlank() }
                         ?: identity.number?.takeIf { it.isNotBlank() }
                     if (resolvedNumber != rec.phoneNumber || resolvedName != rec.contactName) {
-                        RecordingStore.updateDetails(
+                        if (RecordingStore.updateDetails(
                             rec, rec.notes, rec.favorite,
                             contactName = resolvedName,
                             phoneNumber = resolvedNumber,
-                        )
-                        updates++
+                        )) updates++
+                        else com.vrec.app.recording.RecordingFailureNotice.warn(
+                            context, "Recording contact metadata could not be saved. Check free storage.")
                     }
                 }
                 updates
@@ -196,13 +197,14 @@ fun RecordingsList() {
             if (selection != null) {
                 val (name, number) = selection
                 if (!name.isNullOrBlank() || !number.isNullOrBlank()) {
-                    RecordingStore.updateDetails(
+                    if (RecordingStore.updateDetails(
                         target, target.notes, target.favorite,
                         contactName = name?.takeIf { it.isNotBlank() },
                         phoneNumber = number?.takeIf { it.isNotBlank() },
-                    )
-                    refresh++
-                    Toast.makeText(context, "Recording contact updated", Toast.LENGTH_SHORT).show()
+                    )) {
+                        refresh++
+                        Toast.makeText(context, "Recording contact updated", Toast.LENGTH_SHORT).show()
+                    } else Toast.makeText(context, "Could not save contact details. Check storage.", Toast.LENGTH_LONG).show()
                 }
             } else {
                 Toast.makeText(context, "Could not read that contact", Toast.LENGTH_SHORT).show()
@@ -543,8 +545,9 @@ fun RecordingsList() {
                     leadingContent = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         contentDescription = null) },
                     modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
-                        RecordingStore.updateDetails(rec, rec.notes, !rec.favorite)
-                        actionsRecording = null; refresh++
+                        if (RecordingStore.updateDetails(rec, rec.notes, !rec.favorite)) refresh++
+                        else Toast.makeText(context, "Could not update favorite. Check storage.", Toast.LENGTH_LONG).show()
+                        actionsRecording = null
                     })
                 ListItem(headlineContent = { Text("Share audio") },
                     leadingContent = { Icon(Icons.Filled.Share, contentDescription = null) },
