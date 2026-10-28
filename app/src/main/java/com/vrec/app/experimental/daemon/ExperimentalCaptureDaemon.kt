@@ -616,9 +616,16 @@ object ExperimentalCaptureDaemon {
                     continue
                 }
                 val started = identity.startedAt
-                val caller = com.vrec.app.calls.ShellCallMetadataJournal.find(
-                    context, started, identity.appPackage)
-                val direction = if (caller != null) CallDirection.VOIP else identity.direction
+                val journal = com.vrec.app.calls.ShellCallMetadataJournal
+                val caller = journal.find(context, started, identity.appPackage)
+                    ?: if (identity.appPackage == null) {
+                        // Some WhatsApp video calls are recorded under a generic
+                        // _in/_out shell filename. Restore source/caller only when
+                        // one new-format VoIP session matches and no SIM competes.
+                        journal.findForCellularTaggedVoip(context, started, identity.direction)
+                    } else null
+                val direction = if (caller?.direction == CallDirection.VOIP)
+                    CallDirection.VOIP else identity.direction
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
                 if (dest.exists() && dest.length() > 100L &&
                     RecordingStore.hasValidMetadata(dest)) {
@@ -680,15 +687,20 @@ object ExperimentalCaptureDaemon {
                         phoneNumber = caller?.number,
                         contactName = caller?.name,
                         numberSource = caller?.numberSource,
-                        callFlowDirection = caller?.flowDirection,
+                        callFlowDirection = caller?.flowDirection
+                            ?: identity.direction.takeIf {
+                                it == CallDirection.INCOMING || it == CallDirection.OUTGOING
+                            }?.name,
                         recordingType = RecordingType.ADB,
+                        callMediaType = caller?.mediaType,
                         startedAtOverride = started,
                         endedAtOverride = started + durationMs,
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
-                    com.vrec.app.calls.ShellCallMetadataJournal.consume(
-                        context, started, identity.appPackage)
+                    // Consume by the verified source package, including when
+                    // a generic shell filename was reclassified as VoIP.
+                    journal.consume(context, started, caller?.packageName ?: identity.appPackage)
                     delete(context, name)
                     RecordingStore.notifySaved()
                     collected++
