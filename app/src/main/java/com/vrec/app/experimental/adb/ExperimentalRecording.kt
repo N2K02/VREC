@@ -163,6 +163,12 @@ object ExperimentalRecording {
         } catch (_: TimeoutCancellationException) {
             Result.failure(AdbConnectionException(AdbFailure.AUTH_TIMEOUT,
                 "ADB authorization timed out after 15 seconds. Unlock the phone, tap Allow (tick Always allow), then Retry."))
+        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+            // Quit must not leave a permanently busy or falsely authorized ADB
+            // status after interrupting an in-progress transport handshake.
+            status.value = status.value.copy(busy = false, connected = false, shellUid = null)
+            withContext(kotlinx.coroutines.NonCancellable) { AdbTransport.close() }
+            throw cancelled
         }
         if (result.isFailure) {
             val kind = result.exceptionOrNull().adbFailure
@@ -185,7 +191,12 @@ object ExperimentalRecording {
             message = "Android shell UID 2000 verified. Configuring supported permissions…")
         // startWithAdb performs the same live UID check and permission bootstrap
         // for every entry point; do not repeat grants in this transport wrapper.
-        val helper = startHelperTyped(context)
+        val helper = try {
+            startHelperTyped(context)
+        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+            status.value = status.value.copy(busy = false)
+            throw cancelled
+        }
         val permissionResult = AdbPermissionBootstrap.status.value
         Log.i("ADB: eligible permission check — ${permissionResult.granted.size} granted, ${permissionResult.unavailable.size} unavailable")
         if (helper.isSuccess) Log.i("ADB: recording helper started and verified")
@@ -234,6 +245,10 @@ object ExperimentalRecording {
         } catch (_: TimeoutCancellationException) {
             Result.failure(AdbConnectionException(AdbFailure.AUTH_TIMEOUT,
                 "Wireless ADB authorization timed out after 15 seconds"))
+        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+            status.value = status.value.copy(busy = false, connected = false, shellUid = null)
+            withContext(kotlinx.coroutines.NonCancellable) { AdbTransport.close() }
+            throw cancelled
         }
         if (attempt.isFailure) {
             val kind = attempt.exceptionOrNull().adbFailure
@@ -258,7 +273,12 @@ object ExperimentalRecording {
                 message = "Wireless ADB verified (UID 2000); switching to TCP/5555 before helper startup.")
             return attempt
         }
-        val helper = startHelperTyped(context)
+        val helper = try {
+            startHelperTyped(context)
+        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+            status.value = status.value.copy(busy = false)
+            throw cancelled
+        }
         val permissions = AdbPermissionBootstrap.status.value
         Log.i("ADB: wireless setup ${if (helper.isSuccess) "helper ready" else "helper failed"}; ${permissions.unavailable.size} unavailable permissions")
         status.value = status.value.copy(busy = false, message = when {
