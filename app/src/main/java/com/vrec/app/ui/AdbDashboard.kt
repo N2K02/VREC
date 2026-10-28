@@ -126,14 +126,12 @@ fun AdbDashboard(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
                 onClick = {
+                    // UID 2000 may describe the last verified transport, not a live
+                    // connection (adbd restarts when switching to TCP/5555).
+                    // The shared setup path re-probes/reconnects before starting
+                    // the helper; never bypass it using a cached UI badge.
                     note = null
-                    if (verified) scope.launch {
-                        acting = true
-                        AdbLifecycle.coordinateSetup {
-                            AdbPrivilegedApiHelper.startWithAdb(context)
-                        }.onFailure { note = it.message ?: "Helper didn't start." }
-                        acting = false
-                    } else onStart()
+                    onStart()
                 },
                 enabled = !busy && !recordingActive && !healthy,
                 modifier = Modifier.weight(1f).height(40.dp),
