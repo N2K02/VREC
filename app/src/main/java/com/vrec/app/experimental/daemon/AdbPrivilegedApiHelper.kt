@@ -3,6 +3,9 @@ package com.vrec.app.experimental.daemon
 import android.content.Context
 import com.vrec.app.Prefs
 import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.adb.AdbTransport
+import com.vrec.app.experimental.adb.AdbPermissionBootstrap
+import com.vrec.app.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,31 +32,55 @@ object AdbPrivilegedApiHelper {
         ok
     }
 
+    /**
+     * The sole helper-start entry point. Do not launch directly from Home,
+     * pairing or recovery: each must reverify the live shell and configure
+     * eligible permissions first. A denied optional permission is not a fatal
+     * helper failure.
+     */
     suspend fun startWithAdb(context: Context): Result<Unit> = lock.withLock {
-        // No auto-bootstrap from the background or from an unverified TCP port.
-        // Only the explicit ADB connection flow, after verifying shell UID 2000,
-        // can launch a new shell Java process.
+        val app = context.applicationContext
         val connection = ExperimentalRecording.status.value
-        if (!connection.connected || connection.shellUid != 2000) {
+        if (!connection.connected || connection.shellUid != 2000 ||
+            !AdbTransport.isConnected) {
             state.value = State.NEEDS_ADB
             return@withLock Result.failure(IllegalStateException(
-                "Connect to USB-bootstrapped localhost TCP/5555 first (shell UID 2000)."
+                "ADB shell is not connected and verified as UID 2000. Reconnect or repair ADB first."
             ))
         }
         state.value = State.STARTING
-        val result = ExperimentalCaptureDaemon.ensureStarted(context.applicationContext)
-        if (result.isFailure) {
-            state.value = State.ERROR
-            return@withLock result
+        when (val outcome = AdbHelperStartFlow.run(object : AdbHelperStartFlow.Steps {
+            override suspend fun verifyUid2000(): Boolean =
+                AdbTransport.exec("id -u", timeoutMs = 3_000).getOrNull()
+                    ?.lineSequence()?.any { it.trim() == "2000" } == true
+
+            override suspend fun configurePermissions(): List<String> =
+                AdbPermissionBootstrap.grantEligible(app).unavailable
+
+            override suspend fun ensureHelperStarted(): Result<Unit> =
+                ExperimentalCaptureDaemon.ensureStarted(app)
+
+            override suspend fun probeHelper(): Boolean =
+                ExperimentalCaptureDaemon.probe(app)
+        })) {
+            is AdbHelperStartFlow.Outcome.Ready -> {
+                state.value = State.RUNNING
+                ExperimentalCaptureDaemon.ready.value = true
+                if (outcome.unavailablePermissions.isNotEmpty()) {
+                    Log.i("ADB helper started; ${outcome.unavailablePermissions.size} optional Android permissions still require attention")
+                }
+                Result.success(Unit)
+            }
+            is AdbHelperStartFlow.Outcome.Failed -> {
+                state.value = if (outcome.stage == AdbHelperStartFlow.Stage.VERIFY_SHELL)
+                    State.NEEDS_ADB else State.ERROR
+                ExperimentalCaptureDaemon.ready.value = false
+                Log.w("ADB helper startup ${outcome.stage}: ${outcome.reason}")
+                Result.failure(IllegalStateException(
+                    "Helper ${outcome.stage.name.lowercase().replace('_', ' ')} failed: ${outcome.reason}"
+                ))
+            }
         }
-        if (!ExperimentalCaptureDaemon.probe(context.applicationContext)) {
-            state.value = State.ERROR
-            return@withLock Result.failure(IllegalStateException(
-                "ADB connected, but the enhanced helper could not be verified."
-            ))
-        }
-        state.value = State.RUNNING
-        Result.success(Unit)
     }
 
     /** Stops the shell helper unless a call or import is in progress. */
