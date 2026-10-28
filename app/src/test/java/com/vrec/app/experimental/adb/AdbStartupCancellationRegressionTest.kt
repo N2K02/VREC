@@ -83,5 +83,9 @@ class AdbStartupCancellationRegressionTest {
         val grants = source("app/src/main/java/com/vrec/app/experimental/adb/AdbPermissionBootstrap.kt")
         assertTrue(grants.contains("restricted call-log access"))
         assertTrue(grants.contains("Android App info > Permissions"))
+        assertTrue(grants.contains("catch (cancelled: CancellationException)"))
+        assertTrue(grants.contains("throw cancelled"))
+        assertTrue(grants.contains("status.value = ResultSummary("))
+        assertTrue(grants.contains("Android permission setup incomplete"))
     }
 }
