@@ -20,6 +20,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
@@ -183,10 +185,14 @@ fun PermissionDashboardCard() {
         }
     }
     val count = PermissionDashboardPolicy.grantedCount(permissions.map { it.second })
-    Surface(shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = HomePanelStyle.color(),
+        border = HomePanelStyle.border(),
+        shadowElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Rounded.VerifiedUser, contentDescription = null,
@@ -197,43 +203,57 @@ fun PermissionDashboardCard() {
                     Text("ADB enhanced", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Surface(shape = RoundedCornerShape(50),
-                    color = if (count == permissions.size) Color(0xFF146B3C)
-                        else Color(0xFF8A2828)) {
-                    Text("$count / ${permissions.size} enabled",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = Color.White, style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold)
+                val allGranted = count == permissions.size
+                val summaryTint = if (allGranted) Color(0xFF91E3AF)
+                    else MaterialTheme.colorScheme.primary
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = summaryTint.copy(alpha = 0.12f),
+                    border = BorderStroke(0.75.dp, summaryTint.copy(alpha = 0.35f)),
+                ) {
+                    Text("$count / ${permissions.size}",
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                        color = summaryTint, style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold)
                 }
             }
-            permissions.chunked(3).forEach { group ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            LinearProgressIndicator(
+                progress = { count.toFloat() / permissions.size.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth(),
+                color = if (count == permissions.size) Color(0xFF63C88A)
+                    else MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+            )
+            // Two columns give the long permission labels space on small devices.
+            permissions.chunked(2).forEach { group ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     group.forEach { (label, granted) ->
-                        Surface(shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            border = androidx.compose.foundation.BorderStroke(1.dp,
-                                PermissionDashboardPolicy.badgeColor(granted).copy(alpha = 0.55f)),
+                        val accent = if (granted) Color(0xFF8FDFAB)
+                            else MaterialTheme.colorScheme.error
+                        Surface(
+                            shape = RoundedCornerShape(15.dp),
+                            color = accent.copy(alpha = 0.09f),
+                            border = BorderStroke(0.75.dp, accent.copy(alpha = 0.26f)),
                             modifier = Modifier.weight(1f)
-                                .then(if (!granted) Modifier.clickable { tryGrant(label) } else Modifier)) {
-                            Row(Modifier.padding(horizontal = 7.dp, vertical = 10.dp),
+                                .then(if (!granted) Modifier.clickable { tryGrant(label) } else Modifier),
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 Text(if (granted) "✓" else "✕",
-                                    modifier = Modifier
-                                        .background(PermissionDashboardPolicy.badgeColor(granted),
-                                            androidx.compose.foundation.shape.CircleShape)
-                                        .padding(horizontal = 5.dp, vertical = 2.dp),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accent,
+                                    style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold)
                                 Text(label, style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 2, lineHeight = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 2, lineHeight = 15.sp,
                                     modifier = Modifier.weight(1f))
                             }
                         }
                     }
-                    repeat(3 - group.size) {
+                    repeat(2 - group.size) {
                         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     }
                 }
