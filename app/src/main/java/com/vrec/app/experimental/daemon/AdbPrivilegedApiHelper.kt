@@ -6,6 +6,7 @@ import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.Log
+import com.vrec.app.recording.RecordingFailureNotice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -30,6 +31,7 @@ object AdbPrivilegedApiHelper {
         val armed = Prefs.recordingEnabled(context)
         val ok = ExperimentalCaptureDaemon.setMode(context.applicationContext, armed)
         state.value = if (ok) State.RUNNING else State.ERROR
+        if (ok) RecordingFailureNotice.clearAfterHelperRecovered(context.applicationContext)
         ok
     }
 
@@ -76,6 +78,7 @@ object AdbPrivilegedApiHelper {
             is AdbHelperStartFlow.Outcome.Ready -> {
                 state.value = State.RUNNING
                 ExperimentalCaptureDaemon.ready.value = true
+                RecordingFailureNotice.clearAfterHelperRecovered(app)
                 if (outcome.unavailablePermissions.isNotEmpty()) {
                     Log.i("ADB helper started; ${outcome.unavailablePermissions.size} optional Android permissions still require attention")
                 }
@@ -114,6 +117,7 @@ object AdbPrivilegedApiHelper {
         val verified = available && ExperimentalCaptureDaemon.setMode(app, armed)
         state.value = HelperHealthPolicy.nextState(available, verified)
         ExperimentalCaptureDaemon.ready.value = verified
+        if (verified) RecordingFailureNotice.clearAfterHelperRecovered(app)
         state.value
     }
 }
