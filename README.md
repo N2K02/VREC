@@ -1,73 +1,66 @@
 # VRec — Android call recorder
 
-VRec records calls locally. In the current **experimental PR #40**, recording
-is **ADB-first and ADB-only**: the separate shell recording helper runs after
-an authorized Android shell UID 2000 connection. No Standard/ADB method
-selector, wireless pairing, or automatic microphone fallback remains in this
-experimental workflow. The stable `main` release remains unchanged until merge.
+VRec records supported SIM and VoIP calls locally using a separate, authorized
+Android shell recording helper (UID 2000). In experimental [PR #40](https://github.com/N2K02/VREC/pull/40),
+all **new** recordings are ADB-backed: no Standard/ADB mode selector or
+automatic microphone fallback. Stable `main` remains unchanged until merge.
 
-## First-time Huawei USB setup
+## First-time ADB setup
 
-1. On the phone, enable **Developer options → USB debugging**.
-2. Connect to a **trusted external USB ADB host**, authorize its RSA prompt,
-   and run `adb devices` followed by `adb tcpip 5555` on the host.
-3. Return to VRec, press **Connect / restore ADB**, and approve any system
-   authorization request for VRec's own ADB client key.
-4. VRec connects to **127.0.0.1:5555**, verifies **UID 2000**, attempts
-   eligible Android permission grants, and starts its independent recorder.
-5. Enable the Home **Recording** master switch. Test an actual consented call:
-   shell UID 2000 does not guarantee both callers' audio is accessible.
+1. Open Android Developer options. Enable **USB debugging** and, on Android 11+
+   devices with Wi-Fi, **Wireless debugging**.
+2. In VRec Home, tap **Set up ADB recording** and open Android Wireless debugging.
+   Select **Pair device with pairing code**.
+3. Enter the one-time six-digit Android pairing code in VRec or its pairing
+   notification. Android controls pairing approval; VRec cannot self-authorize.
+4. VRec connects to this phone's TLS ADB listener, verifies `id -u == 2000`,
+   attempts supported permissions, and starts the independent recording helper.
+5. **Automatic TCP/5555 is on by default.** After UID 2000 verification, VRec
+   switches adbd to TCP/5555, waits for it to restart, reconnects to
+   `127.0.0.1:5555` and re-verifies UID 2000 and the recording helper.
+   Previously authorized connections are restored automatically when available.
 
-**Important:** On a stock, unrooted Huawei with only USB debugging, no second
-device and no existing authorized TCP endpoint, VRec, Termux and containers
-cannot grant themselves ADB shell access. An external USB ADB host is
-necessary for the initial `adb tcpip 5555` command. Android may reset the
-TCP listener on reboot or debugging changes, requiring that step again.
+On devices without Wireless debugging, a trusted external USB ADB host must
+run `adb devices` then `adb tcpip 5555` after the phone approves the host.
+USB debugging alone cannot authorize an ordinary Android app shell.
 
-The local TCP/5555 service may be accessible on the network despite VRec only
-connecting via localhost. Disable it when no longer needed. **Wireless
-Debugging pairing and discovery are not part of this app.**
+**Network notice:** Android's TCP/5555 listener may be accessible to other
+devices on the network. Disable automatic TCP mode in Settings if you do not
+want that exposure; the app attempts to close an active listener when authorized.
+Reboot or OEM policies may reset debugging, requiring further user action.
 
-## Home status
+## Recording reliability
 
-- **Green:** an authorized ADB connection verified shell UID 2000.
-- **Yellow:** a connection attempt is in progress.
-- **Red:** the last setup attempt failed, was refused, or lacks a required host.
-- **Grey:** disconnected / not yet attempted.
+Home distinguishes helper readiness, current ADB authorization, recording armed,
+actual capture and attention-required conditions. A healthy detached helper
+can continue recording without a live ADB client. Android shell UID 2000 alone
+is not proof of two-sided audio capture or a playable recording.
 
-The badge represents the ADB connection, **not proof that the recording helper
-is healthy or two-way audio is available**. VRec tracks helper readiness
-separately. After first authorization, it can reconnect automatically while
-the previously authorized TCP endpoint is available.
+New captures use only the shell helper. If capture fails, VRec does not
+silently create microphone audio; it shows a warning and, where allowed, a
+notification. Imported recordings retain the shell original until the audio and
+**atomically saved JSON metadata** are complete.
 
-## Permission automation and Android limits
+## Android permissions
 
-After a verified UID 2000 connection, VRec **attempts and verifies** shell
-grants for phone state, contacts, call log, notification permission, and
-eligible Telecom call-detection access. Android can refuse restricted grants
-depending on firmware and installer policy. VRec displays ungranted access
-rather than declaring false success.
+VRec attempts and verifies eligible permission grants only after UID 2000 is
+verified. Android can refuse restricted grants. Accessibility
+(**Vrec call recording helper**), overlay and notification-listener access
+remain user-controlled.
 
-Accessibility (**Vrec call recording helper**), notification-listener role
-access, and floating overlay access are user-controlled Android settings.
-These cannot be silently or universally granted by the app. There is no
-separate in-app permissions wizard; relevant OS settings remain accessible
-where needed.
+## Features
 
-## Other features
+- SIM and supported VoIP capture with caller/number/SIM metadata.
+- Audio channel/silence diagnostics, pause/resume/stop controls.
+- Saved recordings with playback, search, details, notes, favorites and sharing.
+- On-device recording and import failure warnings, metadata integrity checks.
+- Background ADB recovery, Settings diagnostics, logs, updates and Quit.
 
-- Independent shell capture for supported SIM and VoIP calls.
-- Select SIM call-audio source where Android permits; shell access isn't root.
-- Audio silence/channel diagnostics and safe recording metadata.
-- Saved recordings with search, filtering, playback, details, and sharing.
-- Floating controls and a Quit action next to Settings.
-- All recordings are stored locally unless explicitly shared.
+## APKs
 
-## APKs and updates
-
-- [Stable releases and APKs](https://github.com/N2K02/VREC/releases/latest)
+- [Stable releases](https://github.com/N2K02/VREC/releases/latest)
 - [All releases](https://github.com/N2K02/VREC/releases)
 - [Experimental PR #40](https://github.com/N2K02/VREC/pull/40)
 
-The experimental PR builds are not proof of compatibility with a particular
-Huawei firmware. Test capture with consent and inspect audio diagnostics.
+**Validation:** CI does not prove hardware capture quality. Verify a consented
+call and playback on the target device before relying on automatic recording.
