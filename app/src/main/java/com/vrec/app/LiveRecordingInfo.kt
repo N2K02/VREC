@@ -23,13 +23,18 @@ internal object LiveRecordingInfoResolver {
     fun fromShellFile(context: Context, filename: String?): LiveRecordingInfo {
         val identity = filename?.let(ShellRecordingIdentity::fromName)
             ?: return LiveRecordingInfo("Unknown caller", "ADB shell", null)
-        val live = CallMonitor.liveCallerForShell(identity.appPackage, identity.direction)
         val matched = if (identity.appPackage != null)
             ShellCallMetadataJournal.find(context.applicationContext,
-                identity.startedAt, identity.appPackage) else null
+                identity.startedAt, identity.appPackage)
+        else ShellCallMetadataJournal.findForCellularTaggedVoip(
+            context.applicationContext, identity.startedAt, identity.direction)
+        val resolvedPackage = matched?.packageName ?: identity.appPackage
+        val sourceDirection = if (matched?.direction == CallDirection.VOIP)
+            CallDirection.VOIP else identity.direction
+        val live = CallMonitor.liveCallerForShell(resolvedPackage, sourceDirection)
         val caller = preferredCaller(live?.name, live?.number, matched?.name, matched?.number)
-        val source = ShellVoipLabels.forPackage(identity.appPackage)
-            ?: when (identity.direction) {
+        val source = ShellVoipLabels.forPackage(resolvedPackage)
+            ?: when (sourceDirection) {
                 CallDirection.INCOMING, CallDirection.OUTGOING -> "SIM call"
                 else -> "VoIP call"
             }
@@ -39,7 +44,7 @@ internal object LiveRecordingInfoResolver {
             else -> identity.direction
         }
         return LiveRecordingInfo(caller, source, identity.startedAt,
-            identity.appPackage, flow)
+            resolvedPackage, flow)
     }
 
     internal fun preferredCaller(vararg suggestions: String?): String =
