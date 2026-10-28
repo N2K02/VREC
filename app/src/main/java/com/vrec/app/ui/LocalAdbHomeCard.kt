@@ -183,7 +183,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             }
             if (!devOptionsOn && !verified) {
                 Text(
-                    "Developer options are off. In About phone, tap Build number 7 times, then come back.",
+                    "Android did not confirm Developer options status. This check can be unreliable for third-party apps. If debugging is already enabled, continue setup; otherwise enable Developer options in Android Settings.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 OutlinedButton(onClick = { AdbSelfRecovery.openDeviceInfo(context) },
