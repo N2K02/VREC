@@ -61,6 +61,7 @@ internal object RecordingListLabels {
         when (callFlowDirection?.uppercase(Locale.ROOT)) {
             CallDirection.INCOMING.name -> CallDirection.INCOMING
             CallDirection.OUTGOING.name -> CallDirection.OUTGOING
+            CallDirection.UNKNOWN.name -> CallDirection.UNKNOWN
             else -> when (direction) {
                 CallDirection.INCOMING, CallDirection.OUTGOING -> direction
                 else -> CallDirection.UNKNOWN
