@@ -67,7 +67,13 @@ object ShellCallMetadataJournal {
         it.direction == CallDirection.VOIP &&
             !it.packageName.isNullOrBlank() &&
             (!it.name.isNullOrBlank() || !it.number.isNullOrBlank()) &&
-            it.flowDirection == shellDirection
+            (it.flowDirection == shellDirection ||
+                // A VIDEO call is strong independent Telecom evidence, but
+                // without a direction it must begin at essentially the same
+                // moment as the captured shell file.
+                (it.flowDirection == CallDirection.UNKNOWN &&
+                    it.mediaType == "VIDEO" &&
+                    kotlin.math.abs(it.startedAt - startedAt) <= 5_000L))
     }
 
     internal fun selectCellularTaggedSim(
