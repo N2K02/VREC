@@ -410,8 +410,8 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
     val recState by RecordingService.state.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
     val recordingWarning by RecordingFailureNotice.warning.collectAsState()
-    val recording = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
-        recState is RecordingService.State.Idle, enhancedActive)
+    val confirmedRecording = recState is RecordingService.State.Recording ||
+        (enhancedActive && recState is RecordingService.State.Idle)
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
     // Helper recovery and connection checks belong to AdbLifecycle, not
@@ -463,8 +463,10 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
         RecordingMasterCard(
             enabled = recordingEnabled,
             ready = ready,
-            active = recording && recState !is RecordingService.State.Paused,
+            active = confirmedRecording,
             paused = recState is RecordingService.State.Paused,
+            starting = recState is RecordingService.State.Starting,
+            saving = recState is RecordingService.State.Stopping,
             onEnabledChange = { enabled ->
                 CallMonitor.setRecordingEnabled(context, enabled)
                 recordingEnabled = enabled
@@ -510,9 +512,12 @@ private fun RecordingMasterCard(
     ready: Boolean,
     active: Boolean,
     paused: Boolean,
+    starting: Boolean,
+    saving: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
-    val dashboardState = HomeDashboardPresentation.resolve(enabled, ready, active, paused)
+    val dashboardState = HomeDashboardPresentation.resolve(
+        enabled, ready, active, paused, starting, saving)
     val cardColor by animateColorAsState(
         targetValue = HomePanelStyle.color(highlight = ready && enabled),
         label = "Recording master card color",
@@ -521,6 +526,8 @@ private fun RecordingMasterCard(
     val badge = when (dashboardState) {
         HomeDashboardPresentation.State.RECORDING -> "RECORDING"
         HomeDashboardPresentation.State.PAUSED -> "PAUSED"
+        HomeDashboardPresentation.State.STARTING -> "STARTING"
+        HomeDashboardPresentation.State.SAVING -> "SAVING"
         HomeDashboardPresentation.State.OFF -> "OFF"
         HomeDashboardPresentation.State.READY -> "READY"
         HomeDashboardPresentation.State.SETUP_NEEDED ->
@@ -531,7 +538,8 @@ private fun RecordingMasterCard(
         "READY" -> if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
         "CONNECTING" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
         "RECORDING" -> if (dark) Color(0xFFFFA39D) else Color(0xFFB63832)
-        "PAUSED" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
+        "PAUSED", "STARTING", "SAVING" ->
+            if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
         "OFF" -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> if (dark) Color(0xFFFFC58F) else Color(0xFF99621F)
     }
@@ -601,6 +609,8 @@ private fun RecordingMasterCard(
                     when {
                         active -> "Capture is active."
                         paused -> "Capture is paused."
+                        starting -> "Waiting for capture confirmation."
+                        saving -> "Finishing recording."
                         enabled && !ready && adbStatus.busy -> "Checking ADB authorization…"
                         enabled && !ready -> "Waiting for the shell helper."
                         enabled -> "Automatically record supported calls."
