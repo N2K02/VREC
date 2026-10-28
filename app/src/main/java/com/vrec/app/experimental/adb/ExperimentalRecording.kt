@@ -202,8 +202,7 @@ object ExperimentalRecording {
         if (helper.isSuccess) Log.i("ADB: recording helper started and verified")
         else {
             Log.w("ADB: recording helper failed — ${helper.exceptionOrNull()?.message ?: "unknown error"}")
-            com.vrec.app.recording.RecordingFailureNotice.warn(context,
-                "Recording helper could not start after ADB authorization. Calls will not be captured until recovery succeeds.")
+            com.vrec.app.recording.RecordingFailureNotice.helperStartFailed(context)
         }
         status.value = status.value.copy(busy = false, message = when {
             helper.isFailure -> "Shell UID 2000 verified, but recorder helper failed: ${helper.exceptionOrNull()?.message}"
