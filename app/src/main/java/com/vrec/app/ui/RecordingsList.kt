@@ -741,6 +741,7 @@ private fun RecordingRow(
                 sourceLabel = callSource,
                 directionLabel = callDirection,
                 fileSize = formatSize(rec.sizeBytes),
+                callMediaType = rec.callMediaType,
             )
             if (active && !selectionMode) {
                 // One in-card player: the row's left button handles Play/Pause/Resume,
@@ -949,6 +950,14 @@ private fun RecordingDetailsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 RecordingDetailSection("Call details") {
                     DetailLine("Call type", callType)
+                    if (rec.direction == CallDirection.VOIP ||
+                        rec.callType.equals("VOIP", ignoreCase = true)) {
+                        DetailLine("Call medium", when (rec.callMediaType) {
+                            "VIDEO" -> "Video call (audio recording)"
+                            "VOICE" -> "Voice call"
+                            else -> "Unknown"
+                        })
+                    }
                     DetailLine("Direction", RecordingListLabels.direction(
                         rec.direction, rec.callFlowDirection).takeIf {
                             it == "Incoming" || it == "Outgoing"
