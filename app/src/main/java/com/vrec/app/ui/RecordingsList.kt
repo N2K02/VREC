@@ -656,8 +656,10 @@ private fun RecordingRow(
         rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
     )
     val callDirection = RecordingListLabels.direction(rec.direction, rec.callFlowDirection)
+    val sourceKind = RecordingListLabels.sourceKind(rec.direction, rec.sourcePackage, rec.callType)
     val callSource = RecordingListLabels.source(
-        rec.direction, callApp, rec.simSlot, rec.simLabel, rec.carrier,
+        if (sourceKind == RecordingListLabels.SourceKind.APP) CallDirection.VOIP else rec.direction,
+        callApp, rec.simSlot, rec.simLabel, rec.carrier,
     )
 
     Card(shape = RoundedCornerShape(28.dp),
@@ -684,22 +686,7 @@ private fun RecordingRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(displayedContact, style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text("$callDirection · $callSource",
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatSize(rec.sizeBytes),
-                            maxLines = 1,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                 }
                 if (!selectionMode) {
                     IconButton(onClick = onShare) {
                         Icon(Icons.Filled.Share, contentDescription = "Share recording")
@@ -709,6 +696,13 @@ private fun RecordingRow(
                     }
                 }
             }
+            RecordingMetadataBadges(
+                kind = sourceKind,
+                sourcePackage = rec.sourcePackage,
+                sourceLabel = callSource,
+                directionLabel = callDirection,
+                fileSize = formatSize(rec.sizeBytes),
+            )
             if (active && !selectionMode) {
                 // One in-card player: the row's left button handles Play/Pause/Resume,
                 // while the expanded controls handle seeking and stopping.
