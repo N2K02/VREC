@@ -10,6 +10,11 @@ import java.util.Locale
 internal object RecordingListLabels {
     enum class SourceKind { APP, PHONE, UNKNOWN }
 
+    /** Only a confirmed VIDEO signal renders the camera badge. */
+    enum class MediaBadge { VIDEO, CALL }
+    fun mediaBadge(mediaType: String?): MediaBadge =
+        if (mediaType?.uppercase(Locale.ROOT) == "VIDEO") MediaBadge.VIDEO else MediaBadge.CALL
+
     /** Semantic source colors; actual Material colors are selected by the UI theme. */
     enum class SourceAccent { GREEN, BLUE, VIOLET, NEUTRAL }
 
