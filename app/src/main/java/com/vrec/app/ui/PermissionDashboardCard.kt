@@ -91,6 +91,7 @@ fun PermissionDashboardCard() {
     // five seconds while Home is visible. ON_RESUME still catches Settings changes.
     val grants by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val foregroundBusy by AdbForegroundSetup.busy.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val permissions = remember(tick, helperReady, helperState, grants) {
         fun granted(name: String) =
@@ -115,7 +116,7 @@ fun PermissionDashboardCard() {
         }
     }
     fun tryGrant(label: String) {
-        if (working) return
+        if (working || foregroundBusy) return
         actionMessage = null
         val runtime = runtimePermission[label]
         if (label in setOf("Phone state", "Call history", "Contacts", "Notifications", "Advanced detection")) {
@@ -165,26 +166,11 @@ fun PermissionDashboardCard() {
         } else if (runtime != null) {
             launcher.launch(runtime)
         } else if (label == "ADB shell helper") {
-            // Use the same recovery lock and setup engine as Home's Start action.
-            // Never try to launch the helper against a stale UID 2000 badge.
-            scope.launch {
-                working = true
-                try {
-                    val outcome = AdbForegroundSetup.startOrRepair(context)
-                    actionMessage = when (outcome) {
-                        AdbForegroundSetup.Outcome.HELPER_READY -> "Recording helper is ready."
-                        AdbForegroundSetup.Outcome.WIRELESS_CONNECTING ->
-                            "Connecting the paired Wireless ADB shell; checking UID 2000 and helper health."
-                        AdbForegroundSetup.Outcome.DISCOVERING ->
-                            "Searching for Wireless debugging. Enable it in Android Developer options."
-                        AdbForegroundSetup.Outcome.USER_ACTION_REQUIRED ->
-                            LocalAdbMiddleware.message.value
-                    }
-                } finally {
-                    working = false
-                    tick++
-                }
-            }
+            // Start is application-owned so navigation to Android Settings
+            // cannot cancel an in-progress pairing or shell launch.
+            actionMessage = if (AdbForegroundSetup.begin(context))
+                "Starting ADB helper. Connection, permissions and readiness will update automatically."
+            else "ADB setup is already running; check its status on Home."
         } else {
             val action = permissionIntent(label)
             val intent = android.content.Intent(action).apply {
