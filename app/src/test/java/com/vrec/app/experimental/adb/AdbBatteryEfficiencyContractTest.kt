@@ -80,10 +80,15 @@ class AdbBatteryEfficiencyContractTest {
 
     @Test fun callMonitorAndOverlayNeverDependOnPermanentlyIdleLegacyState() {
         val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
-        assertFalse(monitor.contains("RecordingService.state.value"))
+        // The facade state is now reactive and is used ONLY to lock the
+        // global toggle during a call, not to start microphone capture.
+        assertTrue(monitor.contains("RecordingService.state.value !is RecordingService.State.Idle"))
         assertTrue(monitor.contains("ExperimentalCaptureDaemon.captureControl"))
         val overlay = source("app/src/main/java/com/vrec/app/recording/OverlayControlService.kt")
-        assertTrue(overlay.contains("ExperimentalCaptureDaemon.captureControl"))
+        assertTrue(overlay.contains("EnhancedCaptureControlReceiver.request(applicationContext, action)"))
+        assertTrue(overlay.contains("EnhancedCaptureControlReceiver.request(applicationContext, 'S')"))
+        val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
+        assertTrue(receiver.contains("ExperimentalCaptureDaemon.captureControl(context, action)"))
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_PAUSE)"))
         assertFalse(overlay.contains(".setAction(RecordingService.ACTION_RESUME)"))
     }
@@ -94,8 +99,9 @@ class AdbBatteryEfficiencyContractTest {
             .substringBefore("fun reconcileAuthenticatedIdle(context: Context)")
         assertTrue(paused.contains("shellLifecycle.reconcilePaused()"))
         assertTrue(paused.contains("context.stopService(Intent(context, OverlayControlService::class.java))"))
-        val notification = notice.substringAfter("fun setEnhancedPaused(context: Context, paused: Boolean)")
-            .substringBefore("fun reconcileAuthenticatedRecording(context: Context")
+        val notification = notice.substringAfter("private fun notifyShellCapture(context: Context, paused: Boolean)")
+            .substringBefore("fun shellRecordingEnded(context: Context, file: String)")
+        assertTrue(notice.contains("notifyShellCapture(context, paused)"))
         assertTrue(notification.contains("manager.getNotificationChannel(CHANNEL) == null"))
         assertTrue(notification.contains("manager.createNotificationChannel(NotificationChannel("))
     }
@@ -147,12 +153,17 @@ class AdbBatteryEfficiencyContractTest {
 
     @Test fun notificationControlsAreSerializedAcrossReceiverInstances() {
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
-        assertTrue(receiver.contains("private val controlMutex = Mutex()"))
-        assertTrue(receiver.contains("controlMutex.withLock {"))
-        assertTrue(receiver.contains("if (!AdbFallbackNotice.enhancedActive.value) return@withLock"))
-        assertTrue(receiver.contains("if (action == 'P') AdbFallbackNotice.setEnhancedPaused(context, true)"))
-        assertTrue(receiver.contains("if (action == 'R') AdbFallbackNotice.setEnhancedPaused(context, false)"))
-        assertTrue(receiver.contains("if (action == 'S') CallMonitor.onShellStopConfirmed(context)"))
+        // A single atomic pending slot protects notification PendingIntents
+        // and the Home/mini-bar/overlay requests across receiver instances.
+        assertTrue(receiver.contains("pendingAction.compareAndSet(null, action)"))
+        assertTrue(receiver.contains("private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)"))
+        assertTrue(receiver.contains("CaptureControlPolicy.isAllowed(action"))
+        assertTrue(receiver.contains("if (action == 'P')"))
+        assertTrue(receiver.contains("AdbFallbackNotice.setEnhancedPaused(context, true)"))
+        assertTrue(receiver.contains("if (action == 'R')"))
+        assertTrue(receiver.contains("AdbFallbackNotice.setEnhancedPaused(context, false)"))
+        assertTrue(receiver.contains("if (action == 'S')"))
+        assertTrue(receiver.contains("CallMonitor.onShellStopConfirmed(context)"))
     }
 
     @Test fun notificationReceiverHasBoundedExecutionAndAlwaysFinishes() {
@@ -160,13 +171,15 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(receiver.contains("withTimeout(8_000L)"))
         assertTrue(receiver.contains("finally {"))
         assertTrue(receiver.contains("pending.finish()"))
-        assertTrue(receiver.contains("if (action == 'S') CallMonitor.onShellStopConfirmed(context)"))
+        assertTrue(receiver.contains("if (action == 'S')"))
+        assertTrue(receiver.contains("CallMonitor.onShellStopConfirmed(context)"))
     }
 
     @Test fun notificationStopSuppressesAutomaticRestart() {
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
         val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
-        assertTrue(receiver.contains("if (action == 'S') CallMonitor.onShellStopConfirmed(context)"))
+        assertTrue(receiver.contains("if (action == 'S')"))
+        assertTrue(receiver.contains("CallMonitor.onShellStopConfirmed(context)"))
         assertTrue(monitor.contains("fun onShellStopConfirmed(context: Context)"))
         assertTrue(monitor.contains("sessions.values.filter { it.active }.forEach { suppressed.add(it.id) }"))
         assertTrue(receiver.contains("pending.finish()"))
@@ -210,7 +223,8 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(service.contains("combine(AdbFallbackNotice.enhancedActive"))
         assertTrue(service.contains("State.Paused"))
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
-        assertTrue(receiver.contains("Shell recording control not confirmed"))
+        assertTrue(receiver.contains("Shell capture command not confirmed"))
+        assertTrue(receiver.contains("CaptureControlPolicy.isAllowed(action"))
     }
 
     @Test fun diagnosticsAreBatched() {
