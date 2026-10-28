@@ -154,13 +154,12 @@ object ExperimentalCaptureDaemon {
      * Retry short transient handshakes; never recreate a working helper just
      * because a configuration packet was delayed.
      */
-    private suspend fun confirmSetup(context: Context): Boolean {
-        repeat(3) { attempt ->
-            if (setMode(context, Prefs.recordingEnabled(context))) return true
-            if (attempt < 2) delay(400L * (attempt + 1))
-        }
-        return false
-    }
+    private suspend fun confirmSetup(context: Context): Boolean =
+        CaptureSetupProtocol.verifyWithRetry(
+            configure = { setMode(context, Prefs.recordingEnabled(context)) },
+            incompatible = { incompatibleProtocol.value },
+            waitBetween = { attempt -> delay(400L * attempt) },
+        )
 
     suspend fun ensureStarted(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
