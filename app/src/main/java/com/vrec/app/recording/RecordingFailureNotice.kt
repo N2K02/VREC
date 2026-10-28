@@ -18,11 +18,14 @@ object RecordingFailureNotice {
     private const val CHANNEL = "vrec_recording_failures"
     private const val NOTIFICATION_ID = 8602
     val warning = MutableStateFlow<String?>(null)
+    @Volatile private var persistent = false
 
-    fun warn(context: Context, explanation: String) {
+    fun warn(context: Context, explanation: String, keepUntilDismissed: Boolean = false) {
+        if (persistent && !keepUntilDismissed) return
         // Notifications never include call identity, recording paths or raw exception messages.
         val detail = explanation.take(240)
         if (warning.value == detail) return
+        persistent = keepUntilDismissed
         warning.value = detail
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
@@ -49,11 +52,12 @@ object RecordingFailureNotice {
     }
 
     fun dismiss(context: Context) {
+        persistent = false
         warning.value = null
         context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
     }
 
     fun clearAfterCaptureStarted(context: Context) {
-        if (warning.value != null) dismiss(context)
+        if (warning.value != null && !persistent) dismiss(context)
     }
 }
