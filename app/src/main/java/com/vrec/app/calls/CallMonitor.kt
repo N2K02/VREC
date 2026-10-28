@@ -225,8 +225,8 @@ object CallMonitor {
                     return
                 }
                 val session = sessions.getOrPut("sim-legacy") {
-                    Session("sim-legacy", Source.SIM, direction =
-                        if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING)
+                    val flow = if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING
+                    Session("sim-legacy", Source.SIM, direction = flow, flowDirection = flow)
                 }
                 if (!number.isNullOrBlank()) pendingIncomingNumber = number
                 if (session.number == null) session.number = pendingIncomingNumber
