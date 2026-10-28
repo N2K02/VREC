@@ -1,4 +1,4 @@
-# VRec recording architecture — current experimental PR #40
+# VRec recording architecture — experimental PR #40
 
 ## Capture path
 
@@ -6,66 +6,43 @@ Home Recording → CallMonitor → ExperimentalCaptureDaemon →
 independent Java shell recorder → authenticated loopback import →
 RecordingStore → Recordings UI.
 
-The app has a separate ordinary-UID local diagnostic command runner and an
-embedded authenticated ADB client. The former cannot elevate privileges.
-The ADB client only connects to the **fixed 127.0.0.1:5555** endpoint after
-a trusted USB ADB host has enabled `adb tcpip 5555`; it verifies `id -u`
-returns `2000` before launching the bundled Java app_process helper.
-Wireless pairing, discovery, and mode selection are removed.
+New captures use the authorized shell helper only; no microphone fallback.
+Capture STARTED/PAUSED/ENDED events, authenticated snapshots, and the helper
+control protocol drive recording state.
 
-## Shell helper and lifecycle
+## ADB initialization and recovery
 
-The detached helper can survive disconnect of VRec's ADB client while the
-Android shell process stays alive. It is not an OS daemon guaranteed across
-reboot. Startup and foreground retries may reattach to a live helper, or
-restore one only if a previously verified TCP endpoint and stored ADB identity
-are still available. The Recording master switch controls whether capture
-is armed, including after restarts. Quit stops app-owned work safely.
+- On Android 11+, the user enables USB and Wireless debugging and enters the
+  one-time Android wireless pairing code.
+- The embedded ADB transport connects to this phone's TLS pairing/connection
+  ports, verifies `id -u == 2000`, then configures eligible permissions.
+- Automatic TCP/5555 is enabled by default. After verification, VRec switches
+  transports, waits for adbd, reconnects to localhost:5555 and re-verifies
+  the shell UID and helper. TCP may be network accessible; Settings has an opt-out.
+- A trusted external USB host with `adb tcpip 5555` remains an alternative
+  for Android versions without Wireless debugging.
+- AdbLifecycle owns periodic background recovery, while shared transport
+  serialization coordinates foreground setup, wireless pairing and TCP repair.
+  A separate recovery gate may wait for wireless discovery without blocking
+  the pairing callback.
+- A detached healthy helper does not require a permanently attached ADB client;
+  reboot or OEM policies can still stop the helper and TCP listener.
 
-## No microphone fallback
+## Recording data integrity
 
-This experimental workflow is ADB-only. If the shell helper is missing or
-cannot capture the selected SIM/VoIP source, do **not** start the app microphone
-recorder automatically or mark the recording as successful. The legacy microphone RecordingEngine has been deleted. RecordingService is a
-compatibility facade and does not create audio. Shell STARTED/ENDED events
-update AdbFallbackNotice's capture state; authenticated helper commands own
-pause/resume/stop. The facade's legacy start/metadata methods are no-ops and
-must not be mistaken for a successful capture.
-Android/OEM audio-HAL restrictions can still make protected call sources
-silent even when shell UID 2000 is verified.
+The shell produces an authenticated Opus stream. VRec validates packets and
+writes the playable OGG file via a temporary file. It writes complete JSON
+sidecar metadata using Android AtomicFile before deleting the shell original.
+Write failures keep the shell original for retry. Metadata edits and bookmarks
+use atomic writes, and deletions/saves report failures to the UI.
 
-## Permissions
+Storage and capture errors appear as Home warnings and Android notifications
+where allowed, with no call identity in the notification. The app never treats
+UID 2000 alone as proof of two-way audio.
 
-Eligible runtime grants are attempted only through a verified shell and
-checked afterwards with PackageManager. Telecom AppOp is checked separately.
-Restricted Call Log access may be refused. Accessibility, overlay settings,
-and notification-listener access require user control via Android Settings;
-there is no guarantee of blanket permission approval.
+## Validation
 
-## Metadata, recordings and diagnostics
-
-Import is authenticated using the local helper protocol. Keep source identity,
-SIM versus supported VoIP app, file size, timing estimates, silence diagnostics,
-and independently verified audio details. Never infer a second party from
-nonzero signal level. Confirm supported SIM audio sources and VoIP behavior
-with real consented test calls.
-
-## Regression priorities
-
-- Home badge: grey idle, yellow busy, red failed, green **only** after UID 2000.
-- USB debugging without TCP/5555 cannot self-authorize.
-- A TCP listener without authenticated shell cannot start the helper.
-- Automatic reconnection requires previous verification, allowed recovery,
-  USB debugging and a real localhost listener.
-- ADB missing: no new microphone recording.
-- Home Off: independent helper stops/disarms capture safely.
-- Android refuses a runtime grant: display attention required.
-- Accessibility label remains **Vrec call recording helper**.
-- Saved playback, imports, details, Settings/Quit and updates stay operational.
-
-## Verification still required
-
-- Integration tests must exercise real shell STARTED/PAUSED/ENDED events and UI synchronization.
-- Test repeated Telecom events, outgoing answer gating, call waiting and reconnect during finalization.
-- Verify shell metadata journal against real cellular and VoIP calls.
-- Measure battery use on physical Android devices; CI cannot establish battery efficiency.
+Regression tests cover pairing decision policy, transport synchronization,
+navigation stability, helper readiness, quit, imports and metadata contracts.
+Physical-device testing remains necessary for capture quality, reboot,
+wireless pairing and network listener behavior.
