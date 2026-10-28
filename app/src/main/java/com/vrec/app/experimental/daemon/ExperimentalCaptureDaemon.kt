@@ -252,6 +252,10 @@ object ExperimentalCaptureDaemon {
                 "Shell recorder started. Calls can continue while Wi-Fi is off."
             else "Shell recorder started in standby; enable Recording on Home to capture."
         }.onFailure {
+            // runCatching also catches coroutine cancellation. A Quit while
+            // launching must propagate rather than being misreported as a
+            // broken recorder and leaving an inconsistent starting state.
+            if (it is CancellationException) throw it
             ready.value = false
             message.value = "Recorder startup failed: " + (it.message ?: "unknown error")
             Log.w(TAG, message.value, it)
