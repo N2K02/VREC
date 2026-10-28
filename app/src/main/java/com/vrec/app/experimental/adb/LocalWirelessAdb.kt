@@ -371,8 +371,7 @@ object LocalWirelessAdb {
             ExperimentalRecording.awaitingManualRetry ||
             ExperimentalRecording.tcpPortListening()) return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastTcpPromotionAtMs < 5 * 60_000L) return
-        lastTcpPromotionAtMs = now
+        if (lastTcpPromotionAtMs != 0L && now - lastTcpPromotionAtMs < 5 * 60_000L) return
         scope.launch {
             if (!transition.tryLock()) return@launch
             try {
@@ -385,6 +384,7 @@ object LocalWirelessAdb {
                         !com.vrec.app.calls.CallMonitor.hasLiveCall() &&
                         AdbUserChoices.tcpMode(app) &&
                         !ExperimentalRecording.tcpPortListening()) {
+                        lastTcpPromotionAtMs = android.os.SystemClock.elapsedRealtime()
                         switchToLocalTcp(app)
                     }
                 }
