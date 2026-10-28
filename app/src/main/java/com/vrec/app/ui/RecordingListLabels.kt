@@ -80,7 +80,8 @@ internal object RecordingListLabels {
                 "unknown", "unknown source", "adb shell")
         }?.let {
             when (it.lowercase(Locale.ROOT)) {
-                "voip app" -> "VoIP"
+                "voip app", "voip call" -> "VoIP"
+                "sim call" -> "SIM"
                 else -> it
             }
         }
