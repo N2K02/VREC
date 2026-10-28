@@ -149,6 +149,16 @@ object ShellCallMetadataJournal {
         return matches.single().asMatch()
     }
 
+    /** An adopted notification identity is superseded by Telecom for the same call. */
+    @Synchronized fun forget(context: Context, key: String) {
+        val saved = entries(context)
+        val filtered = saved.filter { it.optString("key") != key }
+        if (filtered.size == saved.size) return
+        val result = JSONArray()
+        filtered.forEach(result::put)
+        save(context, result)
+    }
+
     @Synchronized fun consume(context: Context, startedAt: Long, appPackage: String?) {
         val entries = load(context)
         val matched = (0 until entries.length()).map { entries.getJSONObject(it) }.filter {
