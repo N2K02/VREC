@@ -275,7 +275,7 @@ object ExperimentalCaptureDaemon {
             val selected = EnhancedCapturePreferences.simSource(context)
             val sourceReply = if (CaptureSetupProtocol.modeAccepted(modeReply, allowed, waitForAnswer)) {
                 runCatching {
-                    open(context, 'Y', byteArrayOf(selected.wireValue.toByte())).use {
+                    open(context, 'J', byteArrayOf(selected.wireValue.toByte())).use {
                         it.getInputStream().bufferedReader().readLine()?.trim()
                     }
                 }.getOrNull()
