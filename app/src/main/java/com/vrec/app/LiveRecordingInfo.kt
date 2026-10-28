@@ -28,6 +28,8 @@ internal object LiveRecordingInfoResolver {
                 identity.startedAt, identity.appPackage)
         else ShellCallMetadataJournal.findForCellularTaggedVoip(
             context.applicationContext, identity.startedAt, identity.direction)
+            ?: ShellCallMetadataJournal.findForCellularTaggedSim(
+                context.applicationContext, identity.startedAt, identity.direction)
         val resolvedPackage = matched?.packageName ?: identity.appPackage
         val sourceDirection = if (matched?.direction == CallDirection.VOIP)
             CallDirection.VOIP else identity.direction
