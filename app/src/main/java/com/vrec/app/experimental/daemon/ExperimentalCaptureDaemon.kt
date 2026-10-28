@@ -506,7 +506,7 @@ object ExperimentalCaptureDaemon {
                     val label = if (voip) "Enhanced VoIP playback + microphone"
                         else health?.substringBefore(" | ")?.let { "Shell " + it }
                             ?: "Enhanced shell capture"
-                    RecordingStore.writeMeta(
+                    check(RecordingStore.writeMeta(
                         dest, direction, caller?.name ?: caller?.number ?:
                             ShellVoipLabels.forPackage(identity.appPackage), label,
                         silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
@@ -517,20 +517,10 @@ object ExperimentalCaptureDaemon {
                         contactName = caller?.name,
                         numberSource = caller?.numberSource,
                         recordingType = RecordingType.ADB,
-                    )
-                    val sidecar = File(dest.parentFile, dest.name + ".json")
-                    runCatching {
-                        val json = JSONObject(sidecar.readText())
-                        json.put("startedAt", started)
-                        json.put("endedAt", started + durationMs)
-                        json.put("source", label)
-                        if (health != null) {
-                            json.put("audioHealth", health)
-                            json.put("audioHealthWarning", health.contains("QUIET") ||
-                                health.contains("CLIPPING") || health.contains("NO_AUDIO"))
-                        }
-                        sidecar.writeText(json.toString())
-                    }
+                    )) { "Cannot save recording metadata" }
+                    check(RecordingStore.finalizeImportedMeta(
+                        dest, started, started + durationMs, label, health,
+                    )) { "Cannot finalize recording metadata" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     com.vrec.app.calls.ShellCallMetadataJournal.consume(
                         context, started, identity.appPackage)
@@ -546,6 +536,9 @@ object ExperimentalCaptureDaemon {
                     com.vrec.app.Log.w("Capture diagnostic: shell recording import failed file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
                     temp.delete()
                     failures++
+                    com.vrec.app.recording.RecordingFailureNotice.warn(
+                        context, "Recording could not be saved: " +
+                            (t.message ?: "audio import or storage error"))
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
                     continue
                 }
