@@ -358,14 +358,11 @@ private fun BlinkingRecordingDot(modifier: Modifier = Modifier) {
     )
 }
 
-/** Recording equivalent of MRadio's persistent Now Playing mini-bar. */
+/** Mini transport shared with the live Home card; no redundant "tap to view" text. */
 @Composable
 private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Unit) {
-    val peer = when (state) {
-        is RecordingService.State.Recording -> state.peer
-        is RecordingService.State.Paused -> state.peer
-        else -> null
-    }
+    val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val details = rememberLiveRecordingDisplay()
     val status = when (state) {
         is RecordingService.State.Paused -> "Recording paused"
         is RecordingService.State.Starting -> "Starting recording"
@@ -374,31 +371,41 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
         else -> "Recording"
     }
     Surface(
-        onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = HomePanelStyle.color(highlight = shellActive),
+        border = HomePanelStyle.border(highlight = shellActive),
+        shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(Icons.Rounded.Mic, contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    if (state is RecordingService.State.Recording) BlinkingRecordingDot()
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                if (state is RecordingService.State.Recording) BlinkingRecordingDot()
+                else Icon(Icons.Rounded.Mic, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                Column(Modifier.weight(1f).clickable(onClick = onOpen),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(status, style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold)
+                        fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text("${details.info.caller} · ${details.info.source}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text(peer?.takeIf { it.isNotBlank() } ?: "Tap to view recording controls",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(details.duration, style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
             }
-            Icon(Icons.Rounded.ChevronRight, contentDescription = "View recording",
-                tint = MaterialTheme.colorScheme.primary)
+            LiveRecordingActions(
+                state = state,
+                shellActive = shellActive,
+                compact = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -461,6 +468,8 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
             }
         }
         RecordingMasterCard(
+            state = recState,
+            shellActive = enhancedActive,
             enabled = recordingEnabled,
             ready = ready,
             active = confirmedRecording,
@@ -472,8 +481,10 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
                 recordingEnabled = enabled
             },
         )
-        if (recordingEnabled) {
-            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+        if (enhancedActive &&
+            (recState is RecordingService.State.Recording ||
+                recState is RecordingService.State.Paused)) {
+            RecordingNowCard(recState)
         }
         Text("Connection & access", style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
@@ -508,6 +519,8 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
 /** Primary Home control. Actual recording status and helper readiness remain separate. */
 @Composable
 private fun RecordingMasterCard(
+    state: RecordingService.State,
+    shellActive: Boolean,
     enabled: Boolean,
     ready: Boolean,
     active: Boolean,
@@ -588,7 +601,11 @@ private fun RecordingMasterCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    enabled = RecordingTransportPresentation.canChangeMasterToggle(state, shellActive),
+                )
             }
             Row(
                 Modifier.fillMaxWidth(),
@@ -620,6 +637,11 @@ private fun RecordingMasterCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (!RecordingTransportPresentation.canChangeMasterToggle(state, shellActive)) {
+                Text("Automatic recording cannot be changed until the current capture finishes.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -654,18 +676,13 @@ private fun ManualRecordButton(state: RecordingService.State) {
     }
 }
 
+/** Live capture: caller/app/direction and authenticated shell controls replace the dead meter. */
 @Composable
-private fun RecordingNowCard(state: RecordingService.State.Recording) {
-    val level by RecordingService.level.collectAsState()
-    // Perceptual 0..1 bar; audio amplitude is 0..32767.
-    val fraction = sqrt((level.toFloat() / 32767f).coerceIn(0f, 1f))
-
-    // Only nag about silence after a few seconds, so a normal quiet start isn't flagged.
-    var silentLongEnough by remember { mutableStateOf(false) }
-    LaunchedEffect(state.silentSoFar) {
-        if (state.silentSoFar) { delay(3500); silentLongEnough = true } else silentLongEnough = false
-    }
-
+private fun RecordingNowCard(state: RecordingService.State) {
+    val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val details = rememberLiveRecordingDisplay()
+    val paused = state is RecordingService.State.Paused
+    val status = if (paused) "Recording paused" else "Recording in progress"
     Card(
         colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color(highlight = true)),
         border = HomePanelStyle.border(highlight = true),
@@ -673,32 +690,49 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        Column(Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                BlinkingRecordingDot()
-                Text("Recording now", color = MaterialTheme.colorScheme.onSurface,
+                if (paused) Icon(Icons.Rounded.Mic, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp))
+                else BlinkingRecordingDot()
+                Text(status, color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(details.duration, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
             }
-            Text(
-                (state.peer?.let { "$it · " } ?: "") + state.sourceLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            LinearProgressIndicator(
-                progress = { fraction },
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+            Text(details.info.caller, style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(details.info.source, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val direction = when (details.info.direction) {
+                    com.vrec.app.recording.CallDirection.INCOMING -> "↓ Incoming"
+                    com.vrec.app.recording.CallDirection.OUTGOING -> "↑ Outgoing"
+                    else -> ""
+                }
+                if (direction.isNotEmpty()) {
+                    Text(direction, style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            LiveRecordingActions(
+                state = state,
+                shellActive = shellActive,
+                compact = false,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (state.silentSoFar && silentLongEnough) {
-                Text(
-                    "No sound detected. Check the enhanced shell source and diagnostics in ADB settings.",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
         }
     }
 }
