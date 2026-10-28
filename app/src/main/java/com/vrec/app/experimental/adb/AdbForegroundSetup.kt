@@ -1,6 +1,14 @@
 package com.vrec.app.experimental.adb
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Single entry point for the Home Start/Retry button and the permission-card
@@ -10,6 +18,43 @@ import android.content.Context
  */
 object AdbForegroundSetup {
     enum class Outcome { HELPER_READY, WIRELESS_CONNECTING, DISCOVERING, USER_ACTION_REQUIRED }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val starting = AtomicBoolean(false)
+    val busy = MutableStateFlow(false)
+    val lastOutcome = MutableStateFlow<Outcome?>(null)
+
+    /**
+     * Explicit Start must continue if Home is removed from the composition.
+     * An app-owned job prevents navigation from cancelling shell bootstrap.
+     * Rapid taps are ignored rather than queueing multiple authorization runs.
+     */
+    fun begin(context: Context): Boolean {
+        if (AdbLifecycle.quitting || !starting.compareAndSet(false, true)) return false
+        busy.value = true
+        val app = context.applicationContext
+        scope.launch {
+            try {
+                lastOutcome.value = startOrRepair(app)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                LocalAdbMiddleware.lastSetupFailed.value = true
+                LocalAdbMiddleware.message.value = "ADB setup failed: " +
+                    (failure.message ?: "unexpected error") + ". Check Diagnostics and retry."
+                lastOutcome.value = Outcome.USER_ACTION_REQUIRED
+            } finally {
+                busy.value = false
+                starting.set(false)
+            }
+        }
+        return true
+    }
+
+    /** Quit stops any explicit setup, without destroying the reusable app scope. */
+    fun shutdown() {
+        scope.coroutineContext.cancelChildren()
+    }
 
     internal object Routing {
         enum class Next { RETRY_PAIRED_WIRELESS, RESTORE_HELPER_OR_TCP }
