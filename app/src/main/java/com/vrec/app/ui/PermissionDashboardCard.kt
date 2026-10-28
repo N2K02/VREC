@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,6 +37,9 @@ import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.Prefs
 import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.VrecAccessibilityService
+import com.vrec.app.experimental.adb.AdbLifecycle
+import com.vrec.app.experimental.adb.LocalAdbMiddleware
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
@@ -89,7 +93,9 @@ fun PermissionDashboardCard() {
     LaunchedEffect(Unit) {
         while (true) { delay(5_000L); tick++ }
     }
-    val permissions = remember(tick) {
+    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    val permissions = remember(tick, helperReady, helperState) {
         fun granted(name: String) =
             context.checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED
         buildList {
@@ -107,8 +113,8 @@ fun PermissionDashboardCard() {
             if (Build.VERSION.SDK_INT >= 31)
                 add("Advanced detection" to CallDetectionAccess.isGranted(context))
             if (true)
-                add("ADB shell helper" to (ExperimentalCaptureDaemon.ready.value &&
-                    AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING))
+                add("ADB shell helper" to (helperReady &&
+                    helperState == AdbPrivilegedApiHelper.State.RUNNING))
         }
     }
     fun tryGrant(label: String) {
@@ -133,14 +139,30 @@ fun PermissionDashboardCard() {
                     launcher.launch(runtime!!)
                 } else if (label == "Advanced detection" &&
                     !CallDetectionAccess.isGranted(context)) {
-                    actionMessage = "Android refused advanced Telecom access. Check app permissions and ADB authorization."
+                    actionMessage = "Advanced Telecom detection is optional. Android has not granted this AppOp; the ADB recorder can still work with standard call-state detection."
                 }
                 tick++
             }
         } else if (runtime != null) {
             launcher.launch(runtime)
         } else if (label == "ADB shell helper") {
-            actionMessage = "Open Experimental settings to connect and authorize the ADB helper."
+            // Use the same recovery lock and setup engine as Home's Start action.
+            // Never try to launch the helper against a stale UID 2000 badge.
+            scope.launch {
+                working = true
+                try {
+                    val restored = AdbLifecycle.coordinateSetup {
+                        LocalAdbMiddleware.setup(context, userInitiated = true)
+                    }
+                    if (!restored && !ExperimentalRecording.tcpPortListening())
+                        LocalWirelessAdb.start(context, userInitiated = true)
+                    actionMessage = if (restored) "Recording helper is ready."
+                        else LocalAdbMiddleware.message.value
+                } finally {
+                    working = false
+                    tick++
+                }
+            }
         } else {
             val action = permissionIntent(label)
             val intent = android.content.Intent(action).apply {
