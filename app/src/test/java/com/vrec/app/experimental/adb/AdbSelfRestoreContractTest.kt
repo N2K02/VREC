@@ -46,7 +46,7 @@ class AdbSelfRestoreContractTest {
             .substringBefore("fun shutdown(")
         assertTrue(connect.contains("val switchToTcp = AdbUserChoices.tcpMode(app)"))
         assertTrue(connect.contains("deferHelperUntilTcp = switchToTcp"))
-        assertTrue(connect.contains("if (switchToTcp) return switchToLocalTcp(app)"))
+        assertTrue(connect.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
         assertTrue(connect.contains("ExperimentalCaptureDaemon.probe(app)"))
         assertTrue(connect.indexOf("connectWireless(") < connect.indexOf("switchToLocalTcp(app)"))
         assertTrue(wireless.contains("turn USB debugging off in Developer options"))
