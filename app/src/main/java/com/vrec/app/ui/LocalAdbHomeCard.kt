@@ -251,7 +251,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
             if (permissions.finished) {
                 Text(
                     if (permissions.unavailable.isEmpty())
-                        "Supported Android permissions configured automatically."
+                        "Supported Android permissions granted. Recording helper readiness is checked separately."
                     else "Configured ${permissions.granted.size} permissions. Android requires manual attention: " +
                         permissions.unavailable.joinToString(),
                     style = MaterialTheme.typography.bodySmall,
