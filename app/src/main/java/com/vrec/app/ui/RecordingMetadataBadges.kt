@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallMade
 import androidx.compose.material.icons.filled.CallReceived
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,6 +49,7 @@ internal fun RecordingMetadataBadges(
     sourceLabel: String,
     directionLabel: String,
     fileSize: String,
+    callMediaType: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -69,6 +71,9 @@ internal fun RecordingMetadataBadges(
     ) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             SourceAppBadge(kind, sourcePackage, sourceLabel, sourceTint, dark)
+        }
+        if (kind == RecordingListLabels.SourceKind.APP) {
+            MediaTypeBadge(callMediaType, dark)
         }
         DirectionBadge(directionLabel, dark)
         Text(
@@ -144,6 +149,25 @@ private fun SourceAppBadge(
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+/** A compact icon-only call-medium chip: it describes the CALL, not the saved file. */
+@Composable
+private fun MediaTypeBadge(mediaType: String?, dark: Boolean) {
+    val video = RecordingListLabels.mediaBadge(mediaType) ==
+        RecordingListLabels.MediaBadge.VIDEO
+    val tint = if (video) {
+        if (dark) Color(0xFFFFD19C) else Color(0xFF905917)
+    } else MaterialTheme.colorScheme.onSurfaceVariant
+    Icon(
+        imageVector = if (video) Icons.Filled.Videocam else Icons.Filled.Call,
+        contentDescription = if (video) "Video call" else "Call",
+        tint = tint,
+        modifier = Modifier
+            .metadataPill(tint, dark)
+            .padding(6.dp)
+            .size(16.dp),
+    )
 }
 
 @Composable
