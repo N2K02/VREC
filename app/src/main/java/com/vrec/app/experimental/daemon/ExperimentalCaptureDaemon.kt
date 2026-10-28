@@ -537,8 +537,8 @@ object ExperimentalCaptureDaemon {
                     temp.delete()
                     failures++
                     com.vrec.app.recording.RecordingFailureNotice.warn(
-                        context, "Recording could not be saved: " +
-                            (t.message ?: "audio import or storage error"))
+                        context, "A recording could not be saved. Check free storage and Diagnostics; " +
+                            "the original shell capture was kept for retry.")
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
                     continue
                 }
