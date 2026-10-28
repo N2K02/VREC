@@ -58,7 +58,7 @@ class HelperRepairEndToEndContractTest {
         val quit = shell.substringAfter("if (command == COMMAND_QUIT)")
             .substringBefore("if (command == COMMAND_RECORD)")
         assertTrue(quit.contains("activeRecording != null || callActive || fetches.get() > 0"))
-        assertTrue(quit.contains("replyValue").not() || quit.contains("\"BUSY\\n\""))
+        assertTrue(quit.contains("\"BUSY\\n\""))
         assertTrue(quit.contains("\"BYE\\n\""))
         assertTrue(quit.indexOf("if (busy)") < quit.indexOf("System.exit(0)"))
     }
