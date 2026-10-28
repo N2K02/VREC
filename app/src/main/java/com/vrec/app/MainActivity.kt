@@ -391,10 +391,14 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
                     verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(status, style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text("${details.info.caller} · ${details.info.source}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        LiveRecordingSourceIcon(details.info)
+                        Text("${details.info.caller} · ${details.info.source}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 Text(details.duration, style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
@@ -713,6 +717,7 @@ private fun RecordingNowCard(state: RecordingService.State) {
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                LiveRecordingSourceIcon(details.info)
                 Text(details.info.source, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val direction = when (details.info.direction) {
