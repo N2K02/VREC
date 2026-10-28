@@ -143,7 +143,7 @@ object ExperimentalCaptureDaemon {
         context.assets.open(ASSET).use(ShellHelperBuildPolicy::fingerprint)
 
     /** Detect an obsolete daemon without sending newer commands it cannot answer. */
-    suspend fun runningBuildStatus(context: Context): ShellHelperBuildPolicy.Decision {
+    internal suspend fun runningBuildStatus(context: Context): ShellHelperBuildPolicy.Decision {
         val banner = pingBanner(context)
         if (banner?.startsWith("PONG 2") != true) {
             return ShellHelperBuildPolicy.Decision.INCOMPATIBLE_PROTOCOL
