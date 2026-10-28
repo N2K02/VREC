@@ -154,12 +154,7 @@ class OverlayControlService : Service() {
             setOnClickListener {
                 if (AdbFallbackNotice.enhancedActive.value) {
                     val action = if (AdbFallbackNotice.enhancedPaused.value) 'R' else 'P'
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        val result = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.captureControl(applicationContext, action)
-                        if (result == "PAUSED" || result == "RECORDING") {
-                            AdbFallbackNotice.setEnhancedPaused(applicationContext, result == "PAUSED")
-                        }
-                    }
+                    EnhancedCaptureControlReceiver.request(applicationContext, action)
                     return@setOnClickListener
                 }
                 if (stoppingSince != null || !Prefs.recordingEnabled(this@OverlayControlService))
@@ -175,10 +170,7 @@ class OverlayControlService : Service() {
             setColorFilter(Color.WHITE)
             setOnClickListener {
                 if (AdbFallbackNotice.enhancedActive.value) {
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        val result = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.captureControl(applicationContext, 'S')
-                        if (result == "STOPPED") AdbFallbackNotice.shellStoppedByUser(applicationContext)
-                    }
+                    EnhancedCaptureControlReceiver.request(applicationContext, 'S')
                     return@setOnClickListener
                 }
                 // Stop is available only for an authenticated active shell capture.
