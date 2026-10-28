@@ -573,8 +573,9 @@ fun RecordingsList() {
             onSeek = { ms -> if (playingPath == rec.file.absolutePath) runCatching { player.seekTo(ms.toInt()); playbackPosition = ms } },
             onStop = { stopPlayback() },
             onDismiss = { currentRecording = null },
-            onSave = { notes, favorite, name, number, country, sim, carrier ->
-                if (RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)) {
+            onSave = { notes, favorite, name, number, country, sim, carrier, flow ->
+                if (RecordingStore.updateDetails(rec, notes, favorite, name, number, country,
+                        sim, carrier, flow)) {
                     refresh++
                     currentRecording = null
                 } else {
@@ -748,7 +749,8 @@ private fun RecordingRow(
 private fun RecordingDetailsDialog(
     rec: Recording, playing: Boolean, active: Boolean, speed: Float, positionMs: Long, playbackDurationMs: Long,
     onSeek: (Long) -> Unit, onStop: () -> Unit, onDismiss: () -> Unit,
-    onSave: (String, Boolean, String?, String?, String?, String?, String?) -> Unit, onPlay: () -> Unit, onSpeed: () -> Unit,
+    onSave: (String, Boolean, String?, String?, String?, String?, String?, String?) -> Unit,
+    onPlay: () -> Unit, onSpeed: () -> Unit,
     onBookmark: () -> Unit, onShareAudio: () -> Unit, onExportDetails: () -> Unit,
 ) {
     var notes by remember(rec.file.absolutePath) { mutableStateOf(rec.notes) }
@@ -758,6 +760,10 @@ private fun RecordingDetailsDialog(
     var countryCode by remember(rec.file.absolutePath) { mutableStateOf(rec.countryCode.orEmpty()) }
     var simLabel by remember(rec.file.absolutePath) { mutableStateOf(rec.simLabel.orEmpty()) }
     var carrier by remember(rec.file.absolutePath) { mutableStateOf(rec.carrier.orEmpty()) }
+    var callFlowDirection by remember(rec.file.absolutePath) {
+        mutableStateOf(rec.callFlowDirection?.uppercase(Locale.ROOT)
+            ?.takeIf { it == "INCOMING" || it == "OUTGOING" } ?: "UNKNOWN")
+    }
     var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
     var moreOpen by remember(rec.file.absolutePath) { mutableStateOf(false) }
     var measuredDurationMs by remember(rec.file.absolutePath) { mutableStateOf(0L) }
@@ -904,6 +910,10 @@ private fun RecordingDetailsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 RecordingDetailSection("Call details") {
                     DetailLine("Call type", callType)
+                    DetailLine("Direction", RecordingListLabels.direction(
+                        rec.direction, rec.callFlowDirection).takeIf {
+                            it == "Incoming" || it == "Outgoing"
+                        })
                     DetailLine("Phone number", number)
                     DetailLine("Contact", rec.contactName)
                     DetailLine("Country", rec.countryCode)
@@ -963,6 +973,21 @@ private fun RecordingDetailsDialog(
                 }
                 if (editing) {
                     RecordingDetailSection("Edit details") {
+                        if (rec.direction == CallDirection.VOIP ||
+                            rec.callType.equals("VOIP", ignoreCase = true)) {
+                            Text("Call direction", style = MaterialTheme.typography.labelMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("UNKNOWN" to "Unknown", "INCOMING" to "Incoming",
+                                    "OUTGOING" to "Outgoing").forEach { (value, label) ->
+                                    FilterChip(selected = callFlowDirection == value,
+                                        onClick = { callFlowDirection = value },
+                                        label = { Text(label) })
+                                }
+                            }
+                            Text("For an older VoIP recording, select a direction only if you know it.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         OutlinedTextField(value = contactName, onValueChange = { contactName = it },
                             label = { Text("Contact name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = phoneNumber, onValueChange = { phoneNumber = it },
@@ -987,7 +1012,8 @@ private fun RecordingDetailsDialog(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Close") }
                 if (editing) Button(onClick = {
-                    onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier)
+                    onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel,
+                        carrier, callFlowDirection.takeUnless { it == "UNKNOWN" })
                 }) { Text("Save changes") }
             }
         }
