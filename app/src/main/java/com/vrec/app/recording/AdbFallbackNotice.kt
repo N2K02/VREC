@@ -12,6 +12,9 @@ import androidx.core.app.NotificationCompat
 import com.vrec.app.Log
 import com.vrec.app.Prefs
 import com.vrec.app.MainActivity
+import com.vrec.app.LiveRecordingInfoResolver
+import com.vrec.app.RecordingNotificationPresentation
+import com.vrec.app.RecordingTransportPresentation
 import com.vrec.app.R
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -76,6 +79,11 @@ object AdbFallbackNotice {
                     .setAction(OverlayControlService.ACTION_SHOW))
             }.onFailure { Log.w("Shell overlay unavailable", it) }
         }
+        notifyShellCapture(context, paused = false)
+    }
+
+    /** Android's built-in chronometer updates every second without wake-up polling. */
+    private fun notifyShellCapture(context: Context, paused: Boolean) {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) return
@@ -84,18 +92,30 @@ object AdbFallbackNotice {
             manager.createNotificationChannel(NotificationChannel(
                 CHANNEL, "ADB recording status", NotificationManager.IMPORTANCE_LOW))
         }
+        val info = LiveRecordingInfoResolver.fromShellFile(context, recordingFile.value)
+        val start = segmentStartedAt.value
+        val elapsedMs = if (paused) pausedElapsedMs.value else
+            start?.let { (System.currentTimeMillis() - it).coerceAtLeast(0L) }
+        val elapsed = RecordingTransportPresentation.durationLabel(elapsedMs)
+        val description = RecordingNotificationPresentation.description(info, paused, elapsed)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("VRec · Shell recording")
-            .setContentText("Enhanced call audio capture started")
+            .setContentTitle(RecordingNotificationPresentation.title(info.caller, paused))
+            .setContentText(description)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(description))
             .setContentIntent(PendingIntent.getActivity(context, 89,
                 Intent(context, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setWhen(start ?: System.currentTimeMillis())
+            .setShowWhen(start != null)
+            .setUsesChronometer(RecordingNotificationPresentation.showsChronometer(paused, start))
             .setOngoing(true)
-            .addAction(0, "Pause", controlIntent(context, 'P', 901))
-            .addAction(0, "Stop", controlIntent(context, 'S', 902))
             .setOnlyAlertOnce(true)
+            .addAction(0, if (paused) "Resume" else "Pause",
+                controlIntent(context, if (paused) 'R' else 'P', 901))
+            .addAction(0, "Stop & Save", controlIntent(context, 'S', 902))
             .build()
         runCatching { manager.notify(NOTIFICATION_ID, notification) }
             .onFailure { Log.w("Shell recording notification unavailable", it) }
@@ -132,24 +152,7 @@ object AdbFallbackNotice {
             return
         }
         enhancedPaused.value = paused
-        val manager = context.getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
-            manager.createNotificationChannel(NotificationChannel(
-                CHANNEL, "ADB recording status", NotificationManager.IMPORTANCE_LOW))
-        }
-        val notice = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(if (paused) "VRec · Recording paused" else "VRec · Shell recording")
-            .setContentText(if (paused) "Resume or stop enhanced capture" else "Enhanced call audio capture active")
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .addAction(0, if (paused) "Resume" else "Pause",
-                controlIntent(context, if (paused) 'R' else 'P', 901))
-            .addAction(0, "Stop", controlIntent(context, 'S', 902))
-            .build()
-        if (Build.VERSION.SDK_INT < 33 ||
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
-            manager.notify(NOTIFICATION_ID, notice)
+        notifyShellCapture(context, paused)
     }
 
     /** Rebuild Android's transient UI after a process restart. */
