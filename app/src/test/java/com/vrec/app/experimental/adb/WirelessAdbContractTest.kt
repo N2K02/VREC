@@ -24,14 +24,14 @@ class WirelessAdbContractTest {
         assertTrue(controller.contains("AdbPrivilegedApiHelper.startWithAdb(context)"))
     }
 
-    @Test fun automaticFirstOpenAndNotificationCodeAreSupported() {
+    @Test fun explicitSetupStartsDiscoveryAndNotificationCodeIsSupported() {
         val home = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val ui = read("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         val manifest = read("app/src/main/AndroidManifest.xml")
-        assertTrue(home.contains("LaunchedEffect(Unit)"))
-        assertTrue(home.contains("LocalWirelessAdb.start(context)"))
-        assertTrue(home.contains("LocalAdbMiddleware.setup(context, userInitiated = false)"))
+        assertTrue(home.contains("LocalWirelessAdb.start(context, userInitiated = true)"))
+        assertFalse(home.contains("LocalAdbMiddleware.setup(context, userInitiated = false)"))
+        assertTrue(ui.contains("LocalWirelessAdb.openSettings(context)"))
         assertTrue(ui.contains("Pair and configure ADB"))
         assertTrue(wireless.contains("_adb-tls-pairing._tcp"))
         assertTrue(wireless.contains("_adb-tls-connect._tcp"))
