@@ -3,21 +3,24 @@
 This document reflects the ADB-only changes in the experimental branch.
 Stable `main` stays untouched until review.
 
-## USB-only connection
+## First-time wireless pairing and USB fallback
 
-VRec includes an embedded ADB client and a sandboxed local diagnostic runner;
-neither is a substitute for a physically authorized USB ADB host. Enable
-USB debugging, connect to a trusted external USB host, approve the prompt,
-then run `adb tcpip 5555` there. VRec will connect to localhost TCP/5555,
-verify Android shell UID 2000, attempt eligible permission grants, and start
-the independent bundled app_process recorder. It does not expose Wireless
-Debugging pairing, mDNS discovery, or transport selection.
+On Android 11+, the user enables USB debugging and Wireless debugging,
+chooses Android's pairing-code dialog and enters the six-digit code in VRec.
+VRec discovers only this phone's mDNS TLS endpoints, verifies UID 2000,
+attempts supported grants, and starts the independent bundled app_process
+recorder. The initial Android pairing approval cannot be bypassed.
 
-On unrooted, USB-only Huawei firmware **without** another host or an existing
-authorized TCP endpoint, first-time elevated ADB access cannot be established
-by a local app shell, PRoot, Termux or a Windows container. TCP can stop
-listening after reboot. It can also expose ADB externally even when VRec
-uses loopback; treat the debugging endpoint as sensitive.
+After shell UID 2000 is verified, **automatic TCP/5555 is enabled by default**.
+VRec switches adbd, waits for the listener, reconnects to localhost:5555
+and re-verifies shell UID and helper readiness. The listener may also be
+reachable from other devices on the network; Settings lets the user opt out
+and disable the listener when connected.
+
+On older Android versions without Wireless debugging, a trusted external
+USB ADB host must approve the debugging prompt and run
+`adb devices` followed by `adb tcpip 5555`. Neither VRec nor an ordinary
+Termux app can self-authorize USB ADB. Reboot can reset debugging on any device.
 
 ## Home and navigation
 
@@ -58,14 +61,13 @@ channel; metadata identifies only observed details.
 
 ## ADB security choices and recovery
 
-- **Wireless debugging is kept by default.** After a verified wireless
-  connection (shell UID 2000), VRec stays on the encrypted Wireless debugging
-  TLS session. It moves ADB to TCP/5555 only when the user turns on
-  *Settings → Experimental → Keep ADB without Wi-Fi (TCP/5555)* and confirms
-  the network-exposure warning. Shell UID 2000 is re-verified after every
-  transport change, and setup is reported ready only when the recording helper
-  answers. *Disable TCP/5555* closes the listener; if VRec has no session, the
-  UI explains how to close it from Developer options.
+- **Automatic TCP/5555 after verification.** Wireless ADB pairing is only
+  needed for initial authorization or repair after keys change. VRec defaults
+  to moving verified UID 2000 to TCP/5555 and reconnecting. This can expose
+  ADB to the network. The user can turn the mode off under *Settings →
+  Keep ADB without Wi-Fi (TCP/5555)*. Disabling the preference does not itself
+  guarantee an already listening endpoint has closed; VRec attempts to shut
+  it down when a verified session is available and reports the result.
 - **Restore after restart is opt-in** (*Restore after restart*, default off).
   Only then does VRec request `WRITE_SECURE_SETTINGS` through the verified
   shell (revoked again when switched off). After a reboot, which Android uses
@@ -88,7 +90,7 @@ channel; metadata identifies only observed details.
   Disconnect both stop automatic reconnection.
 - Wireless discovery is bounded (60 s per automatic search, backoff up to
   10 minutes, paused after 5 empty searches) and uses a single-flight lock
-  for connect → UID 2000 → optional TCP switch → helper.
+  for connect → UID 2000 → automatic TCP switch (unless disabled) → helper.
 
 ## Validation boundaries
 
@@ -100,6 +102,6 @@ SIM versus VoIP identity, and Android-denied permission behavior.
 
 Device validation still required for: restore after a real reboot (and OEMs
 such as Huawei/EMUI that may refuse the Wireless debugging setting), revoked
-authorization, slow adbd restarts during the optional TCP switch, SIM/VoIP
+authorization, slow adbd restarts during the automatic TCP switch, SIM/VoIP
 capture and two-sided audio. CI passing proves build and unit-test
 compatibility only.
