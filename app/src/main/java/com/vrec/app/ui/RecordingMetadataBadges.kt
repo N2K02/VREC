@@ -4,14 +4,13 @@ import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,8 +38,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Compact source and direction badges below the caller. Playback remains a
- * separate button: the app icon is informational, never a replacement for Play.
+ * Two compact informational chips, independent of recording playback:
+ * the originating app/phone source and the observed call direction.
  */
 @Composable
 internal fun RecordingMetadataBadges(
@@ -51,15 +51,21 @@ internal fun RecordingMetadataBadges(
     modifier: Modifier = Modifier,
 ) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val sourceTint = when (kind) {
-        RecordingListLabels.SourceKind.APP -> if (dark) Color(0xFFCEB5FF) else Color(0xFF6843A6)
-        RecordingListLabels.SourceKind.PHONE -> if (dark) Color(0xFF9DCBFF) else Color(0xFF225E9F)
-        RecordingListLabels.SourceKind.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+    val accent = RecordingListLabels.sourceAccent(kind, sourcePackage)
+    val sourceTint = when (accent) {
+        RecordingListLabels.SourceAccent.GREEN ->
+            if (dark) Color(0xFF91E3AF) else Color(0xFF247344)
+        RecordingListLabels.SourceAccent.BLUE ->
+            if (dark) Color(0xFFA3D0FF) else Color(0xFF22649F)
+        RecordingListLabels.SourceAccent.VIOLET ->
+            if (dark) Color(0xFFD3BDF6) else Color(0xFF7351AA)
+        RecordingListLabels.SourceAccent.NEUTRAL ->
+            MaterialTheme.colorScheme.onSurfaceVariant
     }
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             SourceAppBadge(kind, sourcePackage, sourceLabel, sourceTint, dark)
@@ -68,10 +74,18 @@ internal fun RecordingMetadataBadges(
         Text(
             fileSize,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
     }
+}
+
+/** Subtle tinted surface + fine outline avoids bulky solid-color pills. */
+private fun Modifier.metadataPill(tint: Color, dark: Boolean): Modifier {
+    val shape = RoundedCornerShape(50)
+    return background(tint.copy(alpha = if (dark) 0.15f else 0.09f), shape)
+        .border(0.75.dp, tint.copy(alpha = if (dark) 0.32f else 0.22f), shape)
 }
 
 @Composable
@@ -90,12 +104,11 @@ private fun SourceAppBadge(
             }
         } else null
     }
-    val shape = RoundedCornerShape(50)
     Row(
         modifier = Modifier
-            .widthIn(max = 180.dp)
-            .background(tint.copy(alpha = if (dark) 0.21f else 0.11f), shape)
-            .padding(horizontal = 9.dp, vertical = 6.dp),
+            .widthIn(max = 166.dp)
+            .metadataPill(tint, dark)
+            .padding(horizontal = 9.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -125,6 +138,7 @@ private fun SourceAppBadge(
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
             color = tint,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -135,22 +149,36 @@ private fun SourceAppBadge(
 @Composable
 private fun DirectionBadge(direction: String, dark: Boolean) {
     val (title, tint, icon) = when (direction) {
-        "Incoming" -> Triple("Incoming", if (dark) Color(0xFF97D8A4) else Color(0xFF237642),
-            Icons.Filled.CallReceived)
-        "Outgoing" -> Triple("Outgoing", if (dark) Color(0xFF92C7FF) else Color(0xFF1767A7),
-            Icons.Filled.CallMade)
-        "VoIP" -> Triple("Direction ?", MaterialTheme.colorScheme.onSurfaceVariant,
-            Icons.Filled.Call)
-        else -> Triple("Direction ?", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Filled.Call)
+        "Incoming" -> Triple(
+            "Incoming",
+            if (dark) Color(0xFF91E3AF) else Color(0xFF247344),
+            Icons.Filled.CallReceived,
+        )
+        "Outgoing" -> Triple(
+            "Outgoing",
+            if (dark) Color(0xFFA3D0FF) else Color(0xFF22649F),
+            Icons.Filled.CallMade,
+        )
+        else -> Triple(
+            "Direction ?",
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            Icons.Filled.Call,
+        )
     }
     Row(
         modifier = Modifier
-            .background(tint.copy(alpha = if (dark) 0.21f else 0.11f), RoundedCornerShape(50))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .metadataPill(tint, dark)
+            .padding(horizontal = 9.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
-        Text(title, style = MaterialTheme.typography.labelSmall, color = tint, maxLines = 1)
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
+            maxLines = 1,
+        )
     }
 }
