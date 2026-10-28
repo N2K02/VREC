@@ -38,7 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VrecAccessibilityService
-import com.vrec.app.experimental.adb.AdbLifecycle
+import com.vrec.app.experimental.adb.AdbForegroundSetup
 import com.vrec.app.experimental.adb.AdbOnboardingPolicy
 import com.vrec.app.experimental.adb.AdbBadgePolicy
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
@@ -119,16 +119,15 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         setupTapInFlight = true
         scope.launch {
             try {
-                AdbLifecycle.coordinateSetup {
-                if (wireless.connectPort != null &&
-                    ExperimentalRecording.wirelessWasPaired(context)) {
-                    LocalWirelessAdb.retry(context)
-                } else {
-                    val restored = LocalAdbMiddleware.setup(context, userInitiated = true)
-                    if (!restored && !ExperimentalRecording.tcpPortListening())
-                        LocalWirelessAdb.start(context, userInitiated = true)
-                }
-                }
+                AdbForegroundSetup.startOrRepair(context)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                LocalAdbMiddleware.lastSetupFailed.value = true
+                LocalAdbMiddleware.message.value =
+                    "ADB setup could not complete: " +
+                    (failure.message ?: "unexpected error") +
+                    ". Check ADB diagnostics and retry."
             } finally {
                 setupTapInFlight = false
             }
