@@ -4,6 +4,7 @@ import com.vrec.app.recording.CallDirection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RecordingNotificationPresentationTest {
@@ -40,7 +41,6 @@ class RecordingNotificationPresentationTest {
             LiveRecordingInfoResolver.preferredCaller("Known contact", "+23050123456", null))
         assertEquals("+23050123456",
             LiveRecordingInfoResolver.preferredCaller(null, " +23050123456 "))
-        assertEquals("Unknown caller",
-            LiveRecordingInfoResolver.preferredCaller(" ", null, ""))
+        assertNull(LiveRecordingInfoResolver.preferredCaller(" ", null, ""))
     }
 }
