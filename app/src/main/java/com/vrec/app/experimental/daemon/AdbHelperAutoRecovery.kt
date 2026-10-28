@@ -215,6 +215,14 @@ object AdbHelperAutoRecovery {
         } else reconnectTcpUncoordinated(app, automatic = false)
 
     /**
+     * The caller already holds AdbLifecycle's transport lock for the complete
+     * wireless -> tcpip -> reconnect transaction. Preserve automatic/manual
+     * intent WITHOUT acquiring that same (non-reentrant) mutex a second time.
+     */
+    internal suspend fun reconnectTcpWithinSetup(app: Context, automatic: Boolean): AdbFailure? =
+        reconnectTcpUncoordinated(app, automatic)
+
+    /**
      * Caller holds the shared transport mutex (or invoked explicitly from
      * LocalWirelessAdb while its entire pairing/switch transaction holds it).
      */
