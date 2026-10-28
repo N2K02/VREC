@@ -58,7 +58,37 @@ internal object RecordingListLabels {
     private val sourceOnlyLabels = setOf(
         "whatsapp", "whatsapp business", "telegram", "signal", "messenger",
         "viber", "voip", "voip app", "sim", "phone", "unknown",
+        "unknown caller", "unknown contact", "incoming call", "outgoing call",
     )
+
+    /**
+     * Never invent a contact name or phone number. If caller identity is absent,
+     * describe the observed call using source, direction and call medium instead.
+     */
+    fun callSummary(
+        direction: CallDirection,
+        source: String?,
+        mediaType: String? = null,
+    ): String {
+        val flow = when (direction) {
+            CallDirection.INCOMING -> "Incoming"
+            CallDirection.OUTGOING -> "Outgoing"
+            else -> null
+        }
+        val app = source?.trim()?.takeUnless {
+            it.isBlank() || it.lowercase(Locale.ROOT) in setOf(
+                "unknown", "unknown source", "adb shell")
+        }?.let {
+            when (it.lowercase(Locale.ROOT)) {
+                "voip app" -> "VoIP"
+                else -> it
+            }
+        }
+        if (flow == null && app == null) return "Recorded call"
+        val type = if (mediaType?.equals("VIDEO", ignoreCase = true) == true)
+            "video call" else "call"
+        return listOfNotNull(flow, app, type).joinToString(" ")
+    }
 
     fun contact(
         savedName: String?,
@@ -66,6 +96,9 @@ internal object RecordingListLabels {
         peer: String?,
         phoneNumber: String?,
         fileName: String? = null,
+        direction: CallDirection = CallDirection.UNKNOWN,
+        source: String? = null,
+        mediaType: String? = null,
     ): String = listOf(
         savedName,
         lookedUpName?.takeUnless { it.trim() == phoneNumber?.trim() },
@@ -76,7 +109,7 @@ internal object RecordingListLabels {
         value?.trim()?.takeIf {
             it.isNotEmpty() && it.lowercase(Locale.ROOT) !in sourceOnlyLabels
         }
-    } ?: "Unknown caller"
+    } ?: callSummary(direction, source, mediaType)
 
     private fun legacyFilenameContact(fileName: String?): String? {
         val name = fileName ?: return null
