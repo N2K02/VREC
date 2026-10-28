@@ -571,9 +571,12 @@ fun RecordingsList() {
             onStop = { stopPlayback() },
             onDismiss = { currentRecording = null },
             onSave = { notes, favorite, name, number, country, sim, carrier ->
-                RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)
-                refresh++
-                currentRecording = null
+                if (RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)) {
+                    refresh++
+                    currentRecording = null
+                } else {
+                    Toast.makeText(context, "Could not save details. Check free storage and retry.", Toast.LENGTH_LONG).show()
+                }
             },
             onPlay = { togglePlay(rec) },
             onSpeed = {
@@ -584,8 +587,8 @@ fun RecordingsList() {
             },
             onBookmark = {
                 val position = if (playingPath == rec.file.absolutePath) runCatching { player.currentPosition.toLong() }.getOrDefault(0L) else 0L
-                RecordingStore.addBookmark(rec, position)
-                refresh++
+                if (RecordingStore.addBookmark(rec, position)) refresh++
+                else Toast.makeText(context, "Could not save bookmark. Check storage.", Toast.LENGTH_LONG).show()
             },
             onShareAudio = { share(rec) }, onExportDetails = { shareDetails(rec) },
         )
@@ -610,7 +613,10 @@ fun RecordingsList() {
                     if (targets.any { it.file.absolutePath == playingPath }) {
                         stopPlayback()
                     }
-                    targets.forEach { RecordingStore.delete(it) }
+                    val failures = targets.count { !RecordingStore.delete(it) }
+                    if (failures > 0) {
+                        Toast.makeText(context, "$failures recording(s) could not be fully deleted.", Toast.LENGTH_LONG).show()
+                    }
                     confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null
                     selectedPaths = emptySet(); selectionMode = false; currentRecording = null; refresh++
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
