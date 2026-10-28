@@ -201,7 +201,9 @@ object LocalWirelessAdb {
                                     // Skip if pairing or Retry got there first.
                                     if (!transition.tryLock()) return@launch
                                     try {
-                                        if (!stale()) connectAndSwitch(app, port, automatic = true)
+                                        if (!stale()) AdbLifecycle.coordinateSetup {
+                                            if (!stale()) connectAndSwitch(app, port, automatic = true)
+                                        }
                                     } finally { transition.unlock() }
                                 }
                             }
@@ -240,6 +242,7 @@ object LocalWirelessAdb {
         status.value = status.value.copy(pairing = true, phase = Phase.PAIRING,
             message = "Pairing with Android…")
         scope.launch { transition.withLock {
+            AdbLifecycle.coordinateSetup {
             val outcome = withTimeoutOrNull(30_000L) {
                 AdbTransport.pairLocal(app, pairingPort, code)
             } ?: Result.failure(IllegalStateException("Pairing timed out"))
@@ -264,6 +267,7 @@ object LocalWirelessAdb {
             }
             (app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .cancel(NOTIFICATION_ID)
+            }
         } }
     }
 
@@ -287,8 +291,8 @@ object LocalWirelessAdb {
                     result.exceptionOrNull()?.message))
             return false
         }
-        // Default: keep the authenticated Wireless debugging TLS session. TCP/5555
-        // is reachable from the network, so it is only used when the user opted in.
+        // Default: switch verified shell UID 2000 to TCP/5555 and reconnect.
+        // The user may opt out in Settings. The listener may be network-reachable.
         if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)
         val helperAnswers = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.probe(app)
         stop(app)
@@ -355,8 +359,10 @@ object LocalWirelessAdb {
         if (port != null) scope.launch {
             // Waits for an automatic attempt in flight, then re-checks state.
             transition.withLock {
-                ExperimentalRecording.allowManualRetry()
-                connectAndSwitch(context.applicationContext, port, automatic = false)
+                AdbLifecycle.coordinateSetup {
+                    ExperimentalRecording.allowManualRetry()
+                    connectAndSwitch(context.applicationContext, port, automatic = false)
+                }
             }
         }
         else status.value = status.value.copy(
