@@ -13,14 +13,17 @@ internal object CaptureSourceHandshake {
     suspend fun request(
         read: suspend () -> String?,
         waitBetween: suspend () -> Unit,
+        onTransportError: (Exception) -> Unit = {},
     ): String? {
         repeat(2) { attempt ->
             val reply = try {
                 read()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
                 // A timeout/reset is not evidence of an unsupported command.
+                // Surface only the exception category, never the pairing secret.
+                onTransportError(failure)
                 return null
             }
             if (reply != null) return reply.trim()
