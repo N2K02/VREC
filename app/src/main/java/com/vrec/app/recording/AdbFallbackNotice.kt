@@ -26,6 +26,21 @@ object AdbFallbackNotice {
     val handoffInProgress = MutableStateFlow(false)
     val enhancedActive = MutableStateFlow(false)
     val enhancedPaused = MutableStateFlow(false)
+    /** Authenticated shell filename; never a guessed call identity. */
+    val recordingFile = MutableStateFlow<String?>(null)
+    /** Current shell segment start, not necessarily the entire call start. */
+    val segmentStartedAt = MutableStateFlow<Long?>(null)
+    /** Frozen on confirmed pause; absent after a process restart. */
+    val pausedElapsedMs = MutableStateFlow<Long?>(null)
+
+    private fun timestamp(file: String): Long? =
+        com.vrec.app.experimental.daemon.ShellRecordingIdentity.fromName(file)?.startedAt
+
+    private fun clearDisplaySession() {
+        recordingFile.value = null
+        segmentStartedAt.value = null
+        pausedElapsedMs.value = null
+    }
     private val shellLifecycle = ShellRecordingLifecycle()
 
     /** Reserve before starting the standard recorder to prevent concurrent daemon arming. */
@@ -49,6 +64,9 @@ object AdbFallbackNotice {
     fun shellRecordingStarted(context: Context, file: String, reconciled: Boolean = false) {
         if (!(if (reconciled) shellLifecycle.reconcileRecording(file)
                 else shellLifecycle.started(file))) return
+        recordingFile.value = file
+        segmentStartedAt.value = timestamp(file)
+        pausedElapsedMs.value = null
         enhancedActive.value = true
         enhancedPaused.value = false
         RecordingFailureNotice.clearAfterCaptureStarted(context)
@@ -87,6 +105,7 @@ object AdbFallbackNotice {
         if (!shellLifecycle.ended(file)) return
         enhancedActive.value = false
         enhancedPaused.value = false
+        clearDisplaySession()
         dismiss(context)
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
     }
@@ -101,6 +120,11 @@ object AdbFallbackNotice {
     fun setEnhancedPaused(context: Context, paused: Boolean) {
         if (paused) {
             if (!shellLifecycle.pausedByUser() && !enhancedPaused.value) return
+            if (!enhancedPaused.value) {
+                pausedElapsedMs.value = segmentStartedAt.value?.let { start ->
+                    (System.currentTimeMillis() - start).coerceAtLeast(0L)
+                }
+            }
             enhancedActive.value = true
         } else if (!shellLifecycle.isActive()) {
             // Resume can return before its STARTED wake. Do not claim a new
@@ -140,6 +164,8 @@ object AdbFallbackNotice {
     /** Paused captures have no active file, but still expose Resume and Stop. */
     fun reconcileAuthenticatedPaused(context: Context) {
         shellLifecycle.reconcilePaused()
+        // After process restart there is no trusted segment start time.
+        clearDisplaySession()
         // A missed END wake may leave the active overlay on screen.
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
         if (!enhancedActive.value) enhancedActive.value = true
@@ -160,6 +186,7 @@ object AdbFallbackNotice {
         if (!shellLifecycle.stoppedByUser() && !enhancedPaused.value && !enhancedActive.value) return
         enhancedActive.value = false
         enhancedPaused.value = false
+        clearDisplaySession()
         dismiss(context)
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
     }
@@ -168,6 +195,7 @@ object AdbFallbackNotice {
         if (!shellLifecycle.stoppedByUser() && !enhancedPaused.value) return
         enhancedActive.value = false
         enhancedPaused.value = false
+        clearDisplaySession()
         dismiss(context)
         runCatching { context.stopService(Intent(context, OverlayControlService::class.java)) }
     }
