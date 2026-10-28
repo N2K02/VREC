@@ -57,8 +57,14 @@ class VrecInCallService : InCallService() {
         }
         val state = details.state
         val number = details.handle?.takeIf { it.scheme.equals("tel", true) }?.schemeSpecificPart
-        val name = CallMetadataResolver.cleanName(details.contactDisplayName)
-            ?: CallMetadataResolver.cleanName(details.callerDisplayName)
+        val name = CallerPresentationPolicy.resolvedName(
+            isCellular = cellular && !selfManaged,
+            restrictedPresentation =
+                details.handlePresentation == TelecomManager.PRESENTATION_RESTRICTED,
+            name = CallMetadataResolver.cleanName(details.contactDisplayName)
+                ?: CallMetadataResolver.cleanName(details.callerDisplayName),
+            number = number,
+        )
         CallMonitor.onTelecomEvent(
             this, id, state, owner, !cellular || selfManaged,
             flow, number, name, account?.id, details.connectTimeMillis.takeIf { it > 0L },
