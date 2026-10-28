@@ -18,6 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -249,10 +253,21 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
         border = BorderStroke(0.75.dp, accent.copy(alpha = 0.28f)),
     ) {
         Column(
-            Modifier.padding(horizontal = 5.dp, vertical = 10.dp),
+            Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            Icon(
+                imageVector = when (label) {
+                    "Connection" -> Icons.Rounded.Link
+                    "Recording" -> Icons.Rounded.Mic
+                    "Recovery" -> Icons.Rounded.Refresh
+                    else -> Icons.Rounded.Security
+                },
+                tint = accent,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+            )
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
