@@ -122,25 +122,46 @@ fun PermissionDashboardCard() {
         if (label in setOf("Phone state", "Call history", "Contacts", "Notifications", "Advanced detection")) {
             scope.launch {
                 working = true
-                val result = com.vrec.app.experimental.adb.AdbPermissionBootstrap.grantEligible(context)
-                val stillDenied = runtime != null &&
-                    context.checkSelfPermission(runtime) != PackageManager.PERMISSION_GRANTED
-                actionMessage = if (!result.finished)
-                    "First authorize Android shell UID 2000 from Home, or request a permitted Android runtime grant."
-                else if (result.unavailable.isEmpty()) "ADB permission checks completed."
-                else result.unavailable.joinToString("; ")
-                working = false
-                // READ_CALL_LOG is restricted on some Android installers. ADB
-                // shell UID 2000 does not override installer allowlisting.
-                // Offer Android's supported runtime request as a fallback.
-                if (stillDenied) {
-                    actionMessage = "Android refused the ADB grant. Requesting $label directly."
-                    launcher.launch(runtime!!)
-                } else if (label == "Advanced detection" &&
-                    !CallDetectionAccess.isGranted(context)) {
-                    actionMessage = "Advanced Telecom detection is optional. Android has not granted this AppOp; the ADB recorder can still work with standard call-state detection."
+                try {
+                    val shell = ExperimentalRecording.status.value
+                    val authorized = shell.connected && shell.shellUid == 2000 &&
+                        com.vrec.app.experimental.adb.AdbTransport.isConnected
+                    // A runtime permission can be requested without ADB. Avoid
+                    // making Android's permission dialog depend on shell access.
+                    val result = if (authorized)
+                        com.vrec.app.experimental.adb.AdbPermissionBootstrap.grantEligible(context)
+                    else null
+                    val stillDenied = runtime != null &&
+                        context.checkSelfPermission(runtime) != PackageManager.PERMISSION_GRANTED
+                    actionMessage = when {
+                        result != null && result.finished && result.unavailable.isEmpty() ->
+                            "ADB permission checks completed."
+                        result != null && result.finished -> result.unavailable.joinToString("; ")
+                        label == "Advanced detection" ->
+                            "Advanced Telecom detection needs verified shell UID 2000. Repair ADB on Home; this AppOp is optional."
+                        else -> "Android can request this permission directly without ADB."
+                    }
+                    if (stillDenied) {
+                        // Restricted call log permission may still require
+                        // Android installer allowlisting or special approval.
+                        actionMessage = if (label == "Call history")
+                            "Requesting Call history. Android may require restricted-settings approval in App info."
+                        else "Requesting $label from Android."
+                        launcher.launch(runtime!!)
+                    } else if (label == "Advanced detection" &&
+                        !CallDetectionAccess.isGranted(context)) {
+                        actionMessage = "Advanced Telecom detection is optional; recording can still use standard call-state detection."
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    actionMessage = "Could not check $label: " +
+                        (failure.message ?: "Android permission request failed") +
+                        ". Open Android App info > Permissions."
+                } finally {
+                    working = false
+                    tick++
                 }
-                tick++
             }
         } else if (runtime != null) {
             launcher.launch(runtime)
