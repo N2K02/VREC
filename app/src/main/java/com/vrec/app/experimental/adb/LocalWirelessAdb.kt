@@ -328,6 +328,9 @@ object LocalWirelessAdb {
             return false
         }
         status.value = status.value.copy(phase = Phase.VERIFYING_TCP)
+        // tcpip restarts adbd: the old TLS UID 2000 is no longer a live
+        // verification. Clear it until localhost TCP reconnects and rechecks UID.
+        ExperimentalRecording.refreshConnectionStatus()
         // adbd restarts on tcpip: wait for the listener instead of a fixed pause,
         // then reconnect with retries for transient resets.
         var listening = false
