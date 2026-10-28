@@ -22,9 +22,14 @@ class EnhancedCaptureControlsContractTest {
         val overlay = source("app/src/main/java/com/vrec/app/recording/OverlayControlService.kt")
         val notice = source("app/src/main/java/com/vrec/app/recording/AdbFallbackNotice.kt")
         val receiver = source("app/src/main/java/com/vrec/app/recording/EnhancedCaptureControlReceiver.kt")
-        assertTrue(overlay.contains("ExperimentalCaptureDaemon.captureControl"))
+        // All four surfaces route to one guarded shell receiver instead of
+        // racing separate captureControl calls.
+        assertTrue(overlay.contains("EnhancedCaptureControlReceiver.request(applicationContext, action)"))
+        assertTrue(overlay.contains("EnhancedCaptureControlReceiver.request(applicationContext, 'S')"))
         assertTrue(notice.contains("controlIntent(context, 'S'"))
-        assertTrue(receiver.contains("ExperimentalCaptureDaemon.captureControl"))
+        assertTrue(receiver.contains("ExperimentalCaptureDaemon.captureControl(context, action)"))
+        assertTrue(receiver.contains("pendingAction.compareAndSet(null, action)"))
+        assertTrue(receiver.contains("CaptureControlPolicy.isAllowed(action"))
         assertTrue(notice.contains("enhancedPaused"))
     }
 }
