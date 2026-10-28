@@ -1,5 +1,7 @@
 package com.vrec.app
 
+import android.graphics.drawable.Drawable
+import android.widget.ImageView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
@@ -23,6 +27,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -122,5 +128,35 @@ internal fun LiveRecordingActions(
                 modifier = Modifier.size(if (compact) 17.dp else 19.dp))
             Text(if (compact) "Stop" else "Stop & Save")
         }
+    }
+}
+
+/** Show the actual installed VoIP app icon, falling back to the phone/app symbol. */
+@Composable
+internal fun LiveRecordingSourceIcon(info: LiveRecordingInfo) {
+    val context = LocalContext.current
+    val drawable by produceState<Drawable?>(null, info.packageName) {
+        value = info.packageName?.let { packageName ->
+            withContext(Dispatchers.IO) {
+                runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+            }
+        }
+    }
+    if (drawable != null) {
+        AndroidView(
+            factory = { ImageView(it).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            } },
+            update = { it.setImageDrawable(drawable) },
+            modifier = Modifier.size(20.dp),
+        )
+    } else {
+        Icon(
+            if (info.packageName == null) Icons.Rounded.Phone else Icons.Rounded.Apps,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(19.dp),
+        )
     }
 }
