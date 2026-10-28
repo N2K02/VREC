@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Tune
@@ -38,14 +40,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -110,6 +115,7 @@ import com.vrec.app.ui.SettingsScreen
 import com.vrec.app.ui.SetupScreen
 import com.vrec.app.ui.rememberReadiness
 import com.vrec.app.ui.theme.VrecTheme
+import com.vrec.app.ui.HomePanelStyle
 import com.vrec.app.update.AppUpdater
 import com.vrec.app.update.UpdateScreen
 
@@ -421,21 +427,26 @@ private fun HomeScreen() {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Recording dashboard", style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold)
-        Text("Automatic call capture and ADB helper status in one place.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Recording dashboard", style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold)
+            Text("Capture controls, connection health and permissions",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         recordingWarning?.let { warning ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(20.dp),
+                color = HomePanelStyle.color(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.65f)),
+                shadowElevation = 1.dp,
             ) {
-                Column(Modifier.padding(14.dp),
+                Column(Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Recording warning", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold)
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error)
                     Text(warning, style = MaterialTheme.typography.bodyMedium)
                     androidx.compose.material3.TextButton(
                         onClick = { RecordingFailureNotice.dismiss(context) }
@@ -447,23 +458,26 @@ private fun HomeScreen() {
             CallMonitor.setRecordingEnabled(context, enabled)
             recordingEnabled = enabled
         })
-        com.vrec.app.ui.PermissionDashboardCard()
         com.vrec.app.ui.LocalAdbHomeCard(
             recordingActive = recState is RecordingService.State.Recording || enhancedActive,
             standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
         )
+        com.vrec.app.ui.PermissionDashboardCard()
         if (recordingEnabled && !ready) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.errorContainer,
+                color = HomePanelStyle.color(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.55f)),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Enhanced recording unavailable",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold)
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error)
                     Text("The ADB shell helper is not ready. Calls will not be recorded until enhanced capture is restored. Reconnect ADB and check System Status.",
-                        style = MaterialTheme.typography.bodyMedium)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -474,12 +488,11 @@ private fun HomeScreen() {
 }
 
 
-/** Prominent, stable-compatible master toggle shown even before permissions are granted. */
+/** Primary Home control. Actual recording status and helper readiness remain separate. */
 @Composable
 private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolean, onEnabledChange: (Boolean) -> Unit) {
     val cardColor by animateColorAsState(
-        targetValue = if (enabled) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        targetValue = HomePanelStyle.color(highlight = enabled),
         label = "Recording master card color",
     )
     val adbStatus by ExperimentalRecording.status.collectAsState()
@@ -490,49 +503,77 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolea
         adbStatus.busy -> "CONNECTING"
         else -> "SETUP NEEDED"
     }
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val badgeColor = when (badge) {
-        "READY" -> Color(0xFF2E7D32)
-        "CONNECTING" -> Color(0xFFF9A825)
-        "RECORDING" -> Color(0xFF1565C0)
-        "OFF" -> Color(0xFF616161)
-        else -> Color(0xFFC62828)
+        "READY" -> if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
+        "CONNECTING" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
+        "RECORDING" -> if (dark) Color(0xFFFFA39D) else Color(0xFFB63832)
+        "OFF" -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> if (dark) Color(0xFFFFC58F) else Color(0xFF99621F)
     }
     val animatedBadgeColor by animateColorAsState(badgeColor, label = "Recording status color")
     Surface(
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(24.dp),
         color = cardColor,
+        border = HomePanelStyle.border(highlight = enabled),
+        shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth().animateContentSize(),
     ) {
-        Row(
-            Modifier.fillMaxWidth().clickable { onEnabledChange(!enabled) }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(Icons.Rounded.Mic, contentDescription = null,
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Recording", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        Icon(Icons.Rounded.Mic, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp))
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Automatic recording", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    Text(if (enabled) "Recording enabled" else "Recording disabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = animatedBadgeColor.copy(alpha = 0.14f),
+                    border = BorderStroke(0.75.dp, animatedBadgeColor.copy(alpha = 0.34f)),
+                ) {
+                    Text(badge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = animatedBadgeColor,
+                        fontWeight = FontWeight.SemiBold)
+                }
                 Text(
-                    if (enabled && !ready) "On — waiting for ADB recording helper. Calls cannot be captured yet."
-                    else if (enabled) "On — auto-start once per call; use controls to pause, stop or record again."
-                    else "Off — stops all recording and closes its controls.",
+                    when {
+                        enabled && !ready ->
+                            "Waiting for ADB helper. Calls cannot be captured yet."
+                        enabled -> "Auto-start once per call; use controls to pause or stop."
+                        else -> "All automatic recording is off."
+                    },
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Surface(shape = RoundedCornerShape(50),
-                    color = animatedBadgeColor) {
-                    Text(badge, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White)
-                }
-                RadioButton(selected = enabled, onClick = { onEnabledChange(!enabled) })
             }
         }
     }
@@ -580,31 +621,35 @@ private fun RecordingNowCard(state: RecordingService.State.Recording) {
     }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiary),
+        colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color(highlight = true)),
+        border = HomePanelStyle.border(highlight = true),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 BlinkingRecordingDot()
-                Text("Recording now", color = MaterialTheme.colorScheme.onTertiary,
-                    style = MaterialTheme.typography.titleMedium)
+                Text("Recording now", color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
             }
             Text(
                 (state.peer?.let { "$it · " } ?: "") + state.sourceLabel,
-                color = MaterialTheme.colorScheme.onTertiary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             LinearProgressIndicator(
                 progress = { fraction },
-                color = MaterialTheme.colorScheme.onTertiary,
-                trackColor = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.25f),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
                 modifier = Modifier.fillMaxWidth(),
             )
             if (state.silentSoFar && silentLongEnough) {
                 Text(
                     "No sound detected. Check the enhanced shell source and diagnostics in ADB settings.",
-                    color = MaterialTheme.colorScheme.onTertiary,
+                    color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
