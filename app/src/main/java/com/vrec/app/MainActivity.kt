@@ -276,7 +276,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen()
+                Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
@@ -404,7 +404,7 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 }
 
 @Composable
-private fun HomeScreen() {
+private fun HomeScreen(onOpenRecordings: () -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
@@ -418,15 +418,27 @@ private fun HomeScreen() {
     // a screen-scoped polling coroutine that restarts on every navigation.
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("Recording dashboard", style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold)
-            Text("Capture controls, connection health and permissions",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Recording dashboard", style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold, maxLines = 2)
+                Text("Capture and connection health",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FilledTonalButton(onClick = onOpenRecordings) {
+                Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(17.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.size(6.dp))
+                Text("Library")
+            }
         }
         recordingWarning?.let { warning ->
             Surface(
@@ -448,10 +460,22 @@ private fun HomeScreen() {
                 }
             }
         }
-        RecordingMasterCard(enabled = recordingEnabled, ready = ready, active = recording, onEnabledChange = { enabled ->
-            CallMonitor.setRecordingEnabled(context, enabled)
-            recordingEnabled = enabled
-        })
+        RecordingMasterCard(
+            enabled = recordingEnabled,
+            ready = ready,
+            active = recording && recState !is RecordingService.State.Paused,
+            paused = recState is RecordingService.State.Paused,
+            onEnabledChange = { enabled ->
+                CallMonitor.setRecordingEnabled(context, enabled)
+                recordingEnabled = enabled
+            },
+        )
+        if (recordingEnabled) {
+            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
+        }
+        Text("Connection & access", style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         com.vrec.app.ui.LocalAdbHomeCard(
             recordingActive = recState is RecordingService.State.Recording || enhancedActive,
             standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
@@ -475,33 +499,39 @@ private fun HomeScreen() {
                 }
             }
         }
-        if (recordingEnabled) {
-            (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-        }
     }
 }
 
 
 /** Primary Home control. Actual recording status and helper readiness remain separate. */
 @Composable
-private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolean, onEnabledChange: (Boolean) -> Unit) {
+private fun RecordingMasterCard(
+    enabled: Boolean,
+    ready: Boolean,
+    active: Boolean,
+    paused: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    val dashboardState = HomeDashboardPresentation.resolve(enabled, ready, active, paused)
     val cardColor by animateColorAsState(
-        targetValue = HomePanelStyle.color(highlight = enabled),
+        targetValue = HomePanelStyle.color(highlight = ready && enabled),
         label = "Recording master card color",
     )
     val adbStatus by ExperimentalRecording.status.collectAsState()
-    val badge = when {
-        !enabled -> "OFF"
-        active -> "RECORDING"
-        ready -> "READY"
-        adbStatus.busy -> "CONNECTING"
-        else -> "SETUP NEEDED"
+    val badge = when (dashboardState) {
+        HomeDashboardPresentation.State.RECORDING -> "RECORDING"
+        HomeDashboardPresentation.State.PAUSED -> "PAUSED"
+        HomeDashboardPresentation.State.OFF -> "OFF"
+        HomeDashboardPresentation.State.READY -> "READY"
+        HomeDashboardPresentation.State.SETUP_NEEDED ->
+            if (adbStatus.busy) "CONNECTING" else "SETUP NEEDED"
     }
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val badgeColor = when (badge) {
         "READY" -> if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
         "CONNECTING" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
         "RECORDING" -> if (dark) Color(0xFFFFA39D) else Color(0xFFB63832)
+        "PAUSED" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
         "OFF" -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> if (dark) Color(0xFFFFC58F) else Color(0xFF99621F)
     }
@@ -514,9 +544,19 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolea
         modifier = Modifier.fillMaxWidth().animateContentSize(),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(HomeDashboardPresentation.title(dashboardState),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold)
+                Text(HomeDashboardPresentation.detail(dashboardState),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f))
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -559,10 +599,12 @@ private fun RecordingMasterCard(enabled: Boolean, ready: Boolean, active: Boolea
                 }
                 Text(
                     when {
-                        enabled && !ready ->
-                            "Waiting for ADB helper. Calls cannot be captured yet."
-                        enabled -> "Auto-start once per call; use controls to pause or stop."
-                        else -> "All automatic recording is off."
+                        active -> "Capture is active."
+                        paused -> "Capture is paused."
+                        enabled && !ready && adbStatus.busy -> "Checking ADB authorization…"
+                        enabled && !ready -> "Waiting for the shell helper."
+                        enabled -> "Automatically record supported calls."
+                        else -> "Automatic capture disabled."
                     },
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
