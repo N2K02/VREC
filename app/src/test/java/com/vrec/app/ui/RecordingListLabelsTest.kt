@@ -90,4 +90,25 @@ class RecordingListLabelsTest {
         assertEquals(RecordingListLabels.SourceKind.APP, RecordingListLabels.sourceKind(
             CallDirection.VOIP, "com.whatsapp", "VOIP"))
     }
+    @Test fun sourceBadgeAccentsRespectAppIdentityAndKeepUnknownNeutral() {
+        val app = RecordingListLabels.SourceKind.APP
+        val phone = RecordingListLabels.SourceKind.PHONE
+        val unknown = RecordingListLabels.SourceKind.UNKNOWN
+        assertEquals(RecordingListLabels.SourceAccent.GREEN,
+            RecordingListLabels.sourceAccent(app, "com.whatsapp"))
+        assertEquals(RecordingListLabels.SourceAccent.GREEN,
+            RecordingListLabels.sourceAccent(app, "com.whatsapp.w4b"))
+        assertEquals(RecordingListLabels.SourceAccent.BLUE,
+            RecordingListLabels.sourceAccent(app, "org.telegram.messenger"))
+        assertEquals(RecordingListLabels.SourceAccent.BLUE,
+            RecordingListLabels.sourceAccent(app, "org.thoughtcrime.securesms"))
+        assertEquals(RecordingListLabels.SourceAccent.VIOLET,
+            RecordingListLabels.sourceAccent(app, "com.viber.voip"))
+        assertEquals(RecordingListLabels.SourceAccent.VIOLET,
+            RecordingListLabels.sourceAccent(app, "com.example.unknownvoip"))
+        assertEquals(RecordingListLabels.SourceAccent.BLUE,
+            RecordingListLabels.sourceAccent(phone, null))
+        assertEquals(RecordingListLabels.SourceAccent.NEUTRAL,
+            RecordingListLabels.sourceAccent(unknown, null))
+    }
 }
