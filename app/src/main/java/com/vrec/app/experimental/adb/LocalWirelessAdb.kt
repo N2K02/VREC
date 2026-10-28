@@ -285,7 +285,12 @@ object LocalWirelessAdb {
             return true
         }
         status.value = status.value.copy(phase = Phase.CONNECTING)
-        val result = ExperimentalRecording.connectWireless(app, port, automatic = automatic)
+        // Snapshot user choice for the entire transaction so a Settings toggle
+        // cannot make us skip helper startup without performing TCP promotion.
+        val switchToTcp = AdbUserChoices.tcpMode(app)
+        val result = ExperimentalRecording.connectWireless(
+            app, port, automatic = automatic, deferHelperUntilTcp = switchToTcp,
+        )
         if (result.isFailure) {
             status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED,
                 message = ExperimentalRecording.failureMessage(result.exceptionOrNull().adbFailure,
@@ -294,7 +299,7 @@ object LocalWirelessAdb {
         }
         // Default: switch verified shell UID 2000 to TCP/5555 and reconnect.
         // The user may opt out in Settings. The listener may be network-reachable.
-        if (AdbUserChoices.tcpMode(app)) return switchToLocalTcp(app)
+        if (switchToTcp) return switchToLocalTcp(app)
         val helperAnswers = com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.probe(app)
         stop(app)
         status.value = status.value.copy(
