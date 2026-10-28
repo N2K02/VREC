@@ -17,7 +17,8 @@ class WirelessTransitionContractTest {
         // ...which runs under the transition lock from discovery, pairing and Retry.
         assertTrue(src.contains("if (!transition.tryLock()) return@launch"))
         assertTrue(src.contains("scope.launch { transition.withLock {"))
-        assertTrue(src.contains("transition.withLock {\n                ExperimentalRecording.allowManualRetry()"))
+        assertTrue(src.contains("AdbLifecycle.coordinateSetup {"))
+        assertTrue(src.contains("transition.withLock {\n                AdbLifecycle.coordinateSetup {"))
         assertEquals(3, Regex("connectAndSwitch\\((app|context)[,.]").findAll(src).count())
     }
 
