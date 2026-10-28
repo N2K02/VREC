@@ -139,8 +139,14 @@ object ExperimentalCaptureDaemon {
         return result
     }
 
+    @Volatile private var cachedBundledBuild: String? = null
+
     private fun bundledBuild(context: Context): String =
-        context.assets.open(ASSET).use(ShellHelperBuildPolicy::fingerprint)
+        cachedBundledBuild ?: synchronized(this) {
+            cachedBundledBuild ?: context.assets.open(ASSET)
+                .use(ShellHelperBuildPolicy::fingerprint)
+                .also { cachedBundledBuild = it }
+        }
 
     /** Detect an obsolete daemon without sending newer commands it cannot answer. */
     internal suspend fun runningBuildStatus(context: Context): ShellHelperBuildPolicy.Decision {
