@@ -68,6 +68,9 @@ object AdbFallbackNotice {
         if (!(if (reconciled) shellLifecycle.reconcileRecording(file)
                 else shellLifecycle.started(file))) return
         recordingFile.value = file
+        Log.i("Capture diagnostic: authenticated shell STARTED app=" +
+            (com.vrec.app.experimental.daemon.ShellRecordingIdentity
+                .fromName(file)?.appPackage ?: "cellular"))
         segmentStartedAt.value = timestamp(file)
         pausedElapsedMs.value = null
         enhancedActive.value = true
@@ -123,6 +126,7 @@ object AdbFallbackNotice {
 
     fun shellRecordingEnded(context: Context, file: String) {
         if (!shellLifecycle.ended(file)) return
+        Log.i("Capture diagnostic: authenticated shell ENDED; import pending")
         // A pause intentionally finalizes the current segment. Retain its
         // caller/timer until the authenticated PAUSED reply is processed.
         val pausing = EnhancedCaptureControlReceiver.pendingAction.value == 'P'
