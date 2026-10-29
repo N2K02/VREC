@@ -22,7 +22,7 @@ android {
     defaultConfig {
         applicationId = "com.vrec.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 37
         versionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: appVersionCode
         versionName = appVersion + ((findProperty("appVersionSuffix") as String?) ?: "")
     }
@@ -35,6 +35,8 @@ android {
 
     signingConfigs {
         getByName("debug") {
+            applicationIdSuffix = ".experimental"
+            versionNameSuffix = "-debug"
             storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -48,7 +50,9 @@ android {
         }
         getByName("release") {
             isDebuggable = false
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Preserve the existing signing identity for in-place upgrades.
             signingConfig = signingConfigs.getByName("debug")
         }
