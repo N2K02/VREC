@@ -35,8 +35,6 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            applicationIdSuffix = ".experimental"
-            versionNameSuffix = "-debug"
             storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -46,6 +44,8 @@ android {
 
     buildTypes {
         getByName("debug") {
+            applicationIdSuffix = ".experimental"
+            versionNameSuffix = "-debug"
             signingConfig = signingConfigs.getByName("debug")
         }
         getByName("release") {
