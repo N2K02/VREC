@@ -47,7 +47,9 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         getByName("release") {
+            isDebuggable = false
             isMinifyEnabled = false
+            // Preserve the existing signing identity for in-place upgrades.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
