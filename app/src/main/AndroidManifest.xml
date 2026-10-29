@@ -39,7 +39,6 @@
         android:label="VREC"
         android:supportsRtl="true"
         android:theme="@style/Theme.VREC">
-        <activity android:name="com.vrec.app.LogsActivity" android:exported="false" android:label="Logs" />
         <provider android:name="com.vrec.app.CrashJournalProvider" android:authorities="${applicationId}.crashjournal" android:exported="false" android:initOrder="100" />
 
 

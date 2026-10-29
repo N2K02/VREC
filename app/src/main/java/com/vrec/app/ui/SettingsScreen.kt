@@ -206,15 +206,10 @@ fun SettingsScreen(
                 modifier = Modifier.clickable(onClick = onOpenSetup),
             )
             HorizontalDivider()
+            // Recording activity, persistent diagnostics and crash reports share one screen.
             ListItem(
                 headlineContent = { Text("Logs") },
-                supportingContent = { Text("Persistent diagnostic logs and crash reports") },
-                modifier = Modifier.clickable { context.startActivity(android.content.Intent(context, com.vrec.app.LogsActivity::class.java)) },
-            )
-            // Diagnostics and updates remain together at the bottom like mRadio.
-            ListItem(
-                headlineContent = { Text("Recording diagnostics") },
-                supportingContent = { Text("Recording events and diagnostics") },
+                supportingContent = { Text("Recording activity, diagnostics and crash reports") },
                 leadingContent = { Icon(Icons.Rounded.Article, contentDescription = null) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                 modifier = Modifier.clickable(onClick = onOpenLog),

@@ -89,7 +89,6 @@ import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
 import com.vrec.app.ui.SetupScreen
@@ -112,6 +111,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.initialize(applicationContext)
+        AppLog.init(applicationContext)
         LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
@@ -286,7 +286,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                     onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
                     onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                 )
-                Screen.LOG -> LogScreen()
+                Screen.LOG -> VRECLogsPage(onBack = { navigateBack() })
                 Screen.UPDATE -> UpdateScreen()
             }
         }
