@@ -90,6 +90,8 @@ internal fun LiveRecordingActions(
 ) {
     val context = LocalContext.current
     val pending by EnhancedCaptureControlReceiver.pendingAction.collectAsState()
+    val shellPaused by AdbFallbackNotice.enhancedPaused.collectAsState()
+    val paused = shellPaused || state is RecordingService.State.Paused
     val enabled = RecordingTransportPresentation.canPauseOrResume(state, shellActive) &&
         pending == null
     Row(
@@ -99,19 +101,19 @@ internal fun LiveRecordingActions(
         OutlinedButton(
             onClick = {
                 EnhancedCaptureControlReceiver.request(context,
-                    if (state is RecordingService.State.Paused) 'R' else 'P')
+                    if (paused) 'R' else 'P')
             },
             enabled = enabled,
             modifier = Modifier.weight(1f).height(43.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
         ) {
             Icon(
-                if (state is RecordingService.State.Paused)
+                if (paused)
                     Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
                 contentDescription = null,
                 modifier = Modifier.size(if (compact) 17.dp else 19.dp),
             )
-            Text(if (state is RecordingService.State.Paused) "Resume" else "Pause")
+            Text(if (paused) "Resume" else "Pause")
         }
         Button(
             onClick = { EnhancedCaptureControlReceiver.request(context, 'S') },
