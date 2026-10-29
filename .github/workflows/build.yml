@@ -45,6 +45,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Test public version resolution
+        run: bash .github/scripts/test-public-version.sh
+
       - name: Work out version and release notes
         env:
           REQUESTED: ${{ github.event.inputs.version }}
@@ -53,7 +56,9 @@ jobs:
           # Latest release tag of the form vMAJOR.MINOR (v1.9, v2.0, ...).
           # Preserve the highest installed release lineage from source or public distribution.
           local_last=$(git tag -l 'v[0-9]*' | grep -E '^v[0-9]+[.][0-9]$' | sort -V | tail -1 || true)
-          public_last=$(gh api 'repos/N2K02/n2k02.github.io/releases?per_page=100' --jq '.[].tag_name' 2>/dev/null | sed -nE 's/^vrec-v([0-9]+[.][0-9])(-build-[0-9]+)?$/v\1/p' | sort -V | tail -1 || true)
+          # Query *all* matching public tag refs; the first 100 shared releases are not enough.
+          # A lookup error aborts the build instead of silently reusing an older version.
+          public_last=$(bash .github/scripts/latest-public-version.sh vrec)
           last=$(printf '%s\n%s\n' "$local_last" "$public_last" | sort -V | tail -1)
           if [ -n "$REQUESTED" ]; then
             echo "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]$' || { echo "::error::Version must look like 1.0"; exit 1; }
@@ -64,6 +69,14 @@ jobs:
             t=${last#v}
             n=$(( ${t%.*} * 10 + ${t#*.} + 1 ))
             ver="$(( n / 10 )).$(( n % 10 ))"
+          fi
+          # An explicit workflow_dispatch version must also advance the public channel.
+          if [ -n "$last" ]; then
+            max=$(printf '%s\n%s\n' "$last" "v$ver" | sort -V | tail -1)
+            if [ "$max" != "v$ver" ] || [ "$last" = "v$ver" ]; then
+              echo "::error::Requested v$ver must be newer than latest published $last"
+              exit 1
+            fi
           fi
           if git rev-parse -q --verify "refs/tags/v$ver" >/dev/null; then
             echo "::error::Release v$ver already exists; choose the next version."
