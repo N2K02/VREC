@@ -216,6 +216,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
         },
         bottomBar = {
             val recordingState by RecordingService.state.collectAsState()
+            val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
             val updateStatus by LiveUpdater.controller.status.collectAsState()
             Surface(
                 color = MaterialTheme.colorScheme.surface,
@@ -224,7 +225,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
             ) {
                 Column(Modifier.navigationBarsPadding()) {
                     if (screen != Screen.HOME &&
-                        recordingState !is RecordingService.State.Idle) {
+                        (recordingState !is RecordingService.State.Idle || shellActive)) {
                         VrecRecordingMiniBar(recordingState) { navigateTo(Screen.HOME) }
                     }
                     HorizontalDivider(
@@ -409,12 +410,13 @@ private fun BlinkingRecordingDot(modifier: Modifier = Modifier) {
 @Composable
 private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Unit) {
     val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val shellPaused by AdbFallbackNotice.enhancedPaused.collectAsState()
     val details = rememberLiveRecordingDisplay()
-    val status = when (state) {
-        is RecordingService.State.Paused -> "Recording paused"
-        is RecordingService.State.Starting -> "Starting recording"
-        is RecordingService.State.Recording -> "Recording now"
-        is RecordingService.State.Stopping -> "Saving recording"
+    val status = when {
+        shellPaused || state is RecordingService.State.Paused -> "Recording paused"
+        shellActive || state is RecordingService.State.Recording -> "Recording now"
+        state is RecordingService.State.Starting -> "Starting recording"
+        state is RecordingService.State.Stopping -> "Saving recording"
         else -> "Recording"
     }
     Surface(
@@ -431,7 +433,8 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
-                if (state is RecordingService.State.Recording) BlinkingRecordingDot()
+                if ((shellActive && !shellPaused) ||
+                    state is RecordingService.State.Recording) BlinkingRecordingDot()
                 else Icon(Icons.Rounded.Mic, contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                 Column(Modifier.weight(1f).clickable(onClick = onOpen),
@@ -467,9 +470,12 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val enhancedPaused by AdbFallbackNotice.enhancedPaused.collectAsState()
+    val manualCallAvailable by CallMonitor.manualCallAvailable.collectAsState()
     val recordingWarning by RecordingFailureNotice.warning.collectAsState()
-    val confirmedRecording = recState is RecordingService.State.Recording ||
-        (enhancedActive && recState is RecordingService.State.Idle)
+    val paused = recState is RecordingService.State.Paused || enhancedPaused
+    val confirmedRecording = !paused &&
+        (recState is RecordingService.State.Recording || enhancedActive)
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
 
     // Helper recovery and connection checks belong to AdbLifecycle, not
@@ -524,7 +530,7 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
             enabled = recordingEnabled,
             ready = ready,
             active = confirmedRecording,
-            paused = recState is RecordingService.State.Paused,
+            paused = paused,
             starting = recState is RecordingService.State.Starting,
             saving = recState is RecordingService.State.Stopping,
             onEnabledChange = { enabled ->
@@ -532,11 +538,16 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
                 recordingEnabled = enabled
             },
         )
-        if (enhancedActive &&
-            (recState is RecordingService.State.Recording ||
-                recState is RecordingService.State.Paused)) {
+        if (enhancedActive) {
             RecordingNowCard(recState)
         }
+        ManualRecordingCard(
+            state = recState,
+            enabled = recordingEnabled,
+            ready = ready,
+            shellActive = enhancedActive,
+            callAvailable = manualCallAvailable,
+        )
         Text("Connection & access", style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -698,31 +709,60 @@ private fun RecordingMasterCard(
     }
 }
 
+/** Visible, call-scoped manual capture entry point; shell STARTED owns live UI. */
 @Composable
-private fun ManualRecordButton(state: RecordingService.State) {
+private fun ManualRecordingCard(
+    state: RecordingService.State,
+    enabled: Boolean,
+    ready: Boolean,
+    shellActive: Boolean,
+    callAvailable: Boolean,
+) {
     val context = LocalContext.current
-    when (state) {
-        is RecordingService.State.Stopping -> {
-            FilledTonalButton(
-                onClick = {},
-                enabled = false,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Saving recording…") }
-        }
-        is RecordingService.State.Idle -> {
+    val canStart = enabled && ready && callAvailable && !shellActive &&
+        state is RecordingService.State.Idle
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = HomePanelStyle.color(),
+        border = HomePanelStyle.border(),
+        shadowElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.Mic, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp))
+                Text("Record manually", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                when {
+                    shellActive -> "A shell recording is already active. Use its controls above."
+                    !enabled -> "Enable Recording above to allow a manual call segment."
+                    !ready -> "Start the ADB recording helper before recording."
+                    !callAvailable -> "Make or answer a supported call to enable manual recording."
+                    else -> "Start a new recording segment for the connected call."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             FilledTonalButton(
                 onClick = { CallMonitor.manualStart(context) },
+                enabled = canStart,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (CallMonitor.canRecordAgain()) "▶  Record again" else "●  Record now") }
-        }
-        else -> {
-            Button(
-                onClick = { CallMonitor.manualStop(context) },
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("■  Stop recording") }
+            ) {
+                Icon(Icons.Rounded.Mic, contentDescription = null,
+                    modifier = Modifier.size(18.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                Text(if (CallMonitor.canRecordAgain()) "Record again" else "Record now")
+            }
         }
     }
 }
@@ -731,8 +771,9 @@ private fun ManualRecordButton(state: RecordingService.State) {
 @Composable
 private fun RecordingNowCard(state: RecordingService.State) {
     val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val shellPaused by AdbFallbackNotice.enhancedPaused.collectAsState()
     val details = rememberLiveRecordingDisplay()
-    val paused = state is RecordingService.State.Paused
+    val paused = state is RecordingService.State.Paused || shellPaused
     val status = if (paused) "Recording paused" else "Recording in progress"
     Card(
         colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color(highlight = true)),
