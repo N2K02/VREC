@@ -93,17 +93,23 @@ object AdbLifecycle {
             delay(4_000L)
             while (isActive && !quitting && Prefs.recordingEnabled(app) &&
                 CallMonitor.hasLiveCall()) {
-                if (ExperimentalCaptureDaemon.probe(app)) {
-                    when (val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)) {
-                        is ExperimentalCaptureDaemon.CaptureSnapshot.Recording ->
-                            AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)
-                        ExperimentalCaptureDaemon.CaptureSnapshot.Paused ->
-                            AdbFallbackNotice.reconcileAuthenticatedPaused(app)
-                        ExperimentalCaptureDaemon.CaptureSnapshot.Idle ->
-                            AdbFallbackNotice.reconcileAuthenticatedIdle(app)
-                        ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> Unit
+                try {
+                    if (ExperimentalCaptureDaemon.probe(app)) {
+                        when (val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)) {
+                            is ExperimentalCaptureDaemon.CaptureSnapshot.Recording ->
+                                AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)
+                            ExperimentalCaptureDaemon.CaptureSnapshot.Paused ->
+                                AdbFallbackNotice.reconcileAuthenticatedPaused(app)
+                            ExperimentalCaptureDaemon.CaptureSnapshot.Idle ->
+                                AdbFallbackNotice.reconcileAuthenticatedIdle(app)
+                            ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> Unit
+                        }
+                        ExperimentalCaptureDaemon.collect(app)
                     }
-                    ExperimentalCaptureDaemon.collect(app)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Log.w("Call capture reconciliation failed; retrying while call is active", failure)
                 }
                 delay(20_000L)
             }

@@ -24,8 +24,8 @@ class AdbBatteryEfficiencyContractTest {
 
     @Test fun lifecycleSkipsHealthyHelperAndQuitStopsListeners() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
-        assertTrue(lifecycle.contains("!ExperimentalCaptureDaemon.ready.value"))
-        assertTrue(lifecycle.contains("Prefs.recordingEnabled(app)"))
+        assertTrue(lifecycle.contains("if (Prefs.recordingEnabled(app)) recover(app, \"background check\")"))
+        assertTrue(lifecycle.contains("watchLiveCall(context: Context)"))
         assertTrue(lifecycle.contains("unregisterNetworkCallback"))
         assertTrue(lifecycle.contains("loop?.cancel()"))
     }
@@ -121,7 +121,7 @@ class AdbBatteryEfficiencyContractTest {
 
     @Test fun activeCaptureGetsPeriodicReconciliationEvenWhenHelperIsHealthy() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
-        assertTrue(lifecycle.contains("AdbFallbackNotice.enhancedActive.value ||"))
+        assertTrue(lifecycle.contains("CallMonitor.hasLiveCall()"))
         assertTrue(lifecycle.contains("ExperimentalCaptureDaemon.captureSnapshot(app)"))
         assertTrue(lifecycle.contains("AdbFallbackNotice.reconcileAuthenticatedIdle(app)"))
     }

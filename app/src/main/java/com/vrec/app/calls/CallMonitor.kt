@@ -655,6 +655,14 @@ object CallMonitor {
                         "The shell reported another call source. Recording stopped to prevent a misattributed file.")
                     return@withLock
                 }
+                if (result.isSuccess && !synchronized(this@CallMonitor) {
+                        sessions[sessionId]?.let { it.active && it.packageName == expected.first } == true
+                    }) {
+                    // The call ended or changed while COMMAND_START was running.
+                    ExperimentalCaptureDaemon.captureControl(app, 'S')
+                    Log.w("Manual shell capture stopped because the chosen call ended during start")
+                    return@withLock
+                }
                 if (result.isSuccess) {
                     synchronized(this@CallMonitor) {
                         if (sessions[sessionId]?.active == true &&
