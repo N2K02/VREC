@@ -19,25 +19,11 @@ import java.util.Date
 import javax.security.auth.x500.X500Principal
 
 /**
- * The app's ADB identity: an RSA keypair, plus a self-signed X.509 certificate
- * that wraps its public key.
- *
- * WHY THIS IS PERSISTED, AND WHY THAT MATTERS MORE THAN IT LOOKS
- *
- * Pairing is not a login. When the user types the six-digit code, adbd runs a
- * SPAKE2 exchange and, on success, permanently stores THIS public key in its
- * list of trusted keys. Nothing about the pairing is remembered by us; the
- * whole result of it lives on the adbd side, keyed by this certificate.
- *
- * So the key is the pairing. Lose the file and the phone still trusts a key we
- * can no longer prove we hold, and the user has to walk the pairing wizard
- * again. Regenerating a key "because it is cheap" would silently un-pair the
- * app. That is also why the certificate is issued for 30 years rather than the
- * one day the upstream sample uses: the sample regenerates on every run, we do
- * not, and a TLS handshake with an expired client certificate fails.
- *
- * Both files live in the app's private filesDir. They are readable by root and
- * by nothing else.
+ * Stable RSA + X.509 identity used by the embedded localhost ADB client.
+ * Android adbd may request explicit authorization for this key after a
+ * trusted USB ADB host has enabled TCP/5555. Keep this identity so a
+ * previously authorized localhost connection does not change its key.
+ * The files reside in VRec's private app storage.
  */
 internal class AdbIdentity private constructor(
     val privateKey: PrivateKey,
@@ -74,7 +60,6 @@ internal class AdbIdentity private constructor(
 
             val loaded = tryLoad(keyFile, certFile)
             if (loaded != null) {
-                Log.i(TAG, "ADB identity: loaded existing keypair")
                 cached = loaded
                 return loaded
             }
@@ -83,30 +68,19 @@ internal class AdbIdentity private constructor(
             val created = generate()
             // Write the key first. If we crash between the two writes, the next
             // tryLoad sees a key with no certificate, fails its pair check, and
-            // regenerates both - rather than loading a mismatched pair.
+            // regenerates both - rather than loading an invalid identity.
             keyFile.writeBytes(created.privateKey.encoded)
             certFile.writeBytes(created.certificate.encoded)
             cached = created
             return created
         }
 
-        /**
-         * Throw away the keypair, so the next pairing starts from nothing.
-         *
-         * This is as close to "unpair" as an unprivileged app can get. The
-         * phone's own list of authorised keys lives in /data/misc/adb, which is
-         * root's, and nothing here can edit it - so the OLD key stays trusted
-         * by adbd forever. What changes is that this app no longer holds it, so
-         * it can no longer connect, and setup has to run again from the pairing
-         * code. Practically that is a fresh start; literally it is amnesia
-         * rather than revocation, and the difference is worth being honest
-         * about.
-         */
-        /** Whether this app has ever paired. False after a reset. */
+        /** Does VRec already have a stable ADB client identity? */
         fun exists(context: Context): Boolean =
             File(context.filesDir, KEY_FILE).exists() &&
                 File(context.filesDir, CERT_FILE).exists()
 
+        /** Forget local client identity; cannot revoke Android's authorized keys. */
         @Synchronized
         fun forget(context: Context) {
             cached = null
@@ -116,7 +90,7 @@ internal class AdbIdentity private constructor(
                     Log.w(TAG, "ADB identity: could not delete $name")
                 }
             }
-            Log.i(TAG, "ADB identity: forgotten, pairing will be needed again")
+            Log.i(TAG, "ADB identity: reset; authorization may need to be approved again")
         }
 
         private fun tryLoad(keyFile: File, certFile: File): AdbIdentity? {
@@ -129,7 +103,7 @@ internal class AdbIdentity private constructor(
                 AdbIdentity(privateKey, certificate)
             } catch (t: Throwable) {
                 // A corrupt or half-written pair is not worth recovering: the
-                // cost of regenerating is one re-pairing, the cost of loading a
+                // cost of regenerating is a new authorization, while loading a
                 // broken identity is a handshake failure with no clear message.
                 Log.w(TAG, "ADB identity: stored keypair unreadable, regenerating", t)
                 null

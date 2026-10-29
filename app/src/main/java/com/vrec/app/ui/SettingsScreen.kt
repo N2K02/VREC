@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.LinearProgressIndicator
 import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.EnhancedCapturePreferences
+import com.vrec.app.experimental.daemon.SimCaptureSource
 import android.os.Build
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
@@ -71,7 +73,6 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.LiveUpdater
 import dev.n2k02.updater.hasPendingUpdate
 import com.vrec.app.Prefs
-import com.vrec.app.recording.RecordingEngine
 
 @Composable
 fun SettingsScreen(
@@ -80,7 +81,6 @@ fun SettingsScreen(
     onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
-    onOpenSetup: () -> Unit = {},
 ) {
     val updateStatus by LiveUpdater.controller.status.collectAsState()
     val context = LocalContext.current
@@ -88,67 +88,32 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val resumeTick = rememberOnResumeTick()
     val voipNotificationGranted = remember(resumeTick) { VoipNotifListener.isEnabled(context) }
-    var recordingMethod by remember { mutableStateOf(ExperimentalRecording.method(context)) }
+    val captureState by com.vrec.app.recording.RecordingService.state.collectAsState()
+    val shellRecording by com.vrec.app.recording.AdbFallbackNotice.enhancedActive.collectAsState()
+    val methodLocked = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
+        captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
     val connection by ExperimentalRecording.status.collectAsState()
     val helperState by AdbPrivilegedApiHelper.state.collectAsState()
     val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    var permissionCheckTick by remember { mutableIntStateOf(0) }
-    // Recheck after an ADB connection finishes its automatic AppOp command.
-    val advancedPermissionGranted = remember(
-        resumeTick, section, permissionCheckTick, connection.message, connection.busy
-    ) {
-        CallDetectionAccess.isGranted(context)
-    }
-    val advancedDetectionEnabled = remember(
-        resumeTick, section, permissionCheckTick, connection.message, connection.busy,
-        recordingMethod
-    ) {
-        Prefs.experimentalCallDetection(context)
-    }
-    LaunchedEffect(resumeTick, section, recordingMethod) {
-        if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
-            AdbPrivilegedApiHelper.checkHealth(context)
-        }
+    LaunchedEffect(resumeTick, section) {
+        AdbPrivilegedApiHelper.checkHealth(context)
     }
 
-    fun selectRecordingMethod(method: ExperimentalRecording.Method) {
-        if (recordingMethod == method) return
-        // Never start an unauthorized ADB session just by selecting a radio.
-        recordingMethod = method
-        ExperimentalRecording.select(context, method)
-        val alreadyGranted = method == ExperimentalRecording.Method.BUILT_IN_ADB &&
-            CallDetectionAccess.isGranted(context)
-        Prefs.of(context).edit().putBoolean(
-            Prefs.EXPERIMENTAL_CALL_DETECTION, alreadyGranted
-        ).apply()
-        permissionCheckTick++
-        scope.launch {
-            // A verified existing ADB session can finish setup immediately,
-            // without another pairing step or a manually entered shell command.
-            if (method == ExperimentalRecording.Method.BUILT_IN_ADB &&
-                connection.connected && connection.shellUid == 2000) {
-                AdbPrivilegedApiHelper.startWithAdb(context)
-                ExperimentalRecording.grantAdvancedDetection(context)
-                permissionCheckTick++
-            }
-            AdbPrivilegedApiHelper.reconnect(context)
-        }
-    }
-
+    // Home and Settings share the same persisted recording method.
     // Local mirror of the stored values, so the UI updates immediately.
     var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
-    var autoSpeaker by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_SPEAKER, false)) }
-    var inComm by remember { mutableStateOf(prefs.getBoolean(Prefs.IN_COMM_MODE, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
+    var simCaptureSource by remember { mutableStateOf(EnhancedCapturePreferences.simSource(context)) }
+    val voipArmed by ExperimentalCaptureDaemon.voipArmed.collectAsState()
+    val voipMessage by ExperimentalCaptureDaemon.voipMessage.collectAsState()
+    val simSourceMessage by ExperimentalCaptureDaemon.simSourceMessage.collectAsState()
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
     val overlayPermissionGranted = remember(resumeTick) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || AndroidSettings.canDrawOverlays(context)
     }
-    var sourceMode by remember { mutableStateOf(Prefs.sourceMode(context)) }
 
     fun putBool(key: String, value: Boolean) = prefs.edit().putBoolean(key, value).apply()
-    fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
@@ -156,32 +121,16 @@ fun SettingsScreen(
     ) {
         if (section == null) {
             Text(
-                "Make recording your own",
+                "Manage ADB recording",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 12.dp),
             )
-            SettingCard("Recording method") {
-                RecordingMethodOption(
-                    label = "Regular recording",
-                    detail = "Uses the phone microphone and existing call permissions.",
-                    selected = recordingMethod == ExperimentalRecording.Method.STANDARD,
-                    onSelect = { selectRecordingMethod(ExperimentalRecording.Method.STANDARD) },
-                )
-                RecordingMethodOption(
-                    label = "ADB privileged helper",
-                    detail = "Optional enhanced helper. Requires separate Android debugging setup.",
-                    selected = recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB,
-                    onSelect = { selectRecordingMethod(ExperimentalRecording.Method.BUILT_IN_ADB) },
-                )
-            }
-            listOf(
+            listOfNotNull(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
-                Triple("Microphone source", "Choose the audio input", Icons.Rounded.Tune),
-                Triple("Capturing the other side", "Speaker and communication mode", Icons.Rounded.Call),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Experimental", "ADB connection, helper and advanced access", Icons.Rounded.Tune),
+                Triple("Audio source", "Enhanced SIM capture source and diagnostics", Icons.Rounded.Tune),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -191,22 +140,16 @@ fun SettingsScreen(
                     modifier = Modifier.clickable { onSectionChange(name) },
                 )
             }
+            // Supported runtime permissions are configured after UID 2000 verification.
+            HorizontalDivider()
+            // Diagnostics, logs and updates remain together at the bottom like mRadio.
             ListItem(
-                headlineContent = { Text("Recordings") },
-                supportingContent = { Text("Browse, play and share recorded calls") },
-                leadingContent = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
-                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = onOpenRecordings),
-            )
-            ListItem(
-                headlineContent = { Text("Permissions & setup") },
-                supportingContent = { Text("Recorder permissions and accessibility requirements") },
+                headlineContent = { Text("ADB diagnostics") },
+                supportingContent = { Text("Helper status and access exceptions") },
                 leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = onOpenSetup),
+                modifier = Modifier.clickable { onSectionChange("Experimental") },
             )
-            HorizontalDivider()
-            // Recording activity, persistent diagnostics and crash reports share one screen.
             ListItem(
                 headlineContent = { Text("Logs") },
                 supportingContent = { Text("Recording activity, diagnostics and crash reports") },
@@ -235,36 +178,7 @@ fun SettingsScreen(
             ) { discardSilent = it; putBool(Prefs.DISCARD_SILENT, it) }
         }
 
-        if (section == "Microphone source") SettingCard("Microphone source") {
-            Text(
-                "Automatic tries each source and keeps the first with sound. Pick one yourself only if you know what works on your phone.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            SourceOption("Automatic (recommended)", Prefs.SOURCE_MODE_AUTO, sourceMode) {
-                sourceMode = it; putString(Prefs.SOURCE_MODE, it)
-            }
-            RecordingEngine.Source.entries.forEach { src ->
-                SourceOption(src.label, src.name, sourceMode) {
-                    sourceMode = it; putString(Prefs.SOURCE_MODE, it)
-                }
-            }
-        }
-
-        if (section == "Capturing the other side") SettingCard("Capturing the other side") {
-            ToggleRow(
-                "Put call on loudspeaker",
-                "Last-resort way to catch both sides: the mic records the room. Turns the speaker on while recording and restores it after.",
-                autoSpeaker,
-            ) { autoSpeaker = it; putBool(Prefs.AUTO_SPEAKER, it) }
-            ToggleRow(
-                "Force in-communication mode",
-                "Helps some phones route the far side to the recording. If calls sound odd while recording, turn this off.",
-                inComm,
-            ) { inComm = it; putBool(Prefs.IN_COMM_MODE, it) }
-        }
-
-        if (section == "Floating controls") SettingCard("Floating controls") {
+         if (section == "Floating controls") SettingCard("Floating controls") {
             ToggleRow("Show compact overlay", "Enabled by default. Drag the three-dot handle on the right to move the controls. Stop saves audio; Close only hides the overlay.", showOverlay) {
                 showOverlay = it; putBool(Prefs.SHOW_OVERLAY, it)
             }
@@ -282,36 +196,82 @@ fun SettingsScreen(
         }
 
         if (section == "Experimental") {
-            if (recordingMethod == ExperimentalRecording.Method.BUILT_IN_ADB) {
-                // Full setup checklist lives only here, not on the Settings overview.
-                AdbSetupProgressCard(
-                    adbAuthorized = (connection.connected && connection.shellUid == 2000) ||
-                        (helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING),
-                    helperReady = helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING,
-                    advancedGranted = advancedPermissionGranted,
-                    advancedEnabled = advancedDetectionEnabled,
-                )
-                ExperimentalRecorderCard()
-                // The advanced Telecom AppOp requires its own explicit consent.
-                TelecomAdbInstructionCard(onAccessChanged = { permissionCheckTick++ })
-            } else {
-                // A single actionable row replaces a second instructional card.
-                ListItem(
-                    headlineContent = { Text("ADB mode is off") },
-                    supportingContent = { Text("Select ADB privileged helper under Recording method to configure the connection.") },
-                    leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                    modifier = Modifier.clickable { onSectionChange(null) },
-                )
-            }
+                SettingCard("ADB connection") {
+                    Text(
+                        when {
+                            helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
+                                "Recording helper is running."
+                            connection.connected && connection.shellUid == 2000 ->
+                                "Shell UID 2000 verified; helper is not ready yet."
+                            else -> "Open Home to set up or retry ADB authorization."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text("USB authorization and retry are managed on Home. " +
+                        "This screen contains capture configuration and diagnostics only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                AdbSecurityChoices()
+                // UID 2000 bootstrap handles eligible grants automatically.
+                val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
+                if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
+                    SettingCard("Access still requiring attention") {
+                        Text(bootstrap.unavailable.joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+        }
+
+        if (section == "Audio source") {
+                SettingCard("Enhanced SIM capture source") {
+                    Text(
+                        "Select the shell's call-audio source. This does not use VRec's " +
+                            "standard microphone source setting. Availability depends on Android and your phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SimCaptureSource.entries.forEach { option ->
+                        SourceOption(option.description, option.name, simCaptureSource.name) { chosen ->
+                            simCaptureSource = SimCaptureSource.from(chosen)
+                            EnhancedCapturePreferences.setSimSource(context, simCaptureSource)
+                            scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
+                        }
+                    }
+                    Text(
+                        "Dual captures uplink and downlink as separate stereo channels. " +
+                            "A selected source may be unavailable or silent on some phones; " +
+                            "changes during a call apply after the call ends. " + simSourceMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
         }
 
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
                 "Record VoIP calls",
-                "WhatsApp, Telegram and similar. Call detection uses Notification access; capturing the other voice depends on Android audio restrictions.",
+                "Use the independent ADB helper for supported apps on Android 14+ when permitted.",
                 recordVoip,
-            ) { recordVoip = it; putBool(Prefs.RECORD_VOIP, it) }
+            ) {
+                recordVoip = it
+                putBool(Prefs.RECORD_VOIP, it)
+                scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
+            }
+            if (true) {
+                Text(
+                    if (Build.VERSION.SDK_INT < 34)
+                        "Enhanced VoIP playback capture requires Android 14 or newer."
+                    else if (voipArmed) "Enhanced ADB VoIP ready · WhatsApp, Telegram, Signal, Viber and other supported apps."
+                    else voipMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("The shell manages its own audio path; VRec does not silently fall back to microphone recording.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (recordVoip) {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -385,118 +345,95 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
     }
 }
 
-@Composable
-private fun RecordingMethodOption(
-    label: String, detail: String, selected: Boolean, onSelect: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onSelect)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = onSelect)
-        Column(Modifier.weight(1f).padding(start = 8.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(detail, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
 
-/** Persistent setup feedback for ADB; disconnecting a healthy daemon doesn't undo setup. */
-@Composable
-private fun AdbSetupProgressCard(
-    adbAuthorized: Boolean,
-    helperReady: Boolean,
-    advancedGranted: Boolean,
-    advancedEnabled: Boolean,
-    onConfigure: (() -> Unit)? = null,
-) {
-    // Advanced Telecom detection is only supported from Android 12. On earlier
-    // versions it is skipped; the shell helper still works independently.
-    val supportsAdvanced = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val advancedReady = !supportsAdvanced || (advancedGranted && advancedEnabled)
-    val done = listOf(adbAuthorized, helperReady, advancedReady).count { it }
-    val complete = done == 3
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(
-                    if (complete) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-                    contentDescription = null,
-                    tint = if (complete) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (complete) "ADB setup complete" else "ADB setup required",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        "$done of 3 checks complete",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            LinearProgressIndicator(
-                progress = { done / 3f },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            AdbSetupStep("ADB authorization", adbAuthorized,
-                if (adbAuthorized) "Verified" else "Connect using Wireless or TCP/5555")
-            AdbSetupStep("Recording helper", helperReady,
-                if (helperReady) "Ready" else "Connect ADB to start or restore")
-            AdbSetupStep(
-                "Advanced call detection",
-                advancedReady,
-                when {
-                    !supportsAdvanced -> "Not supported on this Android version"
-                    !advancedGranted -> "Grant special access in Experimental"
-                    !advancedEnabled -> "Enable advanced detection in Experimental"
-                    else -> "Granted and enabled"
-                },
-            )
-            if (onConfigure != null && !complete) {
-                TextButton(onClick = onConfigure) {
-                    Text("Complete ADB setup →")
-                }
-            }
-            if (complete) {
-                Text(
-                    "The helper is ready, but recording both voices still requires device testing.",
+/**
+ * ADB network transport is automatic after UID 2000 verification.
+ * Users may disable TCP mode; reboot-restoration remains opt-in.
+ */
+@Composable
+private fun AdbSecurityChoices() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val connection by ExperimentalRecording.status.collectAsState()
+    var restore by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.restoreAfterRestart(context)) }
+    var tcp by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context)) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val verified = connection.connected && connection.shellUid == 2000
+
+    SettingCard("ADB restore and network access") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Restore after restart", style = MaterialTheme.typography.bodyLarge)
+                Text("After a reboot, VRec may turn Wireless debugging back on (on Wi-Fi) to restart " +
+                    "the recording helper with your existing pairing. Never if you turn Wireless " +
+                    "debugging off yourself. Needs one extra Android permission.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            Switch(checked = restore, onCheckedChange = { on ->
+                restore = on
+                com.vrec.app.experimental.adb.AdbUserChoices.setRestoreAfterRestart(context, on)
+                scope.launch {
+                    note = when {
+                        on && verified ->
+                            if (com.vrec.app.experimental.adb.AdbSelfRecovery.grantSecureSettings(context))
+                                "Restore after restart is on."
+                            else "Android refused the permission; restore can't run on this phone."
+                        on -> "Restore turns on the next time ADB is verified."
+                        verified -> {
+                            com.vrec.app.experimental.adb.AdbSelfRecovery.revokeSecureSettings(context)
+                            "Restore after restart is off."
+                        }
+                        else -> "Restore after restart is off. VRec won't change Wireless debugging."
+                    }
+                }
+            })
         }
-    }
-}
-
-@Composable
-private fun AdbSetupStep(label: String, done: Boolean, message: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(
-            if (done) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-            contentDescription = null,
-            modifier = Modifier.padding(start = 2.dp),
-            tint = if (done) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(message, style = MaterialTheme.typography.bodySmall,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Keep ADB without Wi-Fi (TCP/5555)", style = MaterialTheme.typography.bodyLarge)
+                Text("Automatic after verified UID 2000 setup, repair or reconnection. " +
+                    "TCP/5555 may be reachable from other devices on your network. " +
+                    "Turn this off to use encrypted Wireless debugging instead.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = tcp, onCheckedChange = { on ->
+                tcp = on
+                com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, on)
+                if (on) {
+                    note = "Automatic TCP/5555 enabled. It applies on the next verified wireless connection."
+                } else if (connection.tcpPortOpen && verified) {
+                    scope.launch {
+                        note = com.vrec.app.experimental.adb.AdbLifecycle.coordinateSetup {
+                            ExperimentalRecording.disableTcp(context)
+                        }.fold(
+                            { "TCP/5555 closed. Automatic TCP switching is off." },
+                            { "Automatic switching is off, but TCP/5555 may still be open: " +
+                                (it.message ?: "check Developer options.") })
+                    }
+                } else {
+                    note = if (connection.tcpPortOpen)
+                        "Automatic switching is off. TCP/5555 is still listening; connect to disable it or turn USB debugging off."
+                    else "Automatic TCP/5555 switching is off."
+                }
+            })
+        }
+        if (connection.tcpPortOpen && verified) {
+            OutlinedButton(onClick = {
+                scope.launch {
+                    note = com.vrec.app.experimental.adb.AdbLifecycle.coordinateSetup {
+                            ExperimentalRecording.disableTcp(context)
+                        }.fold(
+                        { "TCP/5555 is closed." }, { it.message ?: "Couldn't close TCP/5555." })
+                }
+            }, enabled = !connection.busy, modifier = Modifier.fillMaxWidth()) { Text("Disable TCP/5555") }
+        }
+        note?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+
 }

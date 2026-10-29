@@ -12,6 +12,8 @@ import android.os.SystemClock
 import android.telecom.Call
 import android.telecom.TelecomManager
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.adb.LocalAdbMiddleware
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +26,7 @@ import com.vrec.app.Prefs
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.recording.RecordingFailureNotice
 import com.vrec.app.recording.OverlayControlService
 import androidx.core.app.NotificationCompat
 import com.vrec.app.R
@@ -47,6 +50,7 @@ object CallMonitor {
         var nameSource: String = "unknown",
         var accountId: String? = null,
         var connectedAt: Long? = null,
+        var mediaType: String? = null,
         var active: Boolean = false,
     ) {
         val isVoip: Boolean get() = source == Source.VOIP_NOTIFICATION ||
@@ -54,9 +58,28 @@ object CallMonitor {
     }
 
     private val sessions = linkedMapOf<String, Session>()
+
+    /** UI-only identity. Never assign a caller across concurrent or unknown sessions. */
+    data class LiveCaller(val name: String?, val number: String?, val appPackage: String?)
+
+    @Synchronized
+    fun liveCallerForShell(appPackage: String?, direction: CallDirection): LiveCaller? {
+        val candidates = sessions.values.filter { session ->
+            session.active && if (appPackage != null) {
+                session.isVoip && session.packageName == appPackage
+            } else {
+                !session.isVoip && direction in setOf(CallDirection.INCOMING, CallDirection.OUTGOING) &&
+                    (session.flowDirection == direction || session.direction == direction)
+            }
+        }
+        if (candidates.size != 1) return null
+        val session = candidates.single()
+        return LiveCaller(session.name, session.number, session.packageName)
+    }
     private val handler = Handler(Looper.getMainLooper())
     private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val masterModeMutex = Mutex()
+    private val manualSegmentMutex = Mutex()
     // Automatic recording is attempted only once per active call session.
     // A user Stop must never trigger an automatic restart.
     private val autoAttempted = mutableSetOf<String>()
@@ -69,6 +92,15 @@ object CallMonitor {
     private const val CONTROL_ID = 84
     private var sawRinging = false
     private var pendingIncomingNumber: String? = null
+    // Dialer notifications can precede SIM OFFHOOK. Keep only a short-lived,
+    // call-scoped identity; never attribute an old notification to another call.
+    private data class PendingDialerIdentity(
+        val metadata: CallerMetadata,
+        val status: String,
+        val observedAt: Long,
+    )
+    private var pendingDialerIdentity: PendingDialerIdentity? = null
+    private const val DIALER_IDENTITY_MAX_AGE_MS = 120_000L
 
     @Volatile var telecomBound = false
         private set
@@ -91,29 +123,36 @@ object CallMonitor {
         name: String?,
         accountId: String?,
         connectedAt: Long?,
+        videoCall: Boolean? = null,
     ) {
         if (!Prefs.experimentalCallDetection(context) || !Prefs.recordingEnabled(context)) return
+        if ((state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) && id !in sessions) {
+            Log.i("Capture diagnostic: duplicate Telecom termination ignored session=" + id)
+            return
+        }
         val session = sessions.getOrPut(id) { Session(id, Source.TELECOM) }
         session.packageName = packageName
         session.direction = if (voip) CallDirection.VOIP else flow
-        session.flowDirection = flow
+        if (flow == CallDirection.INCOMING || flow == CallDirection.OUTGOING) {
+            session.flowDirection = flow
+        }
         session.accountId = accountId ?: session.accountId
-        val privateLabel = CallMetadataResolver.privateCallerLabel(number)
-            ?: CallMetadataResolver.privateCallerLabel(name)
-        if (privateLabel != null && session.name == null) {
-            session.name = privateLabel
+        if (videoCall == true) session.mediaType = "VIDEO"
+        else if (videoCall == false && session.mediaType == null) session.mediaType = "VOICE"
+        val withheld = CallMetadataResolver.privateCallerLabel(number) ||
+            CallMetadataResolver.privateCallerLabel(name)
+        if (withheld && session.name == null) {
+            session.name = "Private number"
             session.nameSource = "telecom-private"
         }
-        if (!number.isNullOrBlank() && privateLabel == null) {
+        if (!number.isNullOrBlank() && !withheld) {
             session.number = number
             session.numberSource = "telecom"
         }
-        if (!name.isNullOrBlank()) {
+        if (!name.isNullOrBlank() && !withheld) {
             session.name = name
             session.nameSource = "telecom"
         } else if (session.name == null && !session.number.isNullOrBlank()) {
-            // Telecom often supplies only the number; resolve the saved contact
-            // before starting, and preserve any stronger name arriving later.
             val contact = CallInfo.describe(context, session.number)
                 ?.takeIf { it != session.number }
             if (contact != null) {
@@ -145,8 +184,18 @@ object CallMonitor {
             sessions.values.firstOrNull { it.source == Source.VOIP_NOTIFICATION && it.packageName == packageName }
         else sessions["sim-legacy"]
         if (legacy != null) {
+            legacy.connectedAt?.let {
+                ShellCallMetadataJournal.forget(context.applicationContext, legacy.id + ":" + it)
+            }
+            if (session.mediaType == null || session.mediaType == "VOICE") {
+                if (legacy.mediaType == "VIDEO") session.mediaType = "VIDEO"
+            }
             if (session.number == null) { session.number = legacy.number; session.numberSource = legacy.numberSource }
             if (session.name == null) { session.name = legacy.name; session.nameSource = legacy.nameSource }
+            if (session.flowDirection == CallDirection.UNKNOWN &&
+                legacy.flowDirection in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
+                session.flowDirection = legacy.flowDirection
+            }
             if (recordingId == legacy.id) recordingId = id
             if (suppressed.remove(legacy.id)) suppressed.add(id)
             if (autoAttempted.remove(legacy.id)) autoAttempted.add(id)
@@ -174,13 +223,20 @@ object CallMonitor {
                 Log.w("Outgoing Telecom answer was not acknowledged by the shell helper")
             }
         }
+        rememberShellIdentity(context, session)
         Log.i("Telecom call state=$state voip=$voip app=" + (packageName ?: "unknown") +
             " namePresent=" + (session.name != null) + " numberPresent=" + (session.number != null))
         reconcile(context)
     }
 
     @Synchronized
-    fun onTelecomRemoved(context: Context, id: String) = remove(context, id)
+    fun onTelecomRemoved(context: Context, id: String) {
+        if (id !in sessions) {
+            Log.i("Capture diagnostic: duplicate Telecom removal ignored session=" + id)
+            return
+        }
+        remove(context, id)
+    }
 
     @Synchronized
     fun onSimState(context: Context, state: String?, number: String?) {
@@ -188,6 +244,7 @@ object CallMonitor {
             if (state == "IDLE") {
                 sawRinging = false
                 pendingIncomingNumber = null
+                pendingDialerIdentity = null
             }
             return
         }
@@ -198,6 +255,20 @@ object CallMonitor {
             }
             "OFFHOOK" -> {
                 if (sessions.values.any { it.source == Source.TELECOM && !it.isVoip }) return
+                // Some VoIP calls also produce a cellular OFFHOOK broadcast.
+                // A live, already identified Telecom VoIP call is authoritative;
+                // never invent a second SIM owner for that same event.
+                if (CallSourceConflictPolicy.suppressFallbackSimOffhook(
+                        activeTelecomVoip = sessions.values.any {
+                            it.source == Source.TELECOM && it.isVoip && it.active
+                        },
+                        knownCellularTelecom = sessions.values.any {
+                            it.source == Source.TELECOM && !it.isVoip
+                        },
+                    )) {
+                    Log.i("Ignoring phone-state OFFHOOK while a Telecom VoIP call is active")
+                    return
+                }
                 if (OutgoingCallStartPolicy.waitForTelecomAnswer(
                         incomingRang = sawRinging,
                         telecomObserverBound = telecomBound,
@@ -209,29 +280,40 @@ object CallMonitor {
                     return
                 }
                 val session = sessions.getOrPut("sim-legacy") {
-                    Session("sim-legacy", Source.SIM, direction =
-                        if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING)
+                    val flow = if (sawRinging) CallDirection.INCOMING else CallDirection.OUTGOING
+                    Session("sim-legacy", Source.SIM, direction = flow, flowDirection = flow)
                 }
                 if (!number.isNullOrBlank()) pendingIncomingNumber = number
-                val withheld = CallMetadataResolver.privateCallerLabel(pendingIncomingNumber)
-                if (withheld != null && session.name == null) {
-                    session.name = withheld
+                val phoneWithheld = CallMetadataResolver.privateCallerLabel(pendingIncomingNumber)
+                if (phoneWithheld && session.name == null) {
+                    session.name = "Private number"
                     session.nameSource = "phone-state-private"
                 }
-                if (session.number == null && withheld == null) session.number = pendingIncomingNumber
+                if (session.number == null && !phoneWithheld) session.number = pendingIncomingNumber
                 if (session.number != null) session.numberSource = "phone-state"
                 if (session.name == null) {
                     session.name = CallInfo.describe(context, session.number)
                         ?.takeIf { it != session.number }
                     if (session.name != null) session.nameSource = "contacts"
                 }
+                // An incoming call notification may have been posted before OFFHOOK.
+                // Only associate it with the same incoming ringing call, or a
+                // just-active dialer call; never reuse it after IDLE.
+                val cached = pendingDialerIdentity
+                if (cached != null && SystemClock.elapsedRealtime() - cached.observedAt in 0..DIALER_IDENTITY_MAX_AGE_MS &&
+                    (sawRinging || cached.status == "ACTIVE")) {
+                    applyMetadata(session, cached.metadata)
+                }
+                pendingDialerIdentity = null
                 session.active = true
                 if (session.connectedAt == null) session.connectedAt = System.currentTimeMillis()
+                rememberShellIdentity(context, session)
                 reconcile(context)
             }
             "IDLE" -> {
                 sawRinging = false
                 pendingIncomingNumber = null
+                pendingDialerIdentity = null
                 remove(context, "sim-legacy")
             }
         }
@@ -248,6 +330,8 @@ object CallMonitor {
         isPhoneDialer: Boolean,
         status: String,
         metadata: CallerMetadata?,
+        notificationFlow: CallDirection = CallDirection.UNKNOWN,
+        mediaType: String? = null,
     ) {
         if (!Prefs.recordingEnabled(context)) return
         val candidates = sessions.values.filter { it.source == Source.TELECOM &&
@@ -257,10 +341,26 @@ object CallMonitor {
 
         if (target != null) {
             applyMetadata(target, metadata)
+            if (mediaType == "VIDEO") target.mediaType = "VIDEO"
+            // Telecom remains authoritative; notification evidence may fill a gap.
+            if (target.isVoip && target.flowDirection == CallDirection.UNKNOWN &&
+                notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
+                target.flowDirection = notificationFlow
+            }
             if (target.id == recordingId) updateRecording(context, target)
+            else if (target.isVoip) rememberShellIdentity(context, target)
             return
         }
-        if (isPhoneDialer || !Prefs.recordVoip(context)) return
+        if (isPhoneDialer) {
+            if (status == "IDLE") pendingDialerIdentity = null
+            else if ((status == "RINGING" || status == "ACTIVE") && metadata != null) {
+                pendingDialerIdentity = PendingDialerIdentity(
+                    metadata, status, SystemClock.elapsedRealtime(),
+                )
+            }
+            return
+        }
+        if (!Prefs.recordVoip(context)) return
 
         val id = "notif:" + packageName
         if (status == "IDLE") recentlyEndedVoip.remove(packageName)
@@ -278,6 +378,11 @@ object CallMonitor {
                 direction = CallDirection.VOIP)
         }
         applyMetadata(session, metadata)
+        if (mediaType == "VIDEO") session.mediaType = "VIDEO"
+        if (session.flowDirection == CallDirection.UNKNOWN &&
+            notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
+            session.flowDirection = notificationFlow
+        }
         if (status == "ACTIVE") {
             session.active = true
             session.connectedAt = session.connectedAt ?: System.currentTimeMillis()
@@ -303,6 +408,7 @@ object CallMonitor {
         val session = candidates.single()
         applyMetadata(session, metadata)
         if (recordingId == session.id) updateRecording(context, session)
+        else rememberShellIdentity(context, session)
     }
 
     private fun applyMetadata(session: Session, candidate: CallerMetadata?) {
@@ -323,7 +429,10 @@ object CallMonitor {
         val removed = sessions.remove(id)
         suppressed.remove(id)
         autoAttempted.remove(id)
-        if (removed != null) Log.i("Call ended; closing session " + id)
+        if (removed != null) {
+            rememberShellIdentity(context, removed)
+            Log.i("Call ended; closing session " + id)
+        }
         if (recordingId == id) {
             recordingId = null
             RecordingService.stop(context.applicationContext, System.currentTimeMillis())
@@ -333,11 +442,11 @@ object CallMonitor {
             reconcile(context)
         }
         if (!hasLiveCall()) {
-            AdbFallbackNotice.enhancedActive.value = false
+            // Shell STARTED/ENDED events own capture state; Telecom may end first.
             overlayDismissed = false
             dismissCallControls(context)
             dismissOverlay(context)
-        } else if (RecordingService.state.value is RecordingService.State.Idle &&
+        } else if (!AdbFallbackNotice.enhancedActive.value &&
             canRecordAgain()) {
             showCallControls(context)
         }
@@ -348,7 +457,7 @@ object CallMonitor {
         handler.postDelayed({
             synchronized(this) {
                 if (recordingId != null || sessions.values.none { it.active }) return@synchronized
-                if (RecordingService.state.value is RecordingService.State.Idle) {
+                if (!AdbFallbackNotice.enhancedActive.value) {
                     reconcile(context)
                 } else {
                     scheduleWaitingCall(context, retry + 1)
@@ -366,95 +475,131 @@ object CallMonitor {
         }
         // Do not start a second recording until the current one is finished.
         if (recordingId != null || !Prefs.autoRecord(context)) return
-        if (RecordingService.state.value !is RecordingService.State.Idle) return
+        if (AdbFallbackNotice.enhancedActive.value) return
         val selected = sessions.values.firstOrNull {
             it.active && it.id !in suppressed && it.id !in autoAttempted &&
                 (!it.isVoip || Prefs.recordVoip(context))
         } ?: return
         autoAttempted.add(selected.id)
-        recordingId = selected.id
-        Log.i("Start call recording via " + selected.source.name +
-            " app=" + (selected.packageName ?: "phone") +
-            " callerKnown=" + (selected.name != null || selected.number != null))
-        RecordingService.start(context.applicationContext, selected.direction,
-            selected.name ?: selected.number, selected.number, selected.connectedAt,
-            selected.packageName, selected.accountId, selected.numberSource,
-            selected.flowDirection.name)
+        rememberShellIdentity(context, selected)
+        // The shell watcher owns automatic capture. This is a metadata
+        // candidate, NOT a confirmed recording owner: the compatibility
+        // RecordingService.start() cannot start a shell recording.
+        Log.i("Call observed for shell capture: " + selected.source.name)
+        if (!ExperimentalCaptureDaemon.ready.value) {
+            RecordingFailureNotice.warn(context,
+                "Call detected, but the recording helper is not ready. " +
+                    "No capture is confirmed. Open VRec to restore ADB.")
+        }
+    }
+
+    private fun rememberShellIdentity(context: Context, session: Session) {
+        val started = session.connectedAt ?: return
+        val kind = if (session.isVoip) CallDirection.VOIP else session.direction
+        if (kind == CallDirection.UNKNOWN) return
+        ShellCallMetadataJournal.remember(context.applicationContext,
+            session.id + ":" + started, started,
+            kind, session.packageName, session.name, session.number,
+            session.numberSource, session.flowDirection, session.mediaType)
     }
 
     private fun updateRecording(context: Context, session: Session) {
+        rememberShellIdentity(context, session)
         RecordingService.updateMetadata(context.applicationContext,
             session.direction, session.name ?: session.number, session.number,
             session.packageName, session.accountId, session.numberSource,
             session.flowDirection.name)
     }
 
-    /** A user Stop suppresses automatic restart for the remainder of the live call. */
+    /** A confirmed user Stop must suppress automatic capture, including notification Stop. */
     @Synchronized
-    fun userStop(context: Context) {
-        val state = RecordingService.state.value
-        if (state is RecordingService.State.Idle ||
-            state is RecordingService.State.Stopping) return
+    fun onShellStopConfirmed(context: Context) {
         val id = recordingId
         if (id != null) {
             suppressed.add(id)
             recordingId = null
             if (id == "manual") sessions.remove(id)
-        } else {
-            Log.w("User stopped a recorder with no tracked call session")
         }
-        Log.i("User stopped recording; an explicit Record is required to restart")
-        RecordingService.stop(context.applicationContext)
+        // The shell may have started autonomously, without a legacy session owner.
+        // Suppress every active session until its real call ends.
+        sessions.values.filter { it.active }.forEach { suppressed.add(it.id) }
+        AdbFallbackNotice.shellStoppedByUser(context.applicationContext)
+        if (hasLiveCall() && canRecordAgain()) showCallControls(context)
+    }
+
+    /** A user Stop suppresses automatic restart for the remainder of the live call. */
+    @Synchronized
+    fun userStop(context: Context) {
+        if (!AdbFallbackNotice.enhancedActive.value) return
+        val app = context.applicationContext
+        modeScope.launch {
+            val result = ExperimentalCaptureDaemon.captureControl(app, 'S')
+            if (result == "STOPPED") {
+                onShellStopConfirmed(app)
+                Log.i("User stopped shell recording")
+            } else {
+                Log.w("Shell recording stop was not confirmed")
+            }
+        }
     }
 
     /**
-     * Record again creates a new file for the same still-active call.
-     * The suppression flag stays set; call notifications cannot auto-restart.
+     * Manual capture is supported only when the authenticated shell watcher
+     * confirms an active cellular call. Never advertise a phantom recording.
+     * The shell's STARTED wake owns the UI recording state.
      */
-    @Synchronized
-    fun userRecordAgain(context: Context, expectedSession: String? = null) {
-        if (!Prefs.recordingEnabled(context) || recordingId != null ||
-            RecordingService.state.value !is RecordingService.State.Idle) return
-        val chosen = sessions.values.firstOrNull {
-            it.active && it.id in suppressed && it.source != Source.MANUAL &&
-                (expectedSession == null || it.id == expectedSession)
-        } ?: return
-        recordingId = chosen.id
-        dismissCallControls(context)
-        Log.i("User started another recording segment for " + chosen.source.name)
-        RecordingService.start(context.applicationContext, chosen.direction,
-            chosen.name ?: chosen.number, chosen.number, chosen.connectedAt,
-            chosen.packageName, chosen.accountId, chosen.numberSource,
-            chosen.flowDirection.name)
+    private fun requestManualSegment(context: Context, expectedSession: String?, again: Boolean) {
+        val app = context.applicationContext
+        modeScope.launch {
+            val sessionId = synchronized(this@CallMonitor) {
+                if (!Prefs.recordingEnabled(app) || AdbFallbackNotice.enhancedActive.value) {
+                    null
+                } else {
+                    val candidates = sessions.values.filter {
+                        it.active && !it.isVoip && it.source != Source.MANUAL &&
+                            (!again || it.id in suppressed) &&
+                            (expectedSession == null || it.id == expectedSession)
+                    }
+                    candidates.singleOrNull()?.id
+                }
+            }
+            if (sessionId == null) {
+                Log.w("Manual shell capture requires one unambiguous active cellular call")
+                return@launch
+            }
+            manualSegmentMutex.withLock {
+                val stillEligible = synchronized(this@CallMonitor) {
+                    Prefs.recordingEnabled(app) && !AdbFallbackNotice.enhancedActive.value &&
+                        sessions[sessionId]?.let { it.active && !it.isVoip } == true
+                }
+                if (!stillEligible) return@withLock
+                val result = ExperimentalCaptureDaemon.startCurrentCellularCall(app)
+                if (result.isSuccess) {
+                    synchronized(this@CallMonitor) {
+                        if (sessions[sessionId]?.active == true) {
+                            suppressed.add(sessionId)
+                            autoAttempted.add(sessionId)
+                            recordingId = sessionId
+                            sessions[sessionId]?.let { rememberShellIdentity(app, it) }
+                            dismissCallControls(app)
+                        }
+                    }
+                    Log.i("Authenticated shell confirmed manual recording segment")
+                } else {
+                    Log.w("Manual shell recording was not confirmed")
+                    RecordingFailureNotice.warn(app,
+                        "Manual recording did not start. Check helper readiness and Android permissions.")
+                }
+            }
+        }
     }
 
-    @Synchronized
+    fun userRecordAgain(context: Context, expectedSession: String? = null) {
+        requestManualSegment(context, expectedSession, again = true)
+    }
+
     fun manualStart(context: Context) {
-        if (!Prefs.recordingEnabled(context) || recordingId != null ||
-            RecordingService.state.value !is RecordingService.State.Idle) return
-        if (canRecordAgain()) {
-            userRecordAgain(context)
-            return
-        }
-        val currentCall = sessions.values.firstOrNull {
-            it.active && it.source != Source.MANUAL
-        }
-        if (currentCall != null) {
-            // Explicit user-initiated recording is still linked to the call;
-            // Android's end signal will therefore stop and save this segment.
-            suppressed.add(currentCall.id)
-            autoAttempted.add(currentCall.id)
-            recordingId = currentCall.id
-            RecordingService.start(context.applicationContext, currentCall.direction,
-                currentCall.name ?: currentCall.number, currentCall.number,
-                currentCall.connectedAt, currentCall.packageName, currentCall.accountId,
-                currentCall.numberSource, currentCall.flowDirection.name)
-        } else {
-            val session = Session("manual", Source.MANUAL, active = true)
-            sessions[session.id] = session
-            recordingId = session.id
-            RecordingService.start(context.applicationContext, CallDirection.UNKNOWN, null)
-        }
+        requestManualSegment(context, null, again = false)
     }
 
     @Synchronized
@@ -485,31 +630,7 @@ object CallMonitor {
         if (id != null) autoAttempted.add(id)
         dismissCallControls(context)
         dismissOverlay(context)
-        Log.i("Switched active cellular call from standard to enhanced capture")
-    }
-
-    /**
-     * Enhanced mid-call start failed after the standard file was finalized.
-     * Re-enter standard fallback only if that very call is still active.
-     * This is a new file, never a resumed MediaRecorder instance.
-     */
-    @Synchronized
-    fun recoverStandardAfterAdbHandoffFailure(context: Context) {
-        val activeCall = recordingId?.let(sessions::get)
-        if (!Prefs.recordingEnabled(context) ||
-            activeCall == null || !activeCall.active || activeCall.isVoip ||
-            RecordingService.state.value !is RecordingService.State.Idle) {
-            onRecordingFinalized(context)
-            return
-        }
-        Log.w("Enhanced handoff failed; starting a new standard call segment")
-        RecordingService.start(
-            context.applicationContext, activeCall.direction,
-            activeCall.name ?: activeCall.number, activeCall.number,
-            activeCall.connectedAt, activeCall.packageName, activeCall.accountId,
-            activeCall.numberSource, activeCall.flowDirection.name,
-            forceStandardFallback = true,
-        )
+        Log.i("Shell capture owns active cellular call")
     }
 
     @Synchronized
@@ -535,7 +656,7 @@ object CallMonitor {
     @Synchronized
     fun onRecordingFinalized(context: Context) {
         val orphan = recordingId
-        if (orphan != null && RecordingService.state.value is RecordingService.State.Idle) {
+        if (orphan != null && !AdbFallbackNotice.enhancedActive.value) {
             recordingId = null
             suppressed.add(orphan)
         }
@@ -592,9 +713,15 @@ object CallMonitor {
      */
     @Synchronized
     fun setRecordingEnabled(context: Context, enabled: Boolean) {
+        // Do not tear down shell capture/session ownership while a call is
+        // active. Home locks the switch; this guards other callers too.
+        if (AdbFallbackNotice.enhancedActive.value ||
+            RecordingService.state.value !is RecordingService.State.Idle) {
+            Log.i("Automatic recording toggle ignored during active capture lifecycle")
+            return
+        }
         Prefs.setRecordingEnabled(context, enabled)
         if (!enabled) {
-            AdbFallbackNotice.enhancedActive.value = false
             AdbFallbackNotice.clear()
             AdbFallbackNotice.endHandoff()
             recordingId = null
@@ -607,7 +734,7 @@ object CallMonitor {
             dismissOverlay(context)
             sawRinging = false
             pendingIncomingNumber = null
-            if (RecordingService.state.value !is RecordingService.State.Idle) {
+            if (AdbFallbackNotice.enhancedActive.value) {
                 RecordingService.stop(context.applicationContext, System.currentTimeMillis())
             }
         }
@@ -617,6 +744,14 @@ object CallMonitor {
             // Read the CURRENT preference inside the serialized section; an
             // older Off coroutine cannot disable a newer On choice afterwards.
             masterModeMutex.withLock {
+                // The global Recording switch also attempts VRec's built-in local
+                // ADB setup when Enhanced ADB was chosen. No external Termux.
+                // If Android has never authorized adbd, explain the necessary
+                // system step; never treat the app UID as shell UID 2000.
+                if (Prefs.recordingEnabled(appContext) &&
+                    true) {
+                    LocalAdbMiddleware.setup(appContext)
+                }
                 var applied = false
                 repeat(3) { attempt ->
                     if (!applied) {

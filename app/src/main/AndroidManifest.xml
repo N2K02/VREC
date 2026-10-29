@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Granted only through a verified ADB shell (pm grant), so VRec can switch
+         Wireless debugging back on after a restart and restore the helper. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Discover on-device Wireless debugging mDNS pairing and TLS services. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- Recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -7,6 +16,8 @@
 
     <!-- Detecting SIM calls -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Personal sideloaded build: correlate saved cellular recordings with the local call log. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- Non-UI Telecom call observer; activation additionally needs the MANAGE_ONGOING_CALLS AppOp. -->
     <uses-permission android:name="android.permission.MANAGE_ONGOING_CALLS" />
     <!-- Optional: resolve the other party's name from contacts -->
@@ -23,14 +34,26 @@
 
     <!-- In-app updater (same pipeline as the other apps) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Discover local ADB endpoints and support Android 16/17 local-network checks. -->
-    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
-    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <!-- Internet is used for updates; ADB only connects to localhost TCP/5555. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
+
+    <!-- Android 11+ package visibility: look up only supported call apps so
+         recording cards can show their real installed icons and app labels.
+         Uninstalled or unlisted apps retain the generic icon fallback. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="org.thoughtcrime.securesms" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.viber.voip" />
+        <package android:name="com.skype.raider" />
+        <package android:name="com.google.android.apps.tachyon" />
+    </queries>
 
     <application
         android:name=".VrecApp"
@@ -39,8 +62,8 @@
         android:label="VREC"
         android:supportsRtl="true"
         android:theme="@style/Theme.VREC">
-        <provider android:name="com.vrec.app.CrashJournalProvider" android:authorities="${applicationId}.crashjournal" android:exported="false" android:initOrder="100" />
 
+        <provider android:name="com.vrec.app.CrashJournalProvider" android:authorities="${applicationId}.crashjournal" android:exported="false" android:initOrder="100" />
 
         <activity
             android:name=".MainActivity"
@@ -52,6 +75,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Shizuku-style notification pairing code, handled only by this app. -->
+        <receiver android:name=".experimental.adb.VrecPairingReceiver" android:exported="false" />
 
         <!-- Holds the mic and writes the file while a call is active. -->
         <service
@@ -65,6 +91,8 @@
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
             android:foregroundServiceType="dataSync" />
+
+        <receiver android:name=".recording.EnhancedCaptureControlReceiver" android:exported="false" />
 
         <!-- Optional floating Record/Pause/Stop and Close controls. -->
         <service

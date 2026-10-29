@@ -1,34 +1,48 @@
-# VRec recording architecture (consolidated experimental)
+# VRec recording architecture — experimental PR #40
 
-## Two recording methods
+## Capture path
 
-1. **Standard** — Android foreground microphone service managed by `RecordingService` and `RecordingEngine`. Does not require ADB. The Home **Recording** master switch and automatic-recording setting control whether new recordings may start.
-2. **Built-in ADB** — VRec's own Java shell process (`shellserver/src/com/vrec/app/shell/Main.java`) started through authenticated ADB, either Android Wireless debugging or TCP/5555. `AdbPrivilegedApiHelper` connects to and checks the health of `ExperimentalCaptureDaemon` via an authenticated loopback socket. It needs ADB to *bootstrap a missing process*, but may continue after that ADB connection is lost while Android keeps the shell process alive.
+Home Recording → CallMonitor → ExperimentalCaptureDaemon →
+independent Java shell recorder → authenticated loopback import →
+RecordingStore → Recordings UI.
 
-No Shizuku app, provider or user service is required. The old SHIZUKU setting migrates to Standard.
+New captures use the authorized shell helper only; no microphone fallback.
+Capture STARTED/PAUSED/ENDED events, authenticated snapshots, and the helper
+control protocol drive recording state.
 
-## Source-of-truth boundaries
+## ADB initialization and recovery
 
-- **Detection:** `CallMonitor` combines Telecom, SIM and VoIP notification signals, enriches metadata, and decides when recording is permitted. Notification metadata is not evidence of two-way audio capture.
-- **Standard recording:** `RecordingService` starts a foreground service. `RecordingEngine` attempts one Android audio source at a time in auto mode (VOICE_CALL → VOICE_RECOGNITION → VOICE_COMMUNICATION; optional speaker mic), retaining the first source with a measurable signal. *Sequential* probing avoids competing simultaneous microphones and disruption of a known-good source; amplitude is **not** proof both callers are audible.
-- **ADB enhanced recording:** `ExperimentalCaptureDaemon` bootstraps the bundled Java recorder once; the shell process owns its call watcher and audio pipeline independently of the APK's microphone recorder. Local loopback commands are authenticated, and completed audio is imported without relying on a persistent ADB connection.
-- **Lifetime and health:** After the user explicitly connects through Wireless debugging or TCP/5555 and VRec verifies shell UID 2000, `AdbPrivilegedApiHelper` automatically starts or reattaches to the Java daemon. There is no separate Start button. The helper also reconciles an existing daemon after app process restart and when the Experimental screen appears. It must not silently enable USB/Wireless debugging, start ADB over the network, or re-arm capture against the user's Home preference.
-- **Mutual exclusion:** While the enhanced shell daemon is active, SIM calls are owned by it and VRec avoids a duplicate foreground microphone recording. VoIP uses the Standard fallback unless explicitly armed and supported by the shell side. The Home master switch stops future capture in both engines.
-- **Storage/metadata:** `RecordingStore` stores audio in app-specific storage with a JSON sidecar. Only record metadata that is actually observed or derived; unknown number/carrier/SIM/party voice should remain unknown, and approximate call times must be labeled estimated.
+- On Android 11+, the user enables USB and Wireless debugging and enters the
+  one-time Android wireless pairing code.
+- The embedded ADB transport connects to this phone's TLS pairing/connection
+  ports, verifies `id -u == 2000`, then configures eligible permissions.
+- Automatic TCP/5555 is enabled by default. After verification, VRec switches
+  transports, waits for adbd, reconnects to localhost:5555 and re-verifies
+  the shell UID and helper. TCP may be network accessible; Settings has an opt-out.
+- A trusted external USB host with `adb tcpip 5555` remains an alternative
+  for Android versions without Wireless debugging.
+- AdbLifecycle owns periodic background recovery, while shared transport
+  serialization coordinates foreground setup, wireless pairing and TCP repair.
+  A separate recovery gate may wait for wireless discovery without blocking
+  the pairing callback.
+- A detached healthy helper does not require a permanently attached ADB client;
+  reboot or OEM policies can still stop the helper and TCP listener.
 
-## Privileges and recovery
+## Recording data integrity
 
-- Android's `shell` UID is **not** root, and successful ADB pairing does not imply permission to capture every call-audio pipeline.
-- A daemon that Android kills, a reboot, an APK reinstall that rotates the local token, or an incompatible OS update may require a new authorized ADB/TCP bootstrap.
-- TCP/5555 should not be treated as safer than modern encrypted Wireless debugging: it can expose debugging to the local network, and it may not remain available after a restart.
-- We do **not** restart recording after Home Off, nor infer two-way sound from nonzero amplitude.
+The shell produces an authenticated Opus stream. VRec validates packets and
+writes the playable OGG file via a temporary file. It writes complete JSON
+sidecar metadata using Android AtomicFile before deleting the shell original.
+Write failures keep the shell original for retry. Metadata edits and bookmarks
+use atomic writes, and deletions/saves report failures to the UI.
 
-## Regression checklist
+Storage and capture errors appear as Home warnings and Android notifications
+where allowed, with no call identity in the notification. The app never treats
+UID 2000 alone as proof of two-way audio.
 
-- Standard source fallback: Voice call source fails, Voice recognition produces audible audio; no extra duplicate files.
-- Standard silent fallback: test Communication mic only after Voice recognition remains silent during the probe.
-- Built-in ADB: start daemon using authenticated ADB; disconnect ADB/Wi-Fi; reopen VRec; verify local authenticated probe and file import.
-- Switch Home Off with an active call: both engines must stop/disable capturing; verify status, then re-enable only with explicit user action.
-- Restart app without ADB: helper reports running if daemon survived, otherwise ADB required. Never claim auto-persistence across reboot.
-- Old metadata remains readable; unknown details remain unknown rather than guessed.
-- Recordings screen: only one active inline audio player and rounded action/sort sheets.
+## Validation
+
+Regression tests cover pairing decision policy, transport synchronization,
+navigation stability, helper readiness, quit, imports and metadata contracts.
+Physical-device testing remains necessary for capture quality, reboot,
+wireless pairing and network listener behavior.

@@ -42,7 +42,7 @@ object Prefs {
     /** Advanced Telecom detection is only active in the explicitly selected ADB mode. */
     const val EXPERIMENTAL_CALL_DETECTION = "experimental_call_detection"
     fun experimentalCallDetection(c: Context) =
-        ExperimentalRecording.method(c) == ExperimentalRecording.Method.BUILT_IN_ADB &&
+        true &&
             of(c).getBoolean(EXPERIMENTAL_CALL_DETECTION, false)
 
     fun showOverlay(c: Context) = of(c).getBoolean(SHOW_OVERLAY, SHOW_OVERLAY_DEFAULT)

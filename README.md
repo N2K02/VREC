@@ -1,115 +1,66 @@
-# VREC — Call recorder (no root, no Shizuku, no debugging)
+# VRec — Android call recorder
 
-VREC is a personal Android call recorder that works **without root, without Shizuku, and without
-USB or wireless debugging**. It records SIM calls (and optionally VoIP calls like WhatsApp) using
-only permissions you grant on the phone itself.
+VRec records supported SIM and VoIP calls locally using a separate, authorized
+Android shell recording helper (UID 2000). In experimental [PR #40](https://github.com/N2K02/VREC/pull/40),
+all **new** recordings are ADB-backed: no Standard/ADB mode selector or
+automatic microphone fallback. Stable `main` remains unchanged until merge.
 
-## Download
+## First-time ADB setup
 
-- [Latest release / APK download](https://github.com/N2K02/VREC/releases/latest)
+1. Open Android Developer options. Enable **USB debugging** and, on Android 11+
+   devices with Wi-Fi, **Wireless debugging**.
+2. In VRec Home, tap **Set up ADB recording** and open Android Wireless debugging.
+   Select **Pair device with pairing code**.
+3. Enter the one-time six-digit Android pairing code in VRec or its pairing
+   notification. Android controls pairing approval; VRec cannot self-authorize.
+4. VRec connects to this phone's TLS ADB listener, verifies `id -u == 2000`,
+   attempts supported permissions, and starts the independent recording helper.
+5. **Automatic TCP/5555 is on by default.** After UID 2000 verification, VRec
+   switches adbd to TCP/5555, waits for it to restart, reconnects to
+   `127.0.0.1:5555` and re-verifies UID 2000 and the recording helper.
+   Previously authorized connections are restored automatically when available.
+
+On devices without Wireless debugging, a trusted external USB ADB host must
+run `adb devices` then `adb tcpip 5555` after the phone approves the host.
+USB debugging alone cannot authorize an ordinary Android app shell.
+
+**Network notice:** Android's TCP/5555 listener may be accessible to other
+devices on the network. Disable automatic TCP mode in Settings if you do not
+want that exposure; the app attempts to close an active listener when authorized.
+Reboot or OEM policies may reset debugging, requiring further user action.
+
+## Recording reliability
+
+Home distinguishes helper readiness, current ADB authorization, recording armed,
+actual capture and attention-required conditions. A healthy detached helper
+can continue recording without a live ADB client. Android shell UID 2000 alone
+is not proof of two-sided audio capture or a playable recording.
+
+New captures use only the shell helper. If capture fails, VRec does not
+silently create microphone audio; it shows a warning and, where allowed, a
+notification. Imported recordings retain the shell original until the audio and
+**atomically saved JSON metadata** are complete.
+
+## Android permissions
+
+VRec attempts and verifies eligible permission grants only after UID 2000 is
+verified. Android can refuse restricted grants. Accessibility
+(**Vrec call recording helper**), overlay and notification-listener access
+remain user-controlled.
+
+## Features
+
+- SIM and supported VoIP capture with caller/number/SIM metadata.
+- Audio channel/silence diagnostics, pause/resume/stop controls.
+- Saved recordings with playback, search, details, notes, favorites and sharing.
+- On-device recording and import failure warnings, metadata integrity checks.
+- Background ADB recovery, Settings diagnostics, logs, updates and Quit.
+
+## APKs
+
+- [Stable releases](https://github.com/N2K02/VREC/releases/latest)
 - [All releases](https://github.com/N2K02/VREC/releases)
+- [Experimental PR #40](https://github.com/N2K02/VREC/pull/40)
 
-Install the APK, open VREC, and follow the two setup steps. Each push to `main` builds a new APK
-through GitHub Actions and publishes it here; the app can also update itself from these releases.
-
-## If the in-app updater cannot open Android's installer
-
-VREC versions built before the dedicated recording-sharing FileProvider fix can fail
-with `Couldn't find meta-data for provider with authority
-com.vrec.app.n2k02updater.files`. A valid update APK may already have downloaded,
-but that older app cannot present it to Android's package installer.
-
-**Recovery:** download the latest stable VREC APK from
-[the official VREC releases](https://github.com/N2K02/VREC/releases/latest)
-and open the APK in Android's Files or Downloads app to install it over VREC.
-Use the same `com.vrec.app` package and signing identity; no uninstall or
-recording-data deletion should be necessary. After that one manual install,
-the shared in-app stable and experimental installer can use its own dedicated
-`n2k02updater.files` provider independently of recording sharing.
-
-## Experimental call detection (Android 12+)
-
-VREC's optional non-UI InCallService observes Telecom-managed SIM calls and third-party
-self-managed calls without becoming the default dialer. This is **detection only**;
-the existing recording engine remains unchanged. Some VoIP apps/OEMs do not expose calls
-through Telecom, so Notification access remains the fallback. Accessibility is a
-last-resort source for missing visible caller metadata, not the call-state authority.
-The observer needs the elevated `android:manage_ongoing_calls` AppOp (for example,
-`adb shell appops set com.vrec.app android:manage_ongoing_calls allow`).
-Enable **Settings → Experimental call detection** and grant the AppOp in Setup.
-The experiment is off by default, independent of the updater channel.
-
-The listener captures available app, account, caller and direction metadata; notification
-Person, title and tel URI are tried before Accessibility. A displayed contact name is
-mapped to a number only if there is exactly one unique number for an exact contact match.
-No source guarantees third-party call visibility, UI metadata or protected call audio.
-
-## How it records
-
-Since Android 10, an ordinary app is handed **silence** while a call is active. The only no-privilege
-exception the system allows is an **enabled accessibility service** — the same mechanism Cube ACR and
-ACR Phone rely on (and the reason they ship a separate helper app). VREC includes a minimal
-accessibility service whose *only* job is to be switched on so the system treats VREC's microphone
-capture as privileged during a call. It does not read your screen, tap buttons, or control calls.
-
-Whether the **other party** is captured still varies a lot by phone, Android version, headset and
-Wi-Fi calling — no app can guarantee it without root. So VREC doesn't trust a single microphone
-source. In **Automatic** mode it tries a fallback chain and keeps the first that produces sound:
-
-1. **Voice call line** — full two-way on some OEMs; blocked/silent on many phones.
-2. **Voice recognition** (with in-communication mode) — often the best two-way result.
-3. **Communication mic** — your side plus some of the other side.
-4. **Microphone + loudspeaker** — last resort: the mic records both sides from the room.
-
-Each source is probed for ~2.5s; if it only produces silence, VREC moves to the next. If a recording
-still comes out silent, VREC tells you so in the list and the activity log, so you know this device
-blocks call capture on that source. You can also pick a single source by hand in Settings.
-
-## Recording management
-
-The Recordings screen includes caller/search text matching, incoming/outgoing/VoIP/favorites/silent filters, sorting by date, duration, size or caller, multi-select deletion, favorites, notes, manual caller labels, playback speed, bookmarks, audio sharing and JSON detail export. Open a recording to see its metadata and edit caller number, country/calling code, SIM label and carrier when Android did not provide them.
-
-Recordings remain M4A audio files with a JSON sidecar. Older recordings without newer metadata remain visible and playable. Caller and SIM fields are best-effort: Android may not expose the phone number, contact match, or the SIM subscription used for a particular call. VREC shows unknown/unavailable rather than guessing. Country is only suggested for recognised explicit international prefixes; it can be edited manually. SIM label and carrier can be added manually when the call event doesn't identify them.
-
-Bookmarks are saved as timestamps in the sidecar; playback speed is a local playback setting. Recording audio and metadata remain on-device unless you explicitly share/export them. Bulk deletion asks for confirmation.
-
-## Setup
-
-1. **Microphone & phone permissions** — to record and to notice when a call starts (contacts is
-   optional, only to show who you were talking to).
-2. **Accessibility service** — switch on "VREC call recording" under Android's Accessibility settings.
-   - If the toggle is greyed out with *"Restricted setting"* (Android 13+), open
-     **Settings ▸ Apps ▸ VREC ▸ ⋮ ▸ Allow restricted settings**, then try again.
-   - On **Android 16** you can't enable accessibility *during* a call — set it up beforehand.
-3. **VoIP (optional)** — grant Notification access and turn on "Record VoIP calls" to also record
-   WhatsApp, Telegram, Signal and similar. These usually need the loudspeaker option to catch both sides.
-
-## Settings
-
-- **Record calls automatically** — start as soon as a call connects.
-- **Microphone source** — Automatic (recommended), or a specific source.
-- **Put call on loudspeaker** — last-resort way to capture both sides.
-- **Force in-communication mode** — helps some phones route the far side into the recording.
-- **Record VoIP calls** — WhatsApp etc., via Notification access.
-- **Discard silent recordings** — drop recordings this phone blocked.
-
-Recordings are saved privately in VREC's own storage and never leave the phone unless you share them.
-
-## Known limits
-
-- Capturing the other party is **device-dependent** — some phones only ever record your side.
-- Bluetooth / wired headset calls usually capture only your side.
-- Android 17's Advanced Protection mode can disable non-accessibility-tool services; VREC can't
-  record while that mode is on.
-- Recording calls may require the other person's consent where you live. You are responsible for
-  using VREC lawfully.
-
-## Build
-
-Standard Android/Gradle project (Kotlin, Jetpack Compose, Material 3). CI builds a signed debug APK
-and publishes it as a release. No source other than the phone itself is needed to record.
-
-## Links
-
-- [Source repository](https://github.com/N2K02/VREC)
-- [Report an issue](https://github.com/N2K02/VREC/issues)
+**Validation:** CI does not prove hardware capture quality. Verify a consented
+call and playback on the target device before relying on automatic recording.

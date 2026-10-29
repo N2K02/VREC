@@ -5,20 +5,15 @@ import android.os.Build
 import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbStream
-import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.net.InetAddress
 import java.security.PrivateKey
 import java.security.cert.Certificate
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Concrete [AbsAdbConnectionManager] bound to this app's persisted identity.
@@ -44,30 +39,12 @@ private class JemAdbConnectionManager(context: Context) : AbsAdbConnectionManage
 
     override fun getCertificate(): Certificate = identity.certificate
 
-    /** Shown on the phone's "paired devices" list in Wireless debugging. */
     override fun getDeviceName(): String = "VREC"
 }
 
 /**
- * The embedded ADB client: pair with this phone's own Wireless debugging, hold
- * a TLS connection to its adbd over loopback, and run commands at shell
- * privilege.
- *
- * WHY LOOPBACK IS THE POINT, NOT A DETAIL
- *
- * adbd's TLS listener binds to INADDR_ANY, not to the Wi-Fi address. Measured
- * on the target device with Wireless debugging on: `ss -ltn` shows `*:42321`.
- * That wildcard bind is what lets a process on the phone itself reach it at
- * 127.0.0.1, and it is why this design does not need a companion app, a PC, or
- * a network. libadb agrees - its own AndroidUtils.getHostIpAddress() returns
- * the loopback address, so connecting to ourselves is the library's intended
- * use, not a trick played on it.
- *
- * The unsolved half is DISCOVERY, not connection. The port above is ephemeral
- * and is advertised over mDNS, which needs a live network interface. With Wi-Fi
- * off there is nothing to browse, so the port has to be either remembered or
- * pinned. That is what makes the Wi-Fi-off state a real test rather than a
- * formality, and it is tracked separately.
+ * Embedded ADB client restricted to localhost TCP/5555 after USB-host setup.
+ * Running an ADB client inside VRec does not enable the system daemon.
  */
 object AdbTransport {
 
@@ -78,8 +55,7 @@ object AdbTransport {
 
     /**
      * The legacy fixed ADB-over-TCP port. Only reachable if something has set
-     * `service.adb.tcp.port`; tried as a last resort because when it IS set it
-     * is stable across Wi-Fi state, which no mDNS-discovered port is.
+     * `service.adb.tcp.port`; this is the sole supported local transport.
      */
     const val LEGACY_TCP_PORT = 5555
 
@@ -118,25 +94,6 @@ object AdbTransport {
         }
 
     /**
-     * Run the SPAKE2 pairing exchange. On success adbd permanently stores our
-     * public key, and every later connect() needs no code.
-     *
-     * The code and the pairing port are both short-lived: they exist only while
-     * the "Pair device with pairing code" dialog is open, and the port is not
-     * the same as the connect port.
-     */
-    suspend fun pair(context: Context, host: String, port: Int, code: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                Log.i(TAG, "pair: $host:$port")
-                val ok = manager(context).pair(host, port, code)
-                check(ok) { "adbd rejected the pairing code" }
-                Log.i(TAG, "pair: accepted")
-                Unit // Log.i returns an Int; without this the block is Result<Int>
-            }
-        }
-
-    /**
      * Connect to an explicitly known port.
      *
      * libadb's connect() returns false for TWO different things - the attempt
@@ -149,113 +106,46 @@ object AdbTransport {
     suspend fun connect(context: Context, host: String, port: Int): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
+                require(host == LOOPBACK && port == LEGACY_TCP_PORT) {
+                    "Only USB-bootstrapped localhost ADB TCP/5555 is supported"
+                }
                 val mgr = manager(context)
                 if (mgr.isConnected) {
-                    Log.i(TAG, "connect: already connected")
                     return@runCatching
                 }
-                Log.i(TAG, "connect: $host:$port")
                 val ok = mgr.connect(host, port)
                 check(ok || mgr.isConnected) { "connect refused by adbd at $host:$port" }
                 Log.i(TAG, "connect: established")
             }
         }
 
-    /**
-     * Find adbd without being told where it is, in the order that degrades
-     * best: mDNS first (correct whenever there is a network), then the fixed
-     * legacy port (correct whenever someone has pinned it, including with Wi-Fi
-     * off), and only then give up.
-     */
-    suspend fun autoConnect(context: Context, timeoutMs: Long = 5_000,
-        allowLegacyTcpFallback: Boolean = true): Result<Unit> =
+    /** Pair only with this phone's Android TLS pairing endpoint.
+     * The six-digit code is supplied explicitly by the user and is never logged. */
+    suspend fun pairLocal(context: Context, port: Int, code: String): Result<Unit> =
         withContext(Dispatchers.IO) {
-            lastConnect = ConnectOutcome.NONE
             runCatching {
+                require(port in 1..65535 && code.matches(Regex("[0-9]{6}")))
                 val mgr = manager(context)
-                if (mgr.isConnected) {
-                    Log.i(TAG, "autoConnect: already connected")
-                    lastConnect = ConnectOutcome.CONNECTED
-                    return@runCatching
-                }
-
-                val discovered = discoverPort(context, AdbMdns.SERVICE_TYPE_TLS_CONNECT, timeoutMs)
-                if (discovered != null) {
-                    Log.i(TAG, "autoConnect: mDNS found connect port $discovered")
-                    // See connect() above: false is ambiguous, isConnected is
-                    // not. A throw here is adbd turning us away at the TLS
-                    // handshake - which is what a forgotten pairing looks like.
-                    val accepted = runCatching { mgr.connect(LOOPBACK, discovered) }
-                        .onFailure { Log.w(TAG, "autoConnect: port $discovered refused us - ${it.message}") }
-                        .getOrDefault(false) || mgr.isConnected
-                    if (accepted) {
-                        lastConnect = ConnectOutcome.CONNECTED
-                        return@runCatching
-                    }
-                    Log.w(TAG, "autoConnect: mDNS port $discovered did not accept us")
-                    lastConnect = ConnectOutcome.REFUSED
-                } else {
-                    Log.i(TAG, "autoConnect: no mDNS advertisement (Wi-Fi off, Wireless debugging off, or not allowed on this Wi-Fi)")
-                    lastConnect = ConnectOutcome.NOT_FOUND
-                }
-
-                check(allowLegacyTcpFallback) {
-                    "Wireless debugging connection not found. Turn on Wireless debugging " +
-                        "and confirm this phone is paired, or choose TCP/5555."
-                }
-                Log.i(TAG, "autoConnect: trying fixed port $LEGACY_TCP_PORT")
-                val ok = mgr.connect(LOOPBACK, LEGACY_TCP_PORT)
-                check(ok || mgr.isConnected) {
-                    "no adbd found by mDNS, and nothing listening on $LEGACY_TCP_PORT"
-                }
-                lastConnect = ConnectOutcome.CONNECTED
+                check(mgr.pair(LOOPBACK, port, code)) { "Android rejected pairing code" }
+                Unit
             }
         }
 
-    /**
-     * How the last autoConnect went, for the recorder-down alert (see
-     * RecorderHealth): an adbd that advertises itself and then turns us away
-     * is telling us something different from one that is not there at all.
-     * NONE until an attempt this process has made says otherwise.
-     */
-    enum class ConnectOutcome { NONE, CONNECTED, NOT_FOUND, REFUSED }
-
-    @Volatile
-    var lastConnect: ConnectOutcome = ConnectOutcome.NONE
-        private set
-
-    /** A revive starts a fresh reading, so one that never got as far as
-     *  connecting does not inherit the last one's. */
-    fun forgetLastConnect() {
-        lastConnect = ConnectOutcome.NONE
-    }
-
-    /**
-     * Browse mDNS for one of adbd's advertised services and return its port.
-     *
-     * [AdbMdns.SERVICE_TYPE_TLS_PAIRING] is advertised only while the pairing
-     * dialog is on screen; [AdbMdns.SERVICE_TYPE_TLS_CONNECT] whenever Wireless
-     * debugging is on AND a network interface exists to advertise on.
-     */
-    suspend fun discoverPort(
-        context: Context,
-        serviceType: String,
-        timeoutMs: Long = 5_000,
-    ): Int? = withContext(Dispatchers.IO) {
-        val port = AtomicInteger(-1)
-        val found = CountDownLatch(1)
-
-        val mdns = AdbMdns(context.applicationContext, serviceType) { _: InetAddress?, p: Int ->
-            if (p > 0 && port.compareAndSet(-1, p)) found.countDown()
+    /** Dynamic TLS listener published by this phone's Wireless debugging settings.
+     * No arbitrary IP/device addresses are accepted. */
+    suspend fun connectLocalTls(context: Context, port: Int): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                require(port in 1..65535)
+                val mgr = manager(context)
+                if (!mgr.isConnected) {
+                    check(mgr.connect(LOOPBACK, port) || mgr.isConnected) {
+                        "Android TLS debugging connection not authorized"
+                    }
+                }
+                Unit
+            }
         }
-        mdns.start()
-        try {
-            if (!found.await(timeoutMs, TimeUnit.MILLISECONDS)) return@withContext null
-        } finally {
-            mdns.stop()
-        }
-        port.get().takeIf { it > 0 }
-    }
 
     /**
      * Run one command and return everything it wrote.
@@ -441,29 +331,25 @@ object AdbTransport {
         }
     }
 
-    /**
-     * Request an already-authenticated adbd to restart as TCP/5555. This is
-     * opt-in and may expose adbd on LAN interfaces; the user must confirm first.
-     * ADB normally drops the connection while changing transport modes.
-     */
-    suspend fun switchToTcp(port: Int = 5555): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            require(port == LEGACY_TCP_PORT) { "Only the expected port is supported" }
-            val mgr = manager ?: error("Connect with authenticated Wireless debugging first")
-            check(mgr.isConnected) { "Connect with authenticated Wireless debugging first" }
-            mgr.openStream("tcpip:$port").let { stream ->
-                // The restart command is asynchronous. Do not close the stream
-                // immediately: let adbd accept the request before it restarts.
-                delay(400L)
+    /** Switch the already-authorized TLS adbd session to legacy TCP/5555.
+     * adbd may close the TLS stream as soon as the command is accepted.
+     * The caller must reconnect to localhost and reverify UID 2000. */
+    suspend fun switchToTcpip(port: Int = LEGACY_TCP_PORT): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                require(port == LEGACY_TCP_PORT)
+                val mgr = manager ?: error("ADB is not connected")
+                check(mgr.isConnected) { "ADB is not connected" }
+                val stream = mgr.openStream("tcpip:$port")
+                delay(500L)
                 runCatching { stream.close() }
+                runCatching { shell?.close() }
+                shell = null
+                runCatching { mgr.disconnect() }
+                lastKnownConnected = false
+                Unit
             }
-            runCatching { shell?.close() }
-            shell = null
-            runCatching { mgr.disconnect() }
-            lastKnownConnected = false
-            Unit
         }
-    }
 
     /** Ask adbd to leave TCP mode and return to USB, when connected. */
     suspend fun switchToUsb(): Result<Unit> = withContext(Dispatchers.IO) {
@@ -492,7 +378,7 @@ object AdbTransport {
     }
 
     /** Drops the connection AND the in-memory manager, but never the identity
-     *  files - those are the pairing and must outlive any session. */
+     *  files - keep the stable ADB identity across app sessions. */
     suspend fun close() = withContext(Dispatchers.IO) {
         runCatching { shell?.close() }
         shell = null

@@ -128,7 +128,7 @@ object AppUpdater {
     fun check(manual: Boolean) {
         if (job?.isActive == true) return
         job = scope.launch {
-            com.vrec.app.Log.i(if (manual) "Checking for updates (manual)" else "Checking for updates")
+            if (manual) com.vrec.app.Log.i("Checking for updates (manual)")
             _state.value = State.Checking
             val result = runCatching {
                 val stable = latestRelease()
@@ -148,7 +148,7 @@ object AppUpdater {
                 }
                 !manual && prefs.getString("skipped", null) == release.tag -> State.Idle
                 else -> {
-                    com.vrec.app.Log.i("Update available: ${release.versionName}")
+                    if (manual) com.vrec.app.Log.i("Update available: ${release.versionName}")
                     State.Available(release)
                 }
             }

@@ -1,8 +1,18 @@
 package com.vrec.app
 
 import android.Manifest
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Folder
@@ -29,6 +39,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,10 +83,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.CallMonitor
@@ -82,25 +95,28 @@ import kotlinx.coroutines.delay
 import kotlin.math.sqrt
 import com.vrec.app.recording.RecordingService
 import com.vrec.app.recording.AdbFallbackNotice
+import com.vrec.app.recording.RecordingFailureNotice
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
 import com.vrec.app.ui.SetupScreen
 import com.vrec.app.ui.rememberReadiness
 import com.vrec.app.ui.theme.VrecTheme
+import com.vrec.app.ui.HomePanelStyle
 import com.vrec.app.update.AppUpdater
 import com.vrec.app.update.UpdateScreen
 
-private enum class Screen { HOME, RECORDINGS, SETUP, SETTINGS, LOG, UPDATE }
+private enum class Screen { HOME, RECORDINGS, SETTINGS, LOG, UPDATE }
 
 class MainActivity : ComponentActivity() {
-    private var adbRecoveryJob: kotlinx.coroutines.Job? = null
 
     companion object {
         const val ACTION_OPEN_ADB_SETUP = "com.vrec.app.action.OPEN_ADB_SETUP"
@@ -110,12 +126,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.initialize(applicationContext)
         AppLog.init(applicationContext)
         LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
         openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
+        // Opening VRec after Quit resumes background ADB recovery.
+        com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
                 App(openAdbSetup = openAdbSetup, onAdbSetupHandled = { openAdbSetup = false })
@@ -132,20 +149,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         LiveUpdater.onResume(this)
-        adbRecoveryJob?.cancel()
-        adbRecoveryJob = lifecycleScope.launch {
-            while (isActive) {
-                runCatching { AdbHelperAutoRecovery.check(applicationContext) }
-                    .onFailure { Log.w("ADB helper recovery failed", it) }
-                delay(30_000L)
-            }
-        }
-    }
-
-    override fun onPause() {
-        adbRecoveryJob?.cancel()
-        adbRecoveryJob = null
-        super.onPause()
+        // AdbLifecycle owns recovery; do not launch a competing 30-second loop.
     }
 }
 
@@ -161,8 +165,8 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
 
     LaunchedEffect(openAdbSetup) {
         if (openAdbSetup) {
-            screen = Screen.SETTINGS
-            settingsSection = "Experimental"
+            screen = Screen.HOME
+            settingsSection = null
             returnToSettings = false
             onAdbSetupHandled()
         }
@@ -191,16 +195,18 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     val title = when (screen) {
         Screen.HOME -> "Home"
         Screen.RECORDINGS -> "Recordings"
-        Screen.SETUP -> "Setup"
         Screen.SETTINGS -> "Settings"
-        Screen.LOG -> "Activity log"
+        Screen.LOG -> "Logs"
         Screen.UPDATE -> "About & updates"
     }
 
     Scaffold(
         topBar = {
             VrecBrandHeader(
-                title = if (screen == Screen.SETTINGS) settingsSection ?: "Settings" else title,
+                title = if (screen == Screen.SETTINGS) {
+                    if (settingsSection == "Experimental") "ADB diagnostics"
+                    else settingsSection ?: "Settings"
+                } else title,
                 screen = screen,
             )
         },
@@ -254,6 +260,10 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 // dismiss floating controls, and disable ADB capture.
                                 CallMonitor.setRecordingEnabled(quitContext, false)
                                 LiveUpdater.controller.cancel()
+                                RecordingFailureNotice.dismiss(quitContext)
+                                // Stops recovery loop, Wi-Fi listener, discovery, in-flight
+                                // connects and closes VRec's ADB session.
+                                com.vrec.app.experimental.adb.AdbLifecycle.quit(quitContext)
                                 (quitContext as? ComponentActivity)?.finishAndRemoveTask()
                             },
                             icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Quit") },
@@ -267,24 +277,16 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(
-                    onOpenSetup = { navigateTo(Screen.SETUP) },
-                    onOpenExperimental = {
-                        navigateTo(Screen.SETTINGS)
-                        settingsSection = "Experimental"
-                    },
-                )
+                Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
-                Screen.SETUP -> SetupScreen()
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,
                     onSectionChange = { settingsSection = it },
                     onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
                     onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
-                    onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                 )
                 Screen.LOG -> VRECLogsPage()
                 Screen.UPDATE -> UpdateScreen()
@@ -299,7 +301,6 @@ private fun VrecBrandHeader(title: String, screen: Screen) {
     val icon = when (screen) {
         Screen.HOME -> Icons.Rounded.Home
         Screen.RECORDINGS -> Icons.Rounded.Folder
-        Screen.SETUP -> Icons.Rounded.Tune
         Screen.SETTINGS -> Icons.Rounded.Settings
         Screen.LOG -> Icons.Rounded.Article
         Screen.UPDATE -> Icons.Rounded.Info
@@ -339,14 +340,30 @@ private fun VrecBrandHeader(title: String, screen: Screen) {
     }
 }
 
-/** Recording equivalent of MRadio's persistent Now Playing mini-bar. */
+/** Animated indicator shown only while a recording is actually active. */
+@Composable
+private fun BlinkingRecordingDot(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "Recording indicator")
+    val opacity by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "Recording dot blink",
+    )
+    Box(
+        modifier = modifier.size(10.dp).alpha(opacity)
+            .background(Color(0xFFE53935), CircleShape),
+    )
+}
+
+/** Mini transport shared with the live Home card; no redundant "tap to view" text. */
 @Composable
 private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Unit) {
-    val peer = when (state) {
-        is RecordingService.State.Recording -> state.peer
-        is RecordingService.State.Paused -> state.peer
-        else -> null
-    }
+    val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val details = rememberLiveRecordingDisplay()
     val status = when (state) {
         is RecordingService.State.Paused -> "Recording paused"
         is RecordingService.State.Starting -> "Starting recording"
@@ -355,183 +372,148 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
         else -> "Recording"
     }
     Surface(
-        onClick = onOpen,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = HomePanelStyle.color(highlight = shellActive),
+        border = HomePanelStyle.border(highlight = shellActive),
+        shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(Icons.Rounded.Mic, contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f)) {
-                Text(status, style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold)
-                Text(peer?.takeIf { it.isNotBlank() } ?: "Tap to view recording controls",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                if (state is RecordingService.State.Recording) BlinkingRecordingDot()
+                else Icon(Icons.Rounded.Mic, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                Column(Modifier.weight(1f).clickable(onClick = onOpen),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(status, style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        LiveRecordingSourceIcon(details.info)
+                        Text("${details.info.caller} · ${details.info.source}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Text(details.duration, style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
             }
-            Icon(Icons.Rounded.ChevronRight, contentDescription = "View recording",
-                tint = MaterialTheme.colorScheme.primary)
+            LiveRecordingActions(
+                state = state,
+                shellActive = shellActive,
+                compact = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
 
 @Composable
-private fun HomeScreen(
-    onOpenSetup: () -> Unit,
-    onOpenExperimental: () -> Unit,
-) {
+private fun HomeScreen(onOpenRecordings: () -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
-    val standardFallback by AdbFallbackNotice.active.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
-    val recording = recState !is RecordingService.State.Idle || enhancedActive
+    val recordingWarning by RecordingFailureNotice.warning.collectAsState()
+    val confirmedRecording = recState is RecordingService.State.Recording ||
+        (enhancedActive && recState is RecordingService.State.Idle)
     var recordingEnabled by remember { mutableStateOf(Prefs.recordingEnabled(context)) }
-    val adbSelected = ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB
-    val adbConnection by ExperimentalRecording.status.collectAsState()
-    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
-    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    val helperMessage by ExperimentalCaptureDaemon.message.collectAsState()
-    val connectionScope = rememberCoroutineScope()
 
-    // Observe connection changes while Home is visible. This does not pair, connect,
-    // enable TCP debugging, or start the privileged helper without user consent.
-    LaunchedEffect(adbSelected) {
-        if (adbSelected) {
-            while (true) {
-                ExperimentalRecording.refreshConnectionStatus()
-                AdbPrivilegedApiHelper.checkHealth(context)
-                delay(8_000L)
-            }
-        }
-    }
+    // Helper recovery and connection checks belong to AdbLifecycle, not
+    // a screen-scoped polling coroutine that restarts on every navigation.
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        RecordingMasterCard(enabled = recordingEnabled, onEnabledChange = { enabled ->
-            CallMonitor.setRecordingEnabled(context, enabled)
-            recordingEnabled = enabled
-        })
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth(),
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer) {
-                        Icon(Icons.Rounded.Mic, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(14.dp).size(30.dp))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text("VREC", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary)
-                        Text(
-                            if (!recordingEnabled) "Recording is off"
-                            else if (recState is RecordingService.State.Stopping) "Saving recording"
-                            else if (enhancedActive) "Enhanced ADB recording"
-                            else if (recording && standardFallback) "Standard recording fallback"
-                            else if (recording) "Recording in progress"
-                            else if (ready) "Ready to record"
-                            else "Complete setup",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            if (!recordingEnabled) "Enable recording above to capture calls"
-                            else if (enhancedActive)
-                                "Standard segment saved · enhanced recorder is active"
-                            else if (recording && standardFallback)
-                                "ADB helper unavailable · recording with the microphone"
-                            else if (ready) "Keep your calls saved privately on this device"
-                            else "Enable microphone and call access to begin",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                if (recordingEnabled) {
-                    (recState as? RecordingService.State.Recording)?.let { RecordingNowCard(it) }
-                }
-                if (!ready) {
-                    Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
-                        Text("Finish setup")
-                    }
-                } else if (recordingEnabled && !enhancedActive) ManualRecordButton(recState)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Recording dashboard", style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold, maxLines = 2)
+                Text("Capture and connection health",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FilledTonalButton(onClick = onOpenRecordings) {
+                Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(17.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.size(6.dp))
+                Text("Library")
             }
         }
-        if (adbSelected) {
-            val verifiedTcp = adbConnection.connected &&
-                adbConnection.connectedTransport == ExperimentalRecording.Transport.TCP &&
-                adbConnection.shellUid == 2000
-            val helperHealthy = helperReady &&
-                helperState == AdbPrivilegedApiHelper.State.RUNNING
+        recordingWarning?.let { warning ->
             Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = HomePanelStyle.color(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.65f)),
+                shadowElevation = 1.dp,
+            ) {
+                Column(Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Recording warning", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error)
+                    Text(warning, style = MaterialTheme.typography.bodyMedium)
+                    androidx.compose.material3.TextButton(
+                        onClick = { RecordingFailureNotice.dismiss(context) }
+                    ) { Text("Dismiss warning") }
+                }
+            }
+        }
+        RecordingMasterCard(
+            state = recState,
+            shellActive = enhancedActive,
+            enabled = recordingEnabled,
+            ready = ready,
+            active = confirmedRecording,
+            paused = recState is RecordingService.State.Paused,
+            starting = recState is RecordingService.State.Starting,
+            saving = recState is RecordingService.State.Stopping,
+            onEnabledChange = { enabled ->
+                CallMonitor.setRecordingEnabled(context, enabled)
+                recordingEnabled = enabled
+            },
+        )
+        if (enhancedActive &&
+            (recState is RecordingService.State.Recording ||
+                recState is RecordingService.State.Paused)) {
+            RecordingNowCard(recState)
+        }
+        Text("Connection & access", style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.vrec.app.ui.LocalAdbHomeCard(
+            recordingActive = recState is RecordingService.State.Recording || enhancedActive,
+            standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
+        )
+        com.vrec.app.ui.PermissionDashboardCard()
+        if (recordingEnabled && !ready) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = HomePanelStyle.color(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.55f)),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("ADB helper status", style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold)
-                    Text(
-                        when {
-                            helperHealthy -> "Helper connected and healthy"
-                            helperState == AdbPrivilegedApiHelper.State.STARTING -> "Helper starting"
-                            helperState == AdbPrivilegedApiHelper.State.ERROR -> "Helper needs attention"
-                            helperState == AdbPrivilegedApiHelper.State.NEEDS_ADB -> "Helper needs authorized ADB"
-                            else -> "Helper not connected"
-                        },
-                        color = if (helperHealthy) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        when {
-                            verifiedTcp -> "TCP/5555: connected and verified (shell UID 2000)"
-                            adbConnection.connected && adbConnection.shellUid == 2000 ->
-                                "ADB authorized via Wireless; TCP not connected"
-                            adbConnection.tcpPortOpen ->
-                                "TCP/5555 listening; ADB authorization not verified"
-                            else -> "TCP/5555 not connected"
-                        },
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Enhanced recording unavailable",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error)
+                    Text("The ADB shell helper is not ready. Calls will not be recorded until enhanced capture is restored. Reconnect ADB and check System Status.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (!helperHealthy && helperMessage.isNotBlank()) {
-                        Text(helperMessage, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Button(
-                            onClick = {
-                                connectionScope.launch {
-                                    ExperimentalRecording.connect(context, 5555, wirelessOnly = false)
-                                }
-                            },
-                            enabled = !adbConnection.busy && !verifiedTcp,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(if (adbConnection.busy) "Connecting…" else if (verifiedTcp) "TCP connected" else "Connect TCP/5555")
-                        }
-                        OutlinedButton(onClick = onOpenExperimental, modifier = Modifier.weight(1f)) {
-                            Text("Experimental setup")
-                        }
-                    }
-                    if (adbConnection.message.isNotBlank() && (!verifiedTcp || !helperHealthy)) {
-                        Text(adbConnection.message, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -539,36 +521,133 @@ private fun HomeScreen(
 }
 
 
-/** Prominent, stable-compatible master toggle shown even before permissions are granted. */
+/** Primary Home control. Actual recording status and helper readiness remain separate. */
 @Composable
-private fun RecordingMasterCard(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+private fun RecordingMasterCard(
+    state: RecordingService.State,
+    shellActive: Boolean,
+    enabled: Boolean,
+    ready: Boolean,
+    active: Boolean,
+    paused: Boolean,
+    starting: Boolean,
+    saving: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    val dashboardState = HomeDashboardPresentation.resolve(
+        enabled, ready, active, paused, starting, saving)
+    val cardColor by animateColorAsState(
+        targetValue = HomePanelStyle.color(highlight = ready && enabled),
+        label = "Recording master card color",
+    )
+    val adbStatus by ExperimentalRecording.status.collectAsState()
+    val badge = when (dashboardState) {
+        HomeDashboardPresentation.State.RECORDING -> "RECORDING"
+        HomeDashboardPresentation.State.PAUSED -> "PAUSED"
+        HomeDashboardPresentation.State.STARTING -> "STARTING"
+        HomeDashboardPresentation.State.SAVING -> "SAVING"
+        HomeDashboardPresentation.State.OFF -> "OFF"
+        HomeDashboardPresentation.State.READY -> "READY"
+        HomeDashboardPresentation.State.SETUP_NEEDED ->
+            if (adbStatus.busy) "CONNECTING" else "SETUP NEEDED"
+    }
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val badgeColor = when (badge) {
+        "READY" -> if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
+        "CONNECTING" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
+        "RECORDING" -> if (dark) Color(0xFFFFA39D) else Color(0xFFB63832)
+        "PAUSED", "STARTING", "SAVING" ->
+            if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
+        "OFF" -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> if (dark) Color(0xFFFFC58F) else Color(0xFF99621F)
+    }
+    val animatedBadgeColor by animateColorAsState(badgeColor, label = "Recording status color")
     Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = if (enabled) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = cardColor,
+        border = HomePanelStyle.border(highlight = enabled),
+        shadowElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
     ) {
-        Row(
-            Modifier.fillMaxWidth().clickable { onEnabledChange(!enabled) }
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Column(
+            Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(Icons.Rounded.Mic, contentDescription = null,
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Recording", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(HomeDashboardPresentation.title(dashboardState),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold)
+                Text(HomeDashboardPresentation.detail(dashboardState),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        Icon(Icons.Rounded.Mic, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp))
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Automatic recording", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    Text(if (enabled) "Recording enabled" else "Recording disabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    enabled = RecordingTransportPresentation.canChangeMasterToggle(state, shellActive),
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = animatedBadgeColor.copy(alpha = 0.14f),
+                    border = BorderStroke(0.75.dp, animatedBadgeColor.copy(alpha = 0.34f)),
+                ) {
+                    Text(badge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = animatedBadgeColor,
+                        fontWeight = FontWeight.SemiBold)
+                }
                 Text(
-                    if (enabled) "On — auto-start once per call; use controls to pause, stop or record again."
-                    else "Off — stops all recording and closes its controls.",
+                    when {
+                        active -> "Capture is active."
+                        paused -> "Capture is paused."
+                        starting -> "Waiting for capture confirmation."
+                        saving -> "Finishing recording."
+                        enabled && !ready && adbStatus.busy -> "Checking ADB authorization…"
+                        enabled && !ready -> "Waiting for the shell helper."
+                        enabled -> "Automatically record supported calls."
+                        else -> "Automatic capture disabled."
+                    },
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            if (!RecordingTransportPresentation.canChangeMasterToggle(state, shellActive)) {
+                Text("Automatic recording cannot be changed until the current capture finishes.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -602,77 +681,80 @@ private fun ManualRecordButton(state: RecordingService.State) {
     }
 }
 
+/** Live capture: caller/app/direction and authenticated shell controls replace the dead meter. */
 @Composable
-private fun RecordingNowCard(state: RecordingService.State.Recording) {
-    val level by RecordingService.level.collectAsState()
-    // Perceptual 0..1 bar; audio amplitude is 0..32767.
-    val fraction = sqrt((level.toFloat() / 32767f).coerceIn(0f, 1f))
-
-    // Only nag about silence after a few seconds, so a normal quiet start isn't flagged.
-    var silentLongEnough by remember { mutableStateOf(false) }
-    LaunchedEffect(state.silentSoFar) {
-        if (state.silentSoFar) { delay(3500); silentLongEnough = true } else silentLongEnough = false
-    }
-
+private fun RecordingNowCard(state: RecordingService.State) {
+    val shellActive by AdbFallbackNotice.enhancedActive.collectAsState()
+    val details = rememberLiveRecordingDisplay()
+    val paused = state is RecordingService.State.Paused
+    val status = if (paused) "Recording paused" else "Recording in progress"
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiary),
+        colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color(highlight = true)),
+        border = HomePanelStyle.border(highlight = true),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("● Recording now", color = MaterialTheme.colorScheme.onTertiary, style = MaterialTheme.typography.titleMedium)
-            Text(
-                (state.peer?.let { "$it · " } ?: "") + state.sourceLabel,
-                color = MaterialTheme.colorScheme.onTertiary,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            LinearProgressIndicator(
-                progress = { fraction },
-                color = MaterialTheme.colorScheme.onTertiary,
-                trackColor = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.25f),
+        Column(Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                if (paused) Icon(Icons.Rounded.Mic, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp))
+                else BlinkingRecordingDot()
+                Text(status, color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(details.duration, style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            Text(details.info.caller, style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                LiveRecordingSourceIcon(details.info)
+                Text(details.info.source, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val direction = when (details.info.direction) {
+                    com.vrec.app.recording.CallDirection.INCOMING -> "↓ Incoming"
+                    com.vrec.app.recording.CallDirection.OUTGOING -> "↑ Outgoing"
+                    else -> ""
+                }
+                if (direction.isNotEmpty()) {
+                    Text(direction, style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            LiveRecordingActions(
+                state = state,
+                shellActive = shellActive,
+                compact = false,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (state.silentSoFar && silentLongEnough) {
-                Text(
-                    "No sound yet — this phone may be blocking call capture. Try turning on " +
-                        "\"Put call on loudspeaker\" in Settings, or pick another source.",
-                    color = MaterialTheme.colorScheme.onTertiary,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
         }
     }
 }
 
-@Composable
-private fun SetupPromptCard(onOpenSetup: () -> Unit) {
-    Card(
-        
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Finish setup", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "VREC needs the microphone permission and its accessibility service switched on " +
-                    "before it can record calls.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Button(onClick = onOpenSetup) { Text("Open setup") }
-        }
-    }
-}
-
-/** Mic + accessibility together are the minimum for recording to work. */
+/** Readiness depends on the capture method; ADB shell capture does not need app microphone access. */
 fun isReady(context: Context): Boolean {
-    val mic = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    val phone = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-    val accessibility = com.vrec.app.calls.VrecAccessibilityService.isEnabled(context)
-    return mic && phone && accessibility
+    val phone = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+        PackageManager.PERMISSION_GRANTED
+    return phone && ExperimentalCaptureDaemon.ready.value &&
+        AdbPrivilegedApiHelper.state.value == AdbPrivilegedApiHelper.State.RUNNING
 }
 
-/** Build the runtime permission set VREC asks for, by SDK level. */
-fun corePermissions(): Array<String> = buildList {
-    add(Manifest.permission.RECORD_AUDIO)
+/** Requested runtime grants are applied and checked after an authorized ADB connection. */
+fun corePermissions(context: Context): Array<String> = buildList {
     add(Manifest.permission.READ_PHONE_STATE)
+    add(Manifest.permission.READ_CALL_LOG)
     add(Manifest.permission.READ_CONTACTS)
     if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
 }.toTypedArray()

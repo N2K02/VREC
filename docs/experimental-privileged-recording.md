@@ -1,267 +1,107 @@
-# VRec experimental call recording — unified PR #32
+# VRec enhanced SIM/VoIP recording — experimental PR #40
 
-This document describes the actual experimental implementation and its limitations.
-**PR #32 is the only open experimental PR, targeting `main`.** PRs #19, #23, #26, and #31 are closed as superseded. Stable is unchanged until review and testing.
+This document reflects the ADB-only changes in the experimental branch.
+Stable `main` stays untouched until review.
 
-## Recording methods
+## First-time wireless pairing and USB fallback
 
-**Standard (default):** The Android app's own foreground microphone recorder
-tries `VOICE_CALL`, `VOICE_RECOGNITION`, then `VOICE_COMMUNICATION`; the optional
-mic/loudspeaker fallback depends on user settings. Auto mode selects the first
-source that starts and produces measurable sound. A non-silent recording does
-**not** prove that both participants were captured.
+On Android 11+, the user enables USB debugging and Wireless debugging,
+chooses Android's pairing-code dialog and enters the six-digit code in VRec.
+VRec discovers only this phone's mDNS TLS endpoints, verifies UID 2000,
+attempts supported grants, and starts the independent bundled app_process
+recorder. The initial Android pairing approval cannot be bypassed.
 
-**Built-in ADB (opt-in):** VRec pairs with the device's own Android Wireless
-debugging using a bundled ADB client, or connects to an already enabled TCP/5555
-endpoint. After verifying shell UID 2000 it can install and start the bundled
-Apache-2.0 scrcpy/JemRec-derived Java `app_process` recording daemon. The
-daemon captures into a shell-side file, uses a local nonce/HMAC-authenticated
-loopback channel, and imports completed Opus/Ogg audio into VRec's library.
+After shell UID 2000 is verified, **automatic TCP/5555 is enabled by default**.
+VRec switches adbd, waits for the listener, reconnects to localhost:5555
+and re-verifies shell UID and helper readiness. The listener may also be
+reachable from other devices on the network; Settings lets the user opt out
+and disable the listener when connected.
 
-**Shizuku is not installed or required.** Its UI and dependency/provider/binder
-integration were removed. A previously saved Shizuku choice migrates to Standard.
+On older Android versions without Wireless debugging, a trusted external
+USB ADB host must approve the debugging prompt and run
+`adb devices` followed by `adb tcpip 5555`. Neither VRec nor an ordinary
+Termux app can self-authorize USB ADB. Reboot can reset debugging on any device.
 
-### Persistence and `AdbPrivilegedApiHelper`
+## Home and navigation
 
-- A successfully started shell Java process may continue running after the ADB
-  session or Wi-Fi disconnects; it is **not** a permanent system service.
-- `AdbPrivilegedApiHelper.kt` provides authenticated `reconnect()`,
-  privileged `startWithAdb()`, and `checkHealth()` states. VRec uses it on
-  app-process startup and in the Experimental recording screen.
-  VRec now also attempts recovery at process startup and periodically while
-  the app is in the foreground. Only an endpoint previously verified as
-  Android shell UID 2000 may bootstrap a missing helper; reconnect retries
-  are rate limited. A missing Android ADB authorization still requires the
-  system prompt and user approval. Android may stop the app process in the
-  background, so this is not an always-on watchdog.
-- Neither the APK nor its helper can start a new shell-UID process without
-  already-authorized ADB access. If Android kills the daemon or the phone
-  reboots, a fresh privileged start may be necessary.
-- Shell UID is not root. Android/OEM audio HAL restrictions still apply.
-  InCallService and the Telecom AppOp help detect calls; they do **not**
-  automatically unlock protected two-way audio.
+Home shows a **Recording dashboard**, a single **ADB control center** with
+a four-state badge (green verified UID 2000, yellow progress, red failure,
+grey disconnected), USB setup instructions and the Recording master switch.
+The old Standard/ADB recording-method radio selector and separate in-app
+permission wizard are removed from navigation. Settings exposes recording,
+VoIP, advanced SIM audio sources, floating controls, diagnostics, logs,
+updates and Quit alongside Settings in the persistent navigation.
 
-## Setup and permission separation
+## What Shell 2000 can and cannot do
 
-- **Setup** contains only the everyday recording permissions (microphone,
-  phone state and Accessibility) and optional Contacts, notifications and floating
-  controls. A second WhatsApp enable switch and redundant Setup complete banner
-  are no longer shown.
-- The main Settings page has the only **Recording method** radio selector:
-  Regular recording (default) or ADB privileged helper.
-- **Settings → VoIP** owns the VoIP enable switch and Notification access
-  permission, keeping internet-call options out of everyday setup.
-- **Settings → Experimental** owns ADB pairing, Wireless/TCP connection, helper
-  status and optional advanced Telecom AppOp permission. Merely choosing the
-  ADB option does not establish elevated access or enable Home recording.
+An authenticated `id -u` output of 2000 means the ADB shell was authorized.
+It does **not** mean root access, a running recorder, protected VOICE_CALL
+audio availability, or both parties' audio being recorded. The daemon's
+authenticated health and source diagnostics are separate checks.
 
-## Built-in ADB setup
+After authorization, VRec tries to grant eligible phone state, contacts, call
+log and notification runtime permissions via `pm grant`, then checks actual
+permission state. It also checks/grants eligible Telecom call detection AppOp.
+Android might refuse restricted permissions. User-controlled Accessibility,
+notification-listener and overlay roles still need direct Android settings
+approval. No universal one-tap bypass is available.
 
-1. On the main Settings page, choose **ADB privileged helper** under **Recording method**. Then tap **Configure ADB access**, or open Settings → Experimental.
-2. For first-time phone-local authorization, use Android Developer options →
-   Wireless debugging → Pair device with pairing code, preferably in split screen.
-   Enter its temporary pairing code/port in VRec and pair.
-3. Choose **Wireless** or **TCP/5555** in the single-choice connection
-   selector, then tap **Connect**. Wireless uses discovery or an explicitly
-   entered paired port; it does not silently fall back to TCP/5555. TCP requires
-   an already enabled and authorized listener (e.g. `adb tcpip 5555` over USB).
-4. After shell UID 2000 is verified, VRec **automatically starts or reconnects**
-   the enhanced Java helper. The button then changes to **Disconnect ADB**:
-   this closes VRec's ADB session **without stopping the shell helper or an
-   active recording**. Home's Recording switch independently controls capture.
-   Completed shell calls are automatically imported into VRec's recording library
-   by the authenticated call-ended import service, so the extra Import calls
-   button is unnecessary. Complete a consented test call and listen to both
-   participants before relying on this mode.
+## Recording and import
 
-Switching an existing authorized connection into TCP/5555 restarts `adbd` and
-naturally drops the previous ADB session. VRec sends `tcpip:5555` only after
-explicit confirmation, retries the localhost connection, and requires shell
-UID 2000 before declaring TCP authorized. It remembers TCP as the requested
-transport even if Android restarts but verification fails. TCP socket presence
-alone is **never** proof of ADB authorization or a running recorder helper.
+The independent helper owns call monitoring and audio capture when available.
+It may continue after the ADB transport disconnects but isn't a permanent
+reboot service. ADB-only means **no automatic microphone fallback** if it is
+missing or if a selected SIM/VoIP capture route isn't supported.
 
-#### Phones without Wireless debugging (one-time USB bootstrap)
+The helper can attempt Voice Call, uplink, downlink and combined sources where
+permitted by the OEM. VoIP capture depends on Android version and app support.
+A source with measurable volume is not proof that both call participants
+were captured. Completed audio is imported via the authenticated local
+channel; metadata identifies only observed details.
 
-On devices that do not offer Wireless debugging, Android does not offer an
-ordinary app permission popup that grants a third-party app shell-level ADB.
-Use a trusted computer/USB ADB host and:
+## ADB security choices and recovery
 
-1. Enable USB debugging from Developer options and connect the phone to the host.
-2. Approve the system's RSA debugging authorization prompt for that USB host.
-3. Run `adb tcpip 5555` on the host. This is a one-time setup attempt, not
-   something the VRec app can execute before it has its own authorized shell link.
-4. In VRec, select TCP/5555 and tap **Connect TCP/5555**. Android may separately
-   ask for confirmation of **VRec's own ADB key**, which differs from the host key;
-   unlock the device and approve explicitly if shown. Retry after a timeout.
-5. Confirm the screen says **Connected via TCP/5555 · shell UID 2000** before
-   relying on this access for helper startup.
+- **Automatic TCP/5555 after verification.** Wireless ADB pairing is only
+  needed for initial authorization or repair after keys change. VRec defaults
+  to moving verified UID 2000 to TCP/5555 and reconnecting. This can expose
+  ADB to the network. The user can turn the mode off under *Settings →
+  Keep ADB without Wi-Fi (TCP/5555)*. Disabling the preference does not itself
+  guarantee an already listening endpoint has closed; VRec attempts to shut
+  it down when a verified session is available and reports the result.
+- **Restore after restart is opt-in** (*Restore after restart*, default off).
+  Only then does VRec request `WRITE_SECURE_SETTINGS` through the verified
+  shell (revoked again when switched off). After a reboot, which Android uses
+  to turn Wireless debugging off, VRec may switch it back on, on Wi-Fi only.
+  It never does so when Wireless debugging was turned off during the same
+  boot (the user's choice), when the boot count is unknown, after a deliberate
+  Disconnect, or while an authorization failure awaits Retry. The setting is
+  read back; success needs re-verified UID 2000 and the helper answering.
+  A paired key is not assumed to still be authorized.
+- **Typed failures.** Connection failures are `AUTH_TIMEOUT`, `AUTH_REJECTED`,
+  `CONNECTION_LOST`, `NETWORK_UNAVAILABLE`, `HELPER_UNAVAILABLE` or
+  `PERMISSION_DENIED`, classified by stage and exception type, never by
+  message text. Only `CONNECTION_LOST` is retried automatically (two quick
+  retries, then exponential backoff from 1 to 30 minutes). Authorization
+  timeouts, rejections and wrong UIDs require the user's Retry, so Android's
+  prompt is never re-requested in the background.
+- **Background recovery** runs in the app process (periodically and on Wi-Fi),
+  not on Home. Quit stops it, the Wi-Fi listener, wireless discovery, in-flight
+  connects and VRec's ADB session; opening VRec resumes it. Recording OFF and
+  Disconnect both stop automatic reconnection.
+- Wireless discovery is bounded (60 s per automatic search, backoff up to
+  10 minutes, paused after 5 empty searches) and uses a single-flight lock
+  for connect → UID 2000 → automatic TCP switch (unless disabled) → helper.
 
-The existing VRec Accessibility service may assist with recognizing UI window
-changes when enabled by the user, but it is **not** an ADB authorization method,
-cannot summon an RSA prompt without a real ADB request, and must not auto-approve
-security prompts. VRec instead instructs users to watch for Android's prompt
-while the ADB connection is pending.
+## Validation boundaries
 
-After a manually verified ADB connection, VRec remembers the verified transport
-and can automatically reconnect/restart a missing helper while running. It
-never enables Wireless/USB debugging or TCP itself. The user may tap Disconnect
-to disable automatic ADB retries until their next explicit Connect. USB
-debugging alone is not an ADB transport: TCP recovery also requires an
-already-listening TCP/5555 endpoint with VRec's ADB key still authorized.
+Compilation, unit tests and APK builds validate code structure, not whether
+Huawei's audio HAL exposes call channels or an unauthorized phone can start
+ADB by itself. Real-device tests should include boot reset, key authorization,
+previously verified reconnect, helper health, signal/channel diagnostics,
+SIM versus VoIP identity, and Android-denied permission behavior.
 
-ADB over TCP may listen on LAN interfaces and exposes debugging access to other
-authorized clients. Android may disable legacy TCP mode on reboot, debugging
-changes, or OEM policy. **Never enable it without explicit approval**. Turn it
-off after setup when it is no longer needed; disconnecting VRec's ADB session
-alone does not disable the TCP listener.
-
-## Runtime fallback when the ADB helper is unavailable
-
-- Selecting **ADB privileged helper** does not switch off the Home master
-  recording toggle and does not silently turn Android debugging on.
-- When recording is enabled on Home and a recording actually starts while
-  ADB mode is selected but the enhanced helper is unavailable, VRec uses its
-  normal microphone recorder **for that recording**. It retains the selected
-  ADB method for future calls.
-- Once the standard fallback starts, VRec posts a dismissible **ADB helper
-  unavailable · Standard recording** notification with **Enable debugging**
-  (opens Android Developer options) and **ADB setup** (opens the Experimental
-  settings page) actions. Android 13+ requires notification permission for
-  this reminder. Home also displays the fallback state while it is recording.
-- No reminder is posted merely because the Home master switch is turned on,
-  or while the enhanced helper remains healthy despite Wi-Fi/ADB transport
-  disconnecting.
-- If ADB is restored during a standard fallback on an ongoing **cellular**
-  call, VRec now checks that both the app's call monitor and the shell daemon's
-  own live call watcher recognize that call. Only then does VRec **save the
-  standard segment, enable enhanced capture and explicitly start a new shell
-  segment for the remaining call**. The two segments are kept separately.
-  Neither an existing helper nor ADB authorization alone proves handoff safe.
-- If the shell daemon cannot verify the active call, standard recording
-  continues without interruption. If the enhanced segment fails to start after
-  standard finalization, VRec disables shell capture and attempts a fresh
-  standard segment while the call is still live; any small transition gap is
-  unavoidable. Paused, VoIP, unknown-direction and ended calls are never
-  forcibly switched mid-call.
-- Home shows the enhanced segment after a confirmed handoff, hides the
-  duplicate Record now button, and clears the indicator on call end.
-- This runtime fallback is not a guarantee of audible remote-side audio on
-  every phone. Android may prevent microphone recording from starting in the
-  background or capturing the far end of the call.
-
-## Call detection, recordings and metadata
-
-- Unified `CallMonitor` handles SIM phone state, optional non-UI Telecom
-  InCallService, WhatsApp/other VoIP notifications, and manual recording.
-  One active standard recording is allowed; device-dependent sources may fail.
-- The Home recording master switch is opt-in and stops/prevents capture when
-  disabled. Advanced call-detection permission status is shown in one card
-  (Granted / Not granted).
-- Standard capture is stored as M4A; imported enhanced recordings use Ogg,
-  both with backwards-compatible JSON sidecars. Current metadata can be
-  incomplete or estimated for some sources and old recordings; audio duration
-  and call duration are different quantities.
-- The recording library has a single in-card player with seek, pause/resume
-  and stop, rounded recording action/detail sheets, share, sorting, bookmarks,
-  notes and metadata editing.
-
-## Verification status and acceptance criteria
-
-On the user's Pixel, a **26-minute Standard Voice recognition recording**
-contained both participants, with the remote person faint. The same logs
-showed `VOICE_CALL` start exceptions and a silent Voice recognition probe
-on another short call. This is **not** proof that enhanced shell capture works
-for every SIM or third-party VoIP app.
-
-Acceptance testing should check: no duplicate recordings; correct caller and
-direction metadata; silent-source fallback; the Home Off guard; in-card player,
-sort/action sheets and existing recordings; privileged ADB pairing, launch,
-loopback reconnect, Wi-Fi loss and TCP security; import and two-sided listening;
-and overlay/master toggle integration. Passing GitHub CI establishes build
-compatibility, not a device-specific protected audio entitlement.
-
-Future improvements requested but **not yet implemented** include a stronger
-source-quality selector, validated per-recording audio-source diagnostics,
-metadata-consistency fixes, and OS-scheduled background recovery when the app
-process has been stopped.
-
-
-## 2026-10-25 — one-batch ADB/PCM reliability review (ShizuCallRecorder 2.x ideas)
-
-VREC retains its existing **built-in ADB, UID 2000, authenticated loopback,
-Apache-2.0 scrcpy** implementation; it does **not** install Shizuku or copy
-GPL-3.0 ShizuCallRecorder source code. This batch independently implements
-the applicable safety properties from upstream's October native-audio rework:
-
-- **Stereo PCM diagnostics:** every enhanced capture is passively sampled
-  before Opus encoding. The shell logs bounded per-channel RMS, silence share,
-  clipping share, and frame count, without storing or logging audio samples.
-  Left/right energy is **not proof of both callers**, nor a guarantee of audio
-  routing on every Android/OEM version. The established AudioRecord source,
-  Opus 48 kHz stereo output, and caller privacy are unchanged.
-- **No infinite zero-read spin:** the audio encoder retries transient empty
-  AudioRecord reads with 10 ms backoff, up to 20 consecutive returns, before
-  treating the source as stalled. Negative reads immediately report failure.
-  Input/output worker crashes and unexpected I/O errors now propagate a
-  fatal flag to the recording owner instead of leaving an apparently running
-  but silent session. Normal stop does not generate false failure.
-- **Recoverable recording shutdown:** a separate recovery thread (never the
-  encoder's own callback thread) stops/finalizes a failed recording, then
-  notifies the app to import existing audio packets. Compatibility check
-  occurs before the output file is created; failed setup cleans it up.
-- **Incomplete packet protection:** Opus import distinguishes a clean frame
-  boundary from truncated PTS/header/payload, preserves the original shell
-  recording on incomplete data, removes the temporary Ogg, and reports a
-  failure rather than publishing a misleading successful file. A lost tail at
-  an exact frame boundary is not detectable by the existing scrcpy framing;
-  full physical-device validation remains essential.
-- **Privileged helper health:** authenticated PONG alone cannot return the
-  helper to RUNNING. The current Home-mode / Telecom-answer handshake must
-  succeed first, including after a stale ERROR state; failure stays ERROR and
-  never silently activates legacy, incompatible helpers.
-- **Regression coverage:** pure Java shell tests cover PCM energy/silence/clips,
-  empty/negative buffer handling, audio zero-read retry bounds, and the
-  existing outgoing answer gate. JVM tests cover truncated encoded packets,
-  impossible lengths, clean EOF and helper handshake state.
-
-**Deliberately not integrated:** a second native capture stack, dual
-AudioPolicy/AudioRecord sources, automatic AGC/ducking, codec replacement or
-hidden-system-permission changes. Those depend on OEM audio routing and
-carry substantial regression and GPL compatibility risk. The benefits here
-come from reliability and diagnostics, not from bypassing Android capture
-restrictions. Test with consented SIM/VoLTE, Wi-Fi calling and Bluetooth calls
-on Android 13–17 before promoting out of experimental.
-
-## Attribution
-
-Embedded ADB and audio capture follow the Apache-2.0 compatible JemRec/scrcpy
-architecture. `shellserver/LICENSE-scrcpy` and `shellserver/PATCHES.md`
-record the required licensing and adaptation details. ShizuCallRecorder and
-other GPL-only projects served as design references rather than copied code.
-
-**Do not merge this experimental PR into stable until current CI and
-real-device tests have passed.**
-
-## Experimental overlay and answered-call regression safeguards
-
-- Compact floating controls now default to **on**, but Android's separate
-  **Display over other apps** permission is still required; an explicit
-  user-disabled value is preserved. The far-right three-dot grip and status
-  indicator move the controls and remember a position safely clamped to
-  the display after rotation.
-- Outgoing cellular calls with **enabled, authorized non-UI Telecom detection**
-  wait for the actual `Call.STATE_ACTIVE` event. OFFHOOK alone is *dialing*,
-  not an answer. A verified ACTIVE signal reaches the shell recorder via an
-  authenticated loopback command. Incoming calls start on their off-hook state.
-- When an older shell binary survives the app update, a verified ADB session
-  can upgrade it after its current call ends. If it refuses to stop because a
-  call is in progress, do not interrupt that call; the app must fall back to
-  Standard until the helper is updated.
-- When advanced Telecom observation is unavailable, Android exposes only the
-  coarser OFFHOOK signal; the legacy immediate fallback remains, and its precise
-  connection timing cannot be guaranteed. If an older shell helper is still
-  running, its mode handshake may need refreshing after upgrading the APK.
-- CI includes JVM tests for gate transitions, no double starts, Home-off/legacy
-  conditions, draggable overlay bounds, and the default enabled setting.
-  Real-device tests are still needed for OEM call states and overlay permission.
+Device validation still required for: restore after a real reboot (and OEMs
+such as Huawei/EMUI that may refuse the Wireless debugging setting), revoked
+authorization, slow adbd restarts during the automatic TCP switch, SIM/VoIP
+capture and two-sided audio. CI passing proves build and unit-test
+compatibility only.

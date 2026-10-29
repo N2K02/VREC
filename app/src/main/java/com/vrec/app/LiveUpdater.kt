@@ -16,7 +16,9 @@ internal object LiveUpdater {
     private var instance: UpdaterController? = null
     val experimentalEnabled = MutableStateFlow(false)
     // Block installation while recording is starting, active, or paused.
-    val installGuard = UpdateInstallGuard { com.vrec.app.recording.RecordingService.state.value is com.vrec.app.recording.RecordingService.State.Idle }
+    val installGuard = UpdateInstallGuard { !com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value &&
+        !com.vrec.app.recording.AdbFallbackNotice.enhancedPaused.value &&
+        !com.vrec.app.calls.CallMonitor.hasLiveCall() }
 
     fun init(context: Context) {
         app = context.applicationContext

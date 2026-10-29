@@ -46,30 +46,47 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.calls.VrecAccessibilityService
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
+import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import androidx.compose.runtime.collectAsState
 import com.vrec.app.isReady
 
 @Composable
 fun rememberReadiness(): Boolean {
     val context = LocalContext.current
     val tick = rememberOnResumeTick()
-    return remember(tick) { isReady(context) }
+    val shellReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    // Update the Home readiness indicator as ADB helper state changes, not just on resume.
+    return remember(tick, shellReady, helperState) { isReady(context) }
 }
 
-/** Two required steps first; extra permissions and ADB are always optional and collapsed. */
+/** Recording setup is separate from the Contacts permission used for caller name matching. */
 @Composable
-fun SetupScreen() {
+fun SetupScreen(onOpenAdbSetup: () -> Unit = {}) {
     val context = LocalContext.current
+    val adbSelected = true
+    val shellReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
+    val adbReady = shellReady && helperState == AdbPrivilegedApiHelper.State.RUNNING
     val resumeTick = rememberOnResumeTick()
     var permissionTick by remember { mutableIntStateOf(0) }
     val tick = resumeTick + permissionTick
 
-    val basicsReady = remember(tick) {
-        context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
-            context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+    val microphoneOn = remember(tick) {
+        context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
+    val phoneStateOn = remember(tick) {
+        context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+    }
+    val basicsReady = phoneStateOn && microphoneOn
     val accessibilityOn = remember(tick) { VrecAccessibilityService.isEnabled(context) }
     val contactsOn = remember(tick) {
         context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+    val callLogOn = remember(tick) {
+        context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
     }
     val appAlertsOn = remember(tick) {
         Build.VERSION.SDK_INT < 33 ||
@@ -80,10 +97,15 @@ fun SetupScreen() {
     }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
     var accessibilityHelpOpen by rememberSaveable { mutableStateOf(false) }
-    val optionalCount = listOf(contactsOn, floatingOn).count { it } +
-        if (Build.VERSION.SDK_INT >= 33 && appAlertsOn) 1 else 0
-    val optionalTotal = if (Build.VERSION.SDK_INT >= 33) 3 else 2
-    val completed = listOf(basicsReady, accessibilityOn).count { it }
+    val optionalCount = (if (floatingOn) 1 else 0) +
+        (if (adbSelected && microphoneOn) 1 else 0) +
+        (if (adbSelected && accessibilityOn) 1 else 0) +
+        (if (Build.VERSION.SDK_INT >= 33 && appAlertsOn) 1 else 0)
+    val optionalTotal = (if (Build.VERSION.SDK_INT >= 33) 2 else 1) +
+        if (adbSelected) 2 else 0
+    val completed = if (adbSelected)
+        listOf(phoneStateOn, adbReady, callLogOn).count { it }
+    else listOf(basicsReady, accessibilityOn, callLogOn).count { it }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissionTick++ }
@@ -100,50 +122,98 @@ fun SetupScreen() {
     ) {
         Text("Set up VREC", style = MaterialTheme.typography.headlineMedium)
         Text(
-            if (completed == 2) "You're ready to record calls."
-            else "Just two steps to get started.",
+            if (completed == 3) "VREC's selected recording mode is set up."
+            else if (adbSelected) "Complete enhanced ADB setup. Microphone access is only for fallback."
+            else "Complete standard microphone recording setup.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$completed of 2 complete", style = MaterialTheme.typography.labelLarge,
+            Text("$completed of 3 complete", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
         }
         LinearProgressIndicator(
-            progress = { completed / 2f },
+            progress = { completed / 3f },
             modifier = Modifier.fillMaxWidth(),
         )
 
-        SetupStepCard(
-            number = "1",
-            title = "Allow microphone & calls",
-            detail = "To detect and record phone calls.",
-            done = basicsReady,
-            actionLabel = "Allow access",
-            onAction = { request(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_PHONE_STATE) },
-        )
+        if (adbSelected) {
+            SetupStepCard(
+                number = "1",
+                title = "Allow SIM call detection",
+                detail = "Phone state helps identify call lifecycle. Enhanced shell capture does not use VREC's microphone permission.",
+                done = phoneStateOn,
+                actionLabel = "Allow calls",
+                onAction = { request(Manifest.permission.READ_PHONE_STATE) },
+            )
+            SetupStepCard(
+                number = "2",
+                title = "Authorize enhanced ADB shell capture",
+                detail = "Connect and authorize the shell UID 2000 helper. This is the enhanced audio recorder, not the phone microphone.",
+                done = adbReady,
+                actionLabel = "Open ADB setup",
+                onAction = onOpenAdbSetup,
+            )
+        } else {
+            SetupStepCard(
+                number = "1",
+                title = "Allow microphone & calls",
+                detail = "Both permissions are needed for standard microphone recording.",
+                done = basicsReady,
+                actionLabel = "Allow access",
+                onAction = { request(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_PHONE_STATE) },
+            )
+            SetupStepCard(
+                number = "2",
+                title = "Turn on VREC Accessibility",
+                detail = "Required for standard call capture on supported phones.",
+                done = accessibilityOn,
+                actionLabel = "Open settings",
+                onAction = { context.openPermissionSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+                footer = {
+                    if (!accessibilityOn) {
+                        TextButton(onClick = { accessibilityHelpOpen = !accessibilityHelpOpen }) {
+                            Text(if (accessibilityHelpOpen) "Hide help" else "Can't turn it on?")
+                        }
+                        if (accessibilityHelpOpen) {
+                            Text(
+                                "If Android says Restricted setting: Settings → Apps → VREC → ⋮ → Allow restricted settings. Then return and turn on VREC Accessibility.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+            )
+        }
 
         SetupStepCard(
-            number = "2",
-            title = "Turn on VREC Accessibility",
-            detail = "Helps VREC capture audio during calls.",
-            done = accessibilityOn,
-            actionLabel = "Open settings",
-            onAction = { context.openPermissionSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
+            number = "3",
+            title = "Allow call history (required for SIM identification)",
+            detail = "Matches finished SIM recordings to their caller numbers. " +
+                "Android may restrict this permission depending on how VREC was installed.",
+            done = callLogOn,
+            actionLabel = "Allow Call log",
+            onAction = { request(Manifest.permission.READ_CALL_LOG) },
             footer = {
-                if (!accessibilityOn) {
-                    TextButton(onClick = { accessibilityHelpOpen = !accessibilityHelpOpen }) {
-                        Text(if (accessibilityHelpOpen) "Hide help" else "Can't turn it on?")
-                    }
-                    if (accessibilityHelpOpen) {
-                        Text(
-                            "If Android says Restricted setting: Settings → Apps → VREC → ⋮ → Allow restricted settings. Then return and turn on VREC Accessibility.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                if (!callLogOn) Text(
+                    "If permission cannot be granted, recording still works. " +
+                        "Android sometimes requires installer allowlisting for Call log access.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             },
+        )
+
+        // Contacts are recommended; call-log names also work when the dialer cached a name.
+        SetupStepCard(
+            number = "4",
+            title = "Show saved contact names (recommended)",
+            detail = "Allow Contacts so VREC can match numbers recovered from call history " +
+                "to your saved contacts.",
+            done = contactsOn,
+            actionLabel = "Allow Contacts",
+            onAction = { request(Manifest.permission.READ_CONTACTS) },
         )
 
         Card(
@@ -173,14 +243,30 @@ fun SetupScreen() {
                 }
                 if (moreOpen) {
                     HorizontalDivider()
-                    Text("Caller identification", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ExtraPermissionRow(
-                        title = "Contacts",
-                        detail = "Show saved caller names and numbers",
-                        enabled = contactsOn,
-                    ) { request(Manifest.permission.READ_CONTACTS) }
-                    HorizontalDivider()
+                    if (adbSelected) {
+                        Text("Standard fallback (optional)", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "The ADB shell helper records without VREC microphone permission. " +
+                                "Allow microphone and Accessibility only if you want standard recording " +
+                                "to continue when the enhanced helper is unavailable.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        ExtraPermissionRow(
+                            title = "Fallback microphone",
+                            detail = "RECORD_AUDIO for standard fallback only",
+                            enabled = microphoneOn,
+                        ) { request(Manifest.permission.RECORD_AUDIO) }
+                        ExtraPermissionRow(
+                            title = "Fallback Accessibility",
+                            detail = "Standard call-audio capture helper",
+                            enabled = accessibilityOn,
+                        ) {
+                            context.openPermissionSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        }
+                        HorizontalDivider()
+                    }
                     Text("Recording controls", style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (Build.VERSION.SDK_INT >= 33) {
