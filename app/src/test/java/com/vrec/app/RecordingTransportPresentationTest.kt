@@ -19,10 +19,15 @@ class RecordingTransportPresentationTest {
         assertTrue(RecordingTransportPresentation.canPauseOrResume(paused, true))
         assertTrue(RecordingTransportPresentation.canStop(recording, true))
         assertTrue(RecordingTransportPresentation.canStop(paused, true))
-        for (state in listOf(idle, starting, stopping)) {
+        // ADB-only RecordingService stays Idle while authenticated shell
+        // capture is active; the transport must remain usable in that state.
+        assertTrue(RecordingTransportPresentation.canPauseOrResume(idle, true))
+        assertTrue(RecordingTransportPresentation.canStop(idle, true))
+        for (state in listOf(starting, stopping)) {
             assertFalse(RecordingTransportPresentation.canPauseOrResume(state, true))
             assertFalse(RecordingTransportPresentation.canStop(state, true))
         }
+        assertFalse(RecordingTransportPresentation.canPauseOrResume(idle, false))
         assertFalse(RecordingTransportPresentation.canPauseOrResume(recording, false))
         assertFalse(RecordingTransportPresentation.canStop(paused, false))
     }
