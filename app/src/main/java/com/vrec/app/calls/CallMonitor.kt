@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.vrec.app.Log
@@ -58,6 +59,16 @@ object CallMonitor {
     }
 
     private val sessions = linkedMapOf<String, Session>()
+    /** Reactive call-scoped manual action availability; no polling in Compose. */
+    val manualCallAvailable = MutableStateFlow(false)
+
+    @Synchronized
+    private fun refreshManualCallAvailability(context: Context) {
+        manualCallAvailable.value = sessions.values.count { session ->
+            session.active && session.source != Source.MANUAL &&
+                (!session.isVoip || Prefs.recordVoip(context))
+        } == 1
+    }
 
     /** UI-only identity. Never assign a caller across concurrent or unknown sessions. */
     data class LiveCaller(val name: String?, val number: String?, val appPackage: String?)
@@ -227,6 +238,56 @@ object CallMonitor {
         Log.i("Telecom call state=$state voip=$voip app=" + (packageName ?: "unknown") +
             " namePresent=" + (session.name != null) + " numberPresent=" + (session.number != null))
         reconcile(context)
+        if (session.active && !wasActive && voip && packageName != null &&
+            Prefs.autoRecord(context) && Prefs.recordVoip(context)) {
+            verifyVoipShellCapture(context.applicationContext, id, packageName)
+        }
+    }
+
+    /** A connected Telecom VoIP call does not prove shell audio started.
+     * Check authenticated shell state without fabricating a recording or starting a
+     * competing microphone recorder. Only this still-live call may be reconciled.
+     */
+    private fun verifyVoipShellCapture(context: Context, id: String, packageName: String) {
+        modeScope.launch {
+            delay(4_000L)
+            val stillLive = synchronized(this@CallMonitor) {
+                sessions[id]?.let { it.active && it.isVoip &&
+                    it.packageName == packageName } == true
+            }
+            if (!stillLive || !Prefs.recordingEnabled(context) ||
+                !Prefs.recordVoip(context) || !Prefs.autoRecord(context)) return@launch
+            val snapshot = ExperimentalCaptureDaemon.captureSnapshot(context)
+            val matchedFile = (snapshot as? ExperimentalCaptureDaemon.CaptureSnapshot.Recording)
+                ?.file?.takeIf { file ->
+                    com.vrec.app.experimental.daemon.ShellRecordingIdentity
+                        .fromName(file)?.appPackage == packageName
+                }
+            if (matchedFile != null) {
+                Log.i("Capture diagnostic: authenticated VoIP shell recording confirmed app=" +
+                    packageName)
+                // STARTED wakeups can fail while the shell file is live. Recover
+                // only a matching authenticated filename; never guess by Telecom.
+                if (!AdbFallbackNotice.enhancedActive.value) {
+                    AdbFallbackNotice.reconcileAuthenticatedRecording(context, matchedFile)
+                }
+                return@launch
+            }
+            val stillUnrecorded = synchronized(this@CallMonitor) {
+                sessions[id]?.let { it.active && it.isVoip &&
+                    it.packageName == packageName } == true
+            } && !AdbFallbackNotice.enhancedActive.value
+            if (stillUnrecorded) {
+                Log.w("Capture diagnostic: VoIP connected but shell recording unconfirmed" +
+                    " app=" + packageName + " snapshot=" +
+                    snapshot.javaClass.simpleName + " voipArmed=" +
+                    ExperimentalCaptureDaemon.voipArmed.value + " helperReady=" +
+                    ExperimentalCaptureDaemon.ready.value)
+                RecordingFailureNotice.warn(context,
+                    "VoIP call detected, but audio capture was not confirmed. " +
+                        "Check Enhanced VoIP capture, helper status and Diagnostics.")
+            }
+        }
     }
 
     @Synchronized
@@ -427,6 +488,7 @@ object CallMonitor {
 
     private fun remove(context: Context, id: String) {
         val removed = sessions.remove(id)
+        refreshManualCallAvailability(context)
         suppressed.remove(id)
         autoAttempted.remove(id)
         if (removed != null) {
@@ -467,6 +529,7 @@ object CallMonitor {
     }
 
     private fun reconcile(context: Context) {
+        refreshManualCallAvailability(context)
         if (!Prefs.recordingEnabled(context)) return
         val current = recordingId?.let(sessions::get)
         if (current != null) {
@@ -545,7 +608,7 @@ object CallMonitor {
 
     /**
      * Manual capture is supported only when the authenticated shell watcher
-     * confirms an active cellular call. Never advertise a phantom recording.
+     * confirms one active cellular or enabled VoIP call. Never advertise a phantom recording.
      * The shell's STARTED wake owns the UI recording state.
      */
     private fun requestManualSegment(context: Context, expectedSession: String?, again: Boolean) {
@@ -556,7 +619,8 @@ object CallMonitor {
                     null
                 } else {
                     val candidates = sessions.values.filter {
-                        it.active && !it.isVoip && it.source != Source.MANUAL &&
+                        it.active && it.source != Source.MANUAL &&
+                            (!it.isVoip || Prefs.recordVoip(app)) &&
                             (!again || it.id in suppressed) &&
                             (expectedSession == null || it.id == expectedSession)
                     }
@@ -564,16 +628,20 @@ object CallMonitor {
                 }
             }
             if (sessionId == null) {
-                Log.w("Manual shell capture requires one unambiguous active cellular call")
+                Log.w("Manual shell capture requires one unambiguous supported active call")
+                RecordingFailureNotice.warn(app,
+                    "Manual capture needs exactly one active supported call.")
                 return@launch
             }
             manualSegmentMutex.withLock {
                 val stillEligible = synchronized(this@CallMonitor) {
                     Prefs.recordingEnabled(app) && !AdbFallbackNotice.enhancedActive.value &&
-                        sessions[sessionId]?.let { it.active && !it.isVoip } == true
+                        sessions[sessionId]?.let {
+                            it.active && (!it.isVoip || Prefs.recordVoip(app))
+                        } == true
                 }
                 if (!stillEligible) return@withLock
-                val result = ExperimentalCaptureDaemon.startCurrentCellularCall(app)
+                val result = ExperimentalCaptureDaemon.startCurrentCall(app)
                 if (result.isSuccess) {
                     synchronized(this@CallMonitor) {
                         if (sessions[sessionId]?.active == true) {
@@ -726,6 +794,7 @@ object CallMonitor {
             AdbFallbackNotice.endHandoff()
             recordingId = null
             sessions.clear()
+            refreshManualCallAvailability(context)
             suppressed.clear()
             autoAttempted.clear()
             recentlyEndedVoip.clear()
