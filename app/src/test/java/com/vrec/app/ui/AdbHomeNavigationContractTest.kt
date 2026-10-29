@@ -3,53 +3,83 @@ package com.vrec.app.ui
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Prevent duplicate ADB setup UI and require verified helper health on ADB-mode Home. */
+/** The first-time ADB setup action lives on Home, not in a diagnostics wizard. */
 class AdbHomeNavigationContractTest {
     private fun read(path: String): String =
         listOf(File(path), File("../$path")).firstOrNull { it.isFile }?.readText()
             ?: error("Missing $path")
 
-    @Test fun fullAdbChecklistAppearsOnlyInsideExperimentalSubmenu() {
+    @Test fun settingsContainsDiagnosticsNotDuplicateAuthorization() {
         val settings = read("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
-        val overview = settings.substringAfter("if (section == null) {")
-            .substringBefore("} else {\n        if (section == \"Recording\")")
-        assertFalse("Settings overview must not duplicate the ADB setup card",
-            overview.contains("AdbSetupProgressCard("))
-        val experimental = settings.substringAfter("if (section == \"Experimental\") {")
-            .substringBefore("if (section == \"VoIP\")")
-        assertTrue(experimental.contains("AdbSetupProgressCard("))
-        assertTrue(experimental.contains("ExperimentalRecorderCard()"))
-        assertTrue(experimental.contains("TelecomAdbInstructionCard("))
-        assertEquals(2, Regex("AdbSetupProgressCard\\(").findAll(settings).count())
+        assertFalse(settings.contains("AdbSetupProgressCard("))
+        assertFalse(settings.contains("ExperimentalRecorderCard()"))
+        assertFalse(settings.contains("TelecomAdbInstructionCard("))
+        assertTrue(settings.contains("SettingCard(\"ADB connection\")"))
+        assertTrue(settings.contains("SettingCard(\"Enhanced SIM capture source\")"))
     }
 
-    @Test fun homeConnectsToTcpOnlyWhenAdbMethodSelected() {
+    @Test fun homeHoldsSoleSetupButtonAndExpandableDirections() {
         val source = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val home = source.substringAfter("private fun HomeScreen(")
             .substringBefore("private fun RecordingMasterCard(")
-        assertTrue(home.contains("ExperimentalRecording.method(context) == ExperimentalRecording.Method.BUILT_IN_ADB"))
-        assertTrue(home.contains("if (adbSelected) {"))
-        assertTrue(home.contains("ExperimentalRecording.connect(context, 5555, wirelessOnly = false)"))
-        assertTrue(home.contains("enabled = !adbConnection.busy && !verifiedTcp"))
-        assertTrue(home.contains("settingsSection = \"Experimental\"").not()) // Navigation is owned by App.
-        assertTrue(source.contains("onOpenExperimental = {"))
-        assertTrue(source.contains("settingsSection = \"Experimental\""))
+        assertTrue(home.contains("Recording dashboard"))
+        assertTrue(source.contains("com.vrec.app.ui.LocalAdbHomeCard("))
+        assertFalse(home.contains("onOpenExperimental"))
+        assertTrue(source.contains("Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })"))
+        val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        assertTrue(card.contains("AdbForegroundSetup.begin(context)"))
+        val foreground = read("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
+        assertTrue(foreground.contains("LocalAdbMiddleware.setup(app, userInitiated = true)"))
+        assertFalse(card.contains("LocalWirelessAdb.start(context)"))
+        assertTrue(foreground.contains("ExperimentalRecording.tcpPortListening()"))
+        assertTrue(card.contains("WirelessAdbSetupCard()"))
+        assertTrue(card.contains("instructionsExpanded = !instructionsExpanded"))
+        assertTrue(card.contains("USB host instructions (when Wireless debugging is unavailable)"))
+        assertTrue(card.contains("Text(\"USB debugging\""))
+        assertTrue(card.contains("needsUsbBootstrap"))
+        assertTrue(card.contains("First complete the external USB bootstrap steps"))
+        assertFalse(card.contains("One-time USB setup"))
+        assertTrue(card.contains("Wireless debugging"))
     }
 
-    @Test fun helperHealthIsIndependentOfAdbAuthorization() {
+    @Test fun verifiedUidAndHelperAreDistinctSignals() {
         val home = read("app/src/main/java/com/vrec/app/MainActivity.kt")
-        assertTrue(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
-        assertTrue(home.contains("helperReady &&"))
-        assertTrue(home.contains("helperState == AdbPrivilegedApiHelper.State.RUNNING"))
-        assertTrue(home.contains("adbConnection.shellUid == 2000"))
-        assertTrue(home.contains("TCP/5555 listening; ADB authorization not verified"))
-        val experimental = read("app/src/main/java/com/vrec/app/ui/ExperimentalRecorderCard.kt")
-        assertFalse(experimental.contains("Text(\"Enhanced recording helper\""))
-        assertTrue(experimental.contains("Text(\"ADB connection\""))
-        assertTrue(experimental.contains("Enable TCP"))
-        assertTrue(experimental.contains("One-time USB setup"))
+        assertFalse(home.contains("AdbPrivilegedApiHelper.checkHealth(context)"))
+        val quick = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        assertTrue(quick.contains("helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING"))
+        assertTrue(quick.contains("adbState.shellUid == 2000"))
+        assertTrue(quick.contains("AdbUidBadge(badge, needsUsbBootstrap)"))
+        assertTrue(quick.contains("Vrec call recording helper"))
+    }
+
+    @Test fun monitoringCannotReopenManualRetryPrompt() {
+        val monitor = read("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        assertTrue(monitor.contains("LocalAdbMiddleware.setup(appContext)"))
+        val middleware = read("app/src/main/java/com/vrec/app/experimental/adb/LocalAdbMiddleware.kt")
+        assertTrue(middleware.contains("userInitiated: Boolean = false"))
+        assertTrue(middleware.contains("ExperimentalRecording.awaitingManualRetry"))
+        assertTrue(middleware.contains("ExperimentalRecording.connect(app, automatic = !userInitiated)"))
+        val controller = read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        assertTrue(controller.contains("withTimeout(15_000L)"))
+        assertFalse(controller.contains("Settings.Global.ADB_ENABLED"))
+        assertFalse(controller.contains("usbDebuggingFlag("))
+        assertTrue(middleware.contains("Log.i(\"ADB setup: localhost TCP/5555 missing"))
+        assertFalse(middleware.contains("ENABLE_USB_DEBUGGING"))
+        val recovery = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        assertFalse(recovery.contains("usbDebuggingFlag("))
+        assertTrue(controller.contains("awaitingManualRetry = true"))
+        val helper = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
+        val flow = read("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperStartFlow.kt")
+        assertTrue(helper.contains("AdbPermissionBootstrap.grantEligible(app)"))
+        // Transport UID verification precedes the helper's independent live UID
+        // check, which happens before any optional permission grants.
+        val connectBody = controller.substringAfter("suspend fun connect(context: Context")
+        assertTrue(connectBody.indexOf("verifyShellUid()") in
+            0 until connectBody.indexOf("startHelperTyped(context, manualRepair = !automatic)"))
+        assertTrue(flow.indexOf("steps.verifyUid2000()") in
+            0 until flow.indexOf("steps.configurePermissions()"))
+        assertTrue(controller.contains("if (uid != 2000) throw AdbConnectionException(AdbFailure.PERMISSION_DENIED"))
     }
 }

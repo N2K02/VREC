@@ -13,7 +13,9 @@ class QuitNavigationContractTest {
             .firstOrNull { it.isFile }?.readText() ?: error("Missing $relative")
         assertTrue("Missing label = { Text(Settings) }", src.contains("Triple(Screen.SETTINGS, \"Settings\", Icons.Rounded.Settings)"))
         assertTrue("Missing label = { Text(Quit) }", src.contains("label = { Text(\"Quit\") }"))
-        assertTrue("Missing CallMonitor.setRecordingEnabled(quitContext, false)", src.contains("CallMonitor.setRecordingEnabled(quitContext, false)"))
+        assertTrue("Quit must enforce idle capture", src.contains("VrecQuitSafety.idle("))
+        assertTrue("Quit must import before disconnect", src.contains("VrecQuitSafety.sequence("))
+        assertTrue("Quit must preserve failure recovery", src.contains("Safe shutdown was not confirmed"))
         assertTrue("Missing finishAndRemoveTask()", src.contains("finishAndRemoveTask()"))
 
         assertTrue(

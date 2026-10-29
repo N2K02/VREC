@@ -36,8 +36,8 @@ class RecordingsBottomNavigationContractTest {
         assertFalse(home.contains("NavigationCard("))
         assertFalse(source.contains("private fun NavigationCard("))
         assertTrue(home.contains("RecordingMasterCard("))
-        assertTrue(home.contains("Text(\"Finish setup\")"))
-        assertTrue(home.contains("Text(\"ADB helper status\""))
-        assertTrue(home.contains("ExperimentalRecording.connect(context, 5555, wirelessOnly = false)"))
+        assertTrue(home.contains("Text(\"Recording dashboard\""))
+        assertFalse(home.contains("Text(\"ADB is not ready · Review USB setup\""))
+        assertTrue(source.contains("com.vrec.app.ui.LocalAdbHomeCard("))
     }
 }

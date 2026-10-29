@@ -1,5 +1,7 @@
 package com.vrec.app.recording
 
+import kotlinx.coroutines.launch
+
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.app.Service
@@ -62,6 +64,11 @@ class OverlayControlService : Service() {
         override fun run() {
             val state = RecordingService.state.value
             val elapsed = stoppingSince?.let { SystemClock.elapsedRealtime() - it }
+            if (AdbFallbackNotice.enhancedActive.value && state is RecordingService.State.Idle) {
+                renderEnhancedShell()
+                handler.postDelayed(this, 500L)
+                return
+            }
             when (state) {
                 is RecordingService.State.Recording, is RecordingService.State.Paused ->
                     if (stoppingSince != null) renderStopping() else render(state)
@@ -145,20 +152,15 @@ class OverlayControlService : Service() {
             background = ColorDrawable(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
             setOnClickListener {
+                if (AdbFallbackNotice.enhancedActive.value) {
+                    val action = if (AdbFallbackNotice.enhancedPaused.value) 'R' else 'P'
+                    EnhancedCaptureControlReceiver.request(applicationContext, action)
+                    return@setOnClickListener
+                }
                 if (stoppingSince != null || !Prefs.recordingEnabled(this@OverlayControlService))
                     return@setOnClickListener
-                when (RecordingService.state.value) {
-                    is RecordingService.State.Paused ->
-                        startService(Intent(this@OverlayControlService, RecordingService::class.java)
-                            .setAction(RecordingService.ACTION_RESUME))
-                    is RecordingService.State.Recording ->
-                        startService(Intent(this@OverlayControlService, RecordingService::class.java)
-                            .setAction(RecordingService.ACTION_PAUSE))
-                    is RecordingService.State.Idle ->
-                        if (CallMonitor.canRecordAgain())
-                            CallMonitor.userRecordAgain(this@OverlayControlService)
-                    else -> Unit
-                }
+                // ADB-only: no legacy microphone recorder is available.
+                if (CallMonitor.canRecordAgain()) CallMonitor.userRecordAgain(this@OverlayControlService)
             }
         }
         val stop = ImageButton(this).apply {
@@ -167,15 +169,12 @@ class OverlayControlService : Service() {
             background = ColorDrawable(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
             setOnClickListener {
-                if (stoppingSince != null ||
-                    (RecordingService.state.value !is RecordingService.State.Recording &&
-                        RecordingService.state.value !is RecordingService.State.Paused))
+                if (AdbFallbackNotice.enhancedActive.value) {
+                    EnhancedCaptureControlReceiver.request(applicationContext, 'S')
                     return@setOnClickListener
-                stoppingSince = SystemClock.elapsedRealtime()
-                renderStopping()
-                CallMonitor.userStop(this@OverlayControlService)
-                handler.removeCallbacks(refresh)
-                handler.post(refresh)
+                }
+                // Stop is available only for an authenticated active shell capture.
+                return@setOnClickListener
             }
         }
         val close = ImageButton(this).apply {
@@ -319,6 +318,27 @@ class OverlayControlService : Service() {
                 }
             }
             else -> Unit
+        }
+    }
+
+    /** Shell owns the capture. App-side pause/stop commands must not target MediaRecorder. */
+    private fun renderEnhancedShell() {
+        val paused = AdbFallbackNotice.enhancedPaused.value
+        statusDot?.apply {
+            setStatusColor(if (paused) 0xFFFF9800.toInt() else Color.RED)
+            contentDescription = if (paused) "Enhanced recording paused" else "Enhanced recording active"
+        }
+        if (paused) stopBlinking() else startBlinking()
+        pauseButton?.apply {
+            isEnabled = true
+            alpha = 1f
+            setImageResource(if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+            contentDescription = if (paused) "Resume enhanced recording" else "Pause enhanced recording"
+        }
+        stopButton?.apply {
+            isEnabled = true
+            alpha = 1f
+            contentDescription = "Stop enhanced recording"
         }
     }
 

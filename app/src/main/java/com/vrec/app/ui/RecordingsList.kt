@@ -1,6 +1,13 @@
 package com.vrec.app.ui
 
 import android.content.Intent
+import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -24,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextAlign
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +46,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Call
@@ -74,12 +84,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,6 +100,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import com.vrec.app.calls.CallHistoryResolver
 import com.vrec.app.recording.CallDirection
 import com.vrec.app.recording.Recording
 import com.vrec.app.recording.RecordingStore
@@ -104,7 +117,71 @@ fun RecordingsList() {
     val context = LocalContext.current
     val tick = rememberOnResumeTick()
     var refresh by remember { mutableStateOf(0) }
-    val recordings = remember(tick, refresh) { RecordingStore.list(context) }
+    var contactsPermissionTick by remember { mutableStateOf(0) }
+    val contactsAllowed = remember(tick, contactsPermissionTick) {
+        context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+    val callLogAllowed = remember(tick, contactsPermissionTick) {
+        context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    }
+    val contactsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        contactsPermissionTick++
+        refresh++
+    }
+    val storeRevision by RecordingStore.revision.collectAsState()
+    val recordings = remember(tick, refresh, storeRevision) { RecordingStore.list(context) }
+    // Revisit existing SIM files once the user's call-log grant is available.
+    // The Android call log may be populated after an audio recording is finalized.
+    LaunchedEffect(tick, refresh, callLogAllowed, contactsAllowed) {
+        if (callLogAllowed) {
+            val candidates = recordings.filter {
+                (it.direction == CallDirection.INCOMING || it.direction == CallDirection.OUTGOING) &&
+                    (it.callFlowDirection.isNullOrBlank() ||
+                        it.phoneNumber.isNullOrBlank() || it.contactName.isNullOrBlank())
+            }
+            val changed = withContext(Dispatchers.IO) {
+                var updates = 0
+                candidates.forEach { rec ->
+                    // A shell _in/_out filename can be wrong if the RINGING
+                    // event was missed. Only a unique completed SIM call log
+                    // match may correct it; preserve existing manual choices.
+                    val recoveredFlow = if (rec.callFlowDirection.isNullOrBlank()) {
+                        CallHistoryResolver.recoverDirection(context.applicationContext, rec)?.name
+                    } else null
+                    val enriched = if (recoveredFlow != null)
+                        rec.copy(callFlowDirection = recoveredFlow) else rec
+                    val identity = if (rec.phoneNumber.isNullOrBlank() ||
+                        rec.contactName.isNullOrBlank()) {
+                        CallHistoryResolver.recover(context.applicationContext, enriched)
+                    } else null
+                    val previousNumber = rec.phoneNumber
+                    val matchingIdentity = identity?.takeIf {
+                        previousNumber.isNullOrBlank() ||
+                            previousNumber.filter(Char::isDigit) ==
+                                it.number.orEmpty().filter(Char::isDigit)
+                    }
+                    // Never silently replace a number manually assigned to a different call.
+                    val resolvedName = rec.contactName?.takeIf { it.isNotBlank() }
+                        ?: matchingIdentity?.name?.takeIf { it.isNotBlank() }
+                    val resolvedNumber = previousNumber?.takeIf { it.isNotBlank() }
+                        ?: matchingIdentity?.number?.takeIf { it.isNotBlank() }
+                    if (recoveredFlow != null || resolvedNumber != rec.phoneNumber ||
+                        resolvedName != rec.contactName) {
+                        if (RecordingStore.updateDetails(
+                            rec, rec.notes, rec.favorite,
+                            contactName = resolvedName,
+                            phoneNumber = resolvedNumber,
+                            callFlowDirection = recoveredFlow ?: rec.callFlowDirection,
+                        )) updates++
+                        else com.vrec.app.recording.RecordingFailureNotice.warn(
+                            context, "Recording metadata could not be saved. Check free storage.")
+                    }
+                }
+                updates
+            }
+            if (changed > 0) refresh++
+        }
+    }
     var playingPath by remember { mutableStateOf<String?>(null) }
     var playbackPaused by remember { mutableStateOf(false) }
     var playbackError by remember { mutableStateOf<String?>(null) }
@@ -120,6 +197,37 @@ fun RecordingsList() {
     var sort by rememberSaveable { mutableStateOf(RecordingSort.NEWEST) }
     var sortSheet by remember { mutableStateOf(false) }
     var actionsRecording by remember { mutableStateOf<Recording?>(null) }
+    var contactPickerRecording by remember { mutableStateOf<Recording?>(null) }
+    val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val target = contactPickerRecording
+        contactPickerRecording = null
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && target != null && uri != null) {
+            val selection = runCatching {
+                context.contentResolver.query(uri, arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
+                }
+            }.getOrNull()
+            if (selection != null) {
+                val (name, number) = selection
+                if (!name.isNullOrBlank() || !number.isNullOrBlank()) {
+                    if (RecordingStore.updateDetails(
+                        target, target.notes, target.favorite,
+                        contactName = name?.takeIf { it.isNotBlank() },
+                        phoneNumber = number?.takeIf { it.isNotBlank() },
+                    )) {
+                        refresh++
+                        Toast.makeText(context, "Recording contact updated", Toast.LENGTH_SHORT).show()
+                    } else Toast.makeText(context, "Could not save contact details. Check storage.", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Toast.makeText(context, "Could not read that contact", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedPaths by remember { mutableStateOf(setOf<String>()) }
     var speed by rememberSaveable { mutableStateOf(1f) }
@@ -129,13 +237,16 @@ fun RecordingsList() {
         val q = search.trim()
         val textMatch = q.isEmpty() || listOfNotNull(
             rec.peer, rec.phoneNumber, rec.contactName, rec.countryCode, rec.simLabel, rec.carrier,
-            rec.notes, rec.sourceLabel, directionLabel(rec.direction), rec.file.name,
+            rec.notes, rec.sourceLabel,
+            RecordingListLabels.direction(rec.direction, rec.callFlowDirection), rec.file.name,
             dateFmt.format(Date(rec.startedAt))
         ).any { it.contains(q, ignoreCase = true) }
         textMatch && when (filter) {
             RecordingFilter.ALL -> true
-            RecordingFilter.INCOMING -> rec.direction == CallDirection.INCOMING
-            RecordingFilter.OUTGOING -> rec.direction == CallDirection.OUTGOING
+            RecordingFilter.INCOMING ->
+                RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection) == CallDirection.INCOMING
+            RecordingFilter.OUTGOING ->
+                RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection) == CallDirection.OUTGOING
             RecordingFilter.VOIP -> rec.direction == CallDirection.VOIP
             RecordingFilter.FAVORITES -> rec.favorite
             RecordingFilter.SILENT -> rec.silent
@@ -235,16 +346,56 @@ fun RecordingsList() {
     }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Saved recordings", style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold)
-                Text("${recordings.size} recording${if (recordings.size == 1) "" else "s"} · ${formatSize(totalBytes)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Recording library", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text("Saved recordings", style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold)
+                    Text("${recordings.size} saved · ${formatSize(totalBytes)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                FilledTonalIconButton(onClick = { refresh++ }) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+                }
             }
-            FilledTonalIconButton(onClick = { refresh++ }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+        }
+        if ((!contactsAllowed || !callLogAllowed) && recordings.any {
+                it.direction == CallDirection.INCOMING || it.direction == CallDirection.OUTGOING
+            }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        if (!callLogAllowed)
+                            "Call history access helps recover missing SIM caller numbers."
+                        else
+                            "Allow Contacts to show saved names for recovered numbers.",
+                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = {
+                        contactsLauncher.launch(
+                            if (!callLogAllowed) Manifest.permission.READ_CALL_LOG
+                            else Manifest.permission.READ_CONTACTS,
+                        )
+                    }) {
+                        Text("Allow")
+                    }
+                }
             }
         }
         playbackError?.let { message ->
@@ -342,7 +493,7 @@ fun RecordingsList() {
         visibleRecordings.isEmpty() -> Text("No recordings match this search or filter.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         else -> LazyColumn(modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(visibleRecordings, key = { it.file.absolutePath }) { rec ->
                 val active = playingPath == rec.file.absolutePath
                 RecordingRow(rec = rec, active = active, playing = active && !playbackPaused,
@@ -386,8 +537,29 @@ fun RecordingsList() {
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
                 Text("Recording actions", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
-                Text(rec.displayName, style = MaterialTheme.typography.bodyMedium,
+                Text(RecordingListLabels.contact(
+                    rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
+                    source = rec.sourcePackage?.let { resolveCallAppName(context, it) }
+                        ?: if (rec.direction == CallDirection.VOIP) "VoIP" else "SIM",
+                    mediaType = rec.callMediaType,
+                ), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ListItem(headlineContent = { Text("Choose contact") },
+                    supportingContent = { Text("Assign a saved name and number to this recording") },
+                    leadingContent = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
+                        actionsRecording = null
+                        contactPickerRecording = rec
+                        runCatching {
+                            contactPicker.launch(Intent(Intent.ACTION_PICK).apply {
+                                type = ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE
+                            })
+                        }.onFailure {
+                            contactPickerRecording = null
+                            Toast.makeText(context, "Contacts picker unavailable", Toast.LENGTH_SHORT).show()
+                        }
+                    })
                 ListItem(headlineContent = { Text("Recording details") },
                     leadingContent = { Icon(Icons.Filled.Info, contentDescription = null) },
                     modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
@@ -397,8 +569,9 @@ fun RecordingsList() {
                     leadingContent = { Icon(if (rec.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         contentDescription = null) },
                     modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable {
-                        RecordingStore.updateDetails(rec, rec.notes, !rec.favorite)
-                        actionsRecording = null; refresh++
+                        if (RecordingStore.updateDetails(rec, rec.notes, !rec.favorite)) refresh++
+                        else Toast.makeText(context, "Could not update favorite. Check storage.", Toast.LENGTH_LONG).show()
+                        actionsRecording = null
                     })
                 ListItem(headlineContent = { Text("Share audio") },
                     leadingContent = { Icon(Icons.Filled.Share, contentDescription = null) },
@@ -424,10 +597,14 @@ fun RecordingsList() {
             onSeek = { ms -> if (playingPath == rec.file.absolutePath) runCatching { player.seekTo(ms.toInt()); playbackPosition = ms } },
             onStop = { stopPlayback() },
             onDismiss = { currentRecording = null },
-            onSave = { notes, favorite, name, number, country, sim, carrier ->
-                RecordingStore.updateDetails(rec, notes, favorite, name, number, country, sim, carrier)
-                refresh++
-                currentRecording = null
+            onSave = { notes, favorite, name, number, country, sim, carrier, flow ->
+                if (RecordingStore.updateDetails(rec, notes, favorite, name, number, country,
+                        sim, carrier, flow)) {
+                    refresh++
+                    currentRecording = null
+                } else {
+                    Toast.makeText(context, "Could not save details. Check free storage and retry.", Toast.LENGTH_LONG).show()
+                }
             },
             onPlay = { togglePlay(rec) },
             onSpeed = {
@@ -438,8 +615,8 @@ fun RecordingsList() {
             },
             onBookmark = {
                 val position = if (playingPath == rec.file.absolutePath) runCatching { player.currentPosition.toLong() }.getOrDefault(0L) else 0L
-                RecordingStore.addBookmark(rec, position)
-                refresh++
+                if (RecordingStore.addBookmark(rec, position)) refresh++
+                else Toast.makeText(context, "Could not save bookmark. Check storage.", Toast.LENGTH_LONG).show()
             },
             onShareAudio = { share(rec) }, onExportDetails = { shareDetails(rec) },
         )
@@ -464,7 +641,10 @@ fun RecordingsList() {
                     if (targets.any { it.file.absolutePath == playingPath }) {
                         stopPlayback()
                     }
-                    targets.forEach { RecordingStore.delete(it) }
+                    val failures = targets.count { !RecordingStore.delete(it) }
+                    if (failures > 0) {
+                        Toast.makeText(context, "$failures recording(s) could not be fully deleted.", Toast.LENGTH_LONG).show()
+                    }
                     confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null
                     selectedPaths = emptySet(); selectionMode = false; currentRecording = null; refresh++
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
@@ -481,15 +661,63 @@ private fun RecordingRow(
     onSelect: () -> Unit, onOpen: () -> Unit, onPlay: () -> Unit,
     onSeek: (Float) -> Unit, onStop: () -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor =
-            if (active) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val context = LocalContext.current
+    val callApp = remember(rec.sourcePackage) {
+        resolveCallAppName(context, rec.sourcePackage)
+    }
+    // Older recordings may have a phone number but no saved contact name.
+    // Resolve in the background so scrolling never blocks on ContactsProvider.
+    val contactFromPhone by produceState<String?>(
+        initialValue = null, rec.phoneNumber, rec.contactName,
+    ) {
+        val number = rec.phoneNumber
+        if (rec.contactName.isNullOrBlank() && !number.isNullOrBlank()) {
+            value = withContext(Dispatchers.IO) {
+                com.vrec.app.calls.CallInfo.describe(context.applicationContext, number)
+            }
+        }
+    }
+    val callDirection = RecordingListLabels.direction(rec.direction, rec.callFlowDirection)
+    val sourceKind = RecordingListLabels.sourceKind(rec.direction, rec.sourcePackage, rec.callType)
+    val callSource = RecordingListLabels.source(
+        if (sourceKind == RecordingListLabels.SourceKind.APP) CallDirection.VOIP else rec.direction,
+        callApp, rec.simSlot, rec.simLabel, rec.carrier,
+    )
+    val displayedContact = RecordingListLabels.contact(
+        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
+        direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
+        source = callSource,
+        mediaType = if (sourceKind == RecordingListLabels.SourceKind.APP)
+            rec.callMediaType else null,
+    )
+
+    // Deliberately stronger tonal separation from the near-black recordings page.
+    // The outline also defines the card when elevation shadows are barely visible.
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                dark && active -> Color(0xFF303946)
+                dark -> Color(0xFF272C34)
+                active -> MaterialTheme.colorScheme.secondaryContainer
+                else -> MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (dark) Color(0xFF596372).copy(alpha = if (active) 0.94f else 0.64f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (selectionMode) {
                     androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = { onSelect() })
                 } else {
@@ -503,15 +731,8 @@ private fun RecordingRow(
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(dateFmt.format(Date(rec.startedAt)), style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(rec.displayName, style = MaterialTheme.typography.titleSmall,
+                    Text(displayedContact, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    rec.phoneNumber?.takeIf { it.isNotBlank() && it != rec.displayName }?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Text("${directionLabel(rec.direction)} · ${formatDuration(rec.durationMs)} · ${formatSize(rec.sizeBytes)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (!selectionMode) {
                     IconButton(onClick = onShare) {
@@ -522,6 +743,14 @@ private fun RecordingRow(
                     }
                 }
             }
+            RecordingMetadataBadges(
+                kind = sourceKind,
+                sourcePackage = rec.sourcePackage,
+                sourceLabel = callSource,
+                directionLabel = callDirection,
+                fileSize = formatSize(rec.sizeBytes),
+                callMediaType = rec.callMediaType,
+            )
             if (active && !selectionMode) {
                 // One in-card player: the row's left button handles Play/Pause/Resume,
                 // while the expanded controls handle seeking and stopping.
@@ -567,7 +796,8 @@ private fun RecordingRow(
 private fun RecordingDetailsDialog(
     rec: Recording, playing: Boolean, active: Boolean, speed: Float, positionMs: Long, playbackDurationMs: Long,
     onSeek: (Long) -> Unit, onStop: () -> Unit, onDismiss: () -> Unit,
-    onSave: (String, Boolean, String?, String?, String?, String?, String?) -> Unit, onPlay: () -> Unit, onSpeed: () -> Unit,
+    onSave: (String, Boolean, String?, String?, String?, String?, String?, String?) -> Unit,
+    onPlay: () -> Unit, onSpeed: () -> Unit,
     onBookmark: () -> Unit, onShareAudio: () -> Unit, onExportDetails: () -> Unit,
 ) {
     var notes by remember(rec.file.absolutePath) { mutableStateOf(rec.notes) }
@@ -577,17 +807,16 @@ private fun RecordingDetailsDialog(
     var countryCode by remember(rec.file.absolutePath) { mutableStateOf(rec.countryCode.orEmpty()) }
     var simLabel by remember(rec.file.absolutePath) { mutableStateOf(rec.simLabel.orEmpty()) }
     var carrier by remember(rec.file.absolutePath) { mutableStateOf(rec.carrier.orEmpty()) }
+    var callFlowDirection by remember(rec.file.absolutePath) {
+        mutableStateOf(RecordingListLabels.flowDirection(
+            rec.direction, rec.callFlowDirection).name)
+    }
     var editing by remember(rec.file.absolutePath) { mutableStateOf(false) }
     var moreOpen by remember(rec.file.absolutePath) { mutableStateOf(false) }
     var measuredDurationMs by remember(rec.file.absolutePath) { mutableStateOf(0L) }
     val context = LocalContext.current
     val callApp = remember(rec.sourcePackage) {
-        rec.sourcePackage?.takeIf { it.isNotBlank() }?.let { pkg ->
-            runCatching {
-                val info = context.packageManager.getApplicationInfo(pkg, 0)
-                context.packageManager.getApplicationLabel(info).toString()
-            }.getOrDefault(pkg)
-        }
+        resolveCallAppName(context, rec.sourcePackage)
     }
     val number = rec.phoneNumber?.takeIf { it.isNotBlank() }
         ?: rec.peer?.takeIf { com.vrec.app.calls.CallMetadataResolver.directNumber(it) != null }
@@ -596,13 +825,14 @@ private fun RecordingDetailsDialog(
         rec.durationMs > 0L -> rec.durationMs
         else -> measuredDurationMs
     }
-    val callType = rec.callType?.takeUnless { it.equals("UNKNOWN", true) }
-        ?.let { when (it.uppercase(Locale.ROOT)) {
-            "INCOMING" -> "Incoming call"
-            "OUTGOING" -> "Outgoing call"
-            "VOIP" -> "VoIP call"
-            else -> it
-        } } ?: rec.direction.takeIf { it != CallDirection.UNKNOWN }?.let(::directionLabel)
+    val resolvedFlow = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection)
+    val callType = when {
+        RecordingListLabels.sourceKind(rec.direction, rec.sourcePackage, rec.callType) ==
+            RecordingListLabels.SourceKind.APP -> "VoIP call"
+        resolvedFlow == CallDirection.INCOMING -> "Incoming call"
+        resolvedFlow == CallDirection.OUTGOING -> "Outgoing call"
+        else -> null
+    }
 
     // Older recordings may have no duration sidecar. Read the media duration
     // off the UI thread; never infer it from size or a timestamp.
@@ -631,7 +861,18 @@ private fun RecordingDetailsDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(rec.displayName, style = MaterialTheme.typography.titleLarge,
+                Text(RecordingListLabels.contact(
+                    rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    direction = resolvedFlow,
+                    source = when {
+                        rec.sourcePackage != null -> callApp
+                        rec.direction == CallDirection.VOIP -> "VoIP"
+                        rec.direction == CallDirection.INCOMING ||
+                            rec.direction == CallDirection.OUTGOING -> "SIM"
+                        else -> null
+                    },
+                    mediaType = rec.callMediaType,
+                ), style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(callType ?: "Recording details", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -728,6 +969,18 @@ private fun RecordingDetailsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 RecordingDetailSection("Call details") {
                     DetailLine("Call type", callType)
+                    if (rec.direction == CallDirection.VOIP ||
+                        rec.callType.equals("VOIP", ignoreCase = true)) {
+                        DetailLine("Call medium", when (rec.callMediaType) {
+                            "VIDEO" -> "Video call (audio recording)"
+                            "VOICE" -> "Voice call"
+                            else -> "Unknown"
+                        })
+                    }
+                    DetailLine("Direction", RecordingListLabels.direction(
+                        rec.direction, rec.callFlowDirection).takeIf {
+                            it == "Incoming" || it == "Outgoing"
+                        })
                     DetailLine("Phone number", number)
                     DetailLine("Contact", rec.contactName)
                     DetailLine("Country", rec.countryCode)
@@ -747,7 +1000,23 @@ private fun RecordingDetailsDialog(
                             formatDuration(rec.callEndedAt - rec.callConnectedAt) else null)
                 }
                 RecordingDetailSection("Audio & file") {
+                    DetailLine("Recording type", rec.recordingType?.name)
                     DetailLine("Source", rec.sourceLabel)
+                    DetailLine("Capture diagnostics", rec.audioHealth)
+                    if (rec.audioHealthWarning) {
+                        Text(
+                            "Audio warning: one or both channels were quiet, or clipping was detected. " +
+                                "Channel activity does not prove both participants were recorded.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else if (rec.audioHealth != null) {
+                        Text(
+                            "PCM diagnostics describe sound levels only; verify both voices by listening.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     DetailLine("Filename", rec.file.name)
                     DetailLine("Size", rec.sizeBytes.takeIf { it > 0 }?.let(::formatSize))
                     DetailLine("Audio", when {
@@ -771,6 +1040,23 @@ private fun RecordingDetailsDialog(
                 }
                 if (editing) {
                     RecordingDetailSection("Edit details") {
+                        if (rec.direction == CallDirection.VOIP ||
+                            rec.direction == CallDirection.INCOMING ||
+                            rec.direction == CallDirection.OUTGOING ||
+                            rec.callType.equals("VOIP", ignoreCase = true)) {
+                            Text("Call direction", style = MaterialTheme.typography.labelMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("UNKNOWN" to "Unknown", "INCOMING" to "Incoming",
+                                    "OUTGOING" to "Outgoing").forEach { (value, label) ->
+                                    FilterChip(selected = callFlowDirection == value,
+                                        onClick = { callFlowDirection = value },
+                                        label = { Text(label) })
+                                }
+                            }
+                            Text("Correct the direction only if you know it. Otherwise keep Unknown.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         OutlinedTextField(value = contactName, onValueChange = { contactName = it },
                             label = { Text("Contact name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = phoneNumber, onValueChange = { phoneNumber = it },
@@ -795,7 +1081,8 @@ private fun RecordingDetailsDialog(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Close") }
                 if (editing) Button(onClick = {
-                    onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel, carrier)
+                    onSave(notes, favorite, contactName, phoneNumber, countryCode, simLabel,
+                        carrier, callFlowDirection)
                 }) { Text("Save changes") }
             }
         }
@@ -851,6 +1138,24 @@ private fun DetailLine(label: String, value: String?) {
                 it.equals("unavailable", true) || it.equals("null", true)
         } ?: "-", style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(0.57f))
+    }
+}
+
+private fun resolveCallAppName(context: Context, packageName: String?): String? {
+    val pkg = packageName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching {
+        val info = context.packageManager.getApplicationInfo(pkg, 0)
+        context.packageManager.getApplicationLabel(info).toString()
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: when (pkg) {
+        "com.whatsapp" -> "WhatsApp"
+        "com.whatsapp.w4b" -> "WhatsApp Business"
+        "org.telegram.messenger" -> "Telegram"
+        "org.thoughtcrime.securesms" -> "Signal"
+        "com.facebook.orca" -> "Messenger"
+        "com.viber.voip" -> "Viber"
+        "com.skype.raider" -> "Skype"
+        "com.google.android.apps.tachyon" -> "Google Meet"
+        else -> pkg
     }
 }
 
