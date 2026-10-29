@@ -12,9 +12,11 @@ class AdbLifecycleContractTest {
 
     @Test fun quitStopsRecoveryListenersDiscoveryAndSession() {
         val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
-        val quit = main.substringAfter("CallMonitor.setRecordingEnabled(quitContext, false)")
+        val quit = main.substringAfter("VrecQuitSafety.sequence(")
             .substringBefore("finishAndRemoveTask()")
-        assertTrue(quit.contains("AdbLifecycle.quit(quitContext)"))
+        assertTrue(quit.contains("AdbLifecycle.quit(app)"))
+        assertTrue(quit.contains("ExperimentalCaptureDaemon.quit(app)"))
+        assertTrue(quit.contains("ExperimentalCaptureDaemon.collect(app)"))
         val lifecycle = read("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         val body = lifecycle.substringAfter("fun quit(")
         assertTrue(body.contains("loop?.cancel()"))
