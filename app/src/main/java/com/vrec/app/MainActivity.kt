@@ -599,6 +599,7 @@ private fun RecordingMasterCard(
 ) {
     val dashboardState = HomeDashboardPresentation.resolve(
         enabled, ready, active, paused, starting, saving)
+    val autoRecord = Prefs.autoRecord(LocalContext.current)
     val cardColor by animateColorAsState(
         targetValue = HomePanelStyle.color(highlight = ready && enabled),
         label = "Recording master card color",
@@ -640,7 +641,7 @@ private fun RecordingMasterCard(
                 Text(HomeDashboardPresentation.title(dashboardState),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold)
-                Text(HomeDashboardPresentation.detail(dashboardState),
+                Text(HomeDashboardPresentation.detail(dashboardState, autoRecord),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -663,7 +664,7 @@ private fun RecordingMasterCard(
                     }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Automatic recording", style = MaterialTheme.typography.titleMedium,
+                    Text("Recording", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
                     Text(if (enabled) "Recording enabled" else "Recording disabled",
                         style = MaterialTheme.typography.bodySmall,
@@ -698,8 +699,9 @@ private fun RecordingMasterCard(
                         saving -> "Finishing recording."
                         enabled && !ready && adbStatus.busy -> "Checking ADB authorization…"
                         enabled && !ready -> "Waiting for the shell helper."
-                        enabled -> "Automatically record supported calls."
-                        else -> "Automatic capture disabled."
+                        enabled -> if (autoRecord) "Automatically record supported calls."
+                            else "Manual mode: start recording from the call card."
+                        else -> "Recording disabled."
                     },
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
@@ -707,7 +709,7 @@ private fun RecordingMasterCard(
                 )
             }
             if (!RecordingTransportPresentation.canChangeMasterToggle(state, shellActive)) {
-                Text("Automatic recording cannot be changed until the current capture finishes.",
+                Text("Recording cannot be disabled until the current capture finishes.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

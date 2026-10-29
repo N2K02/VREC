@@ -35,13 +35,15 @@ internal object HomeDashboardPresentation {
         State.SETUP_NEEDED -> "Recording setup needed"
     }
 
-    fun detail(state: State): String = when (state) {
+    fun detail(state: State, automatic: Boolean = true): String = when (state) {
         State.RECORDING -> "Capture is active. Recording controls remain available below."
         State.PAUSED -> "The current recording is paused."
         State.STARTING -> "Waiting for the capture service to confirm recording."
         State.SAVING -> "Finishing the recording and saving its audio."
-        State.OFF -> "Enable automatic recording below when you need it."
-        State.READY -> "Automatic recording is enabled and the shell helper is ready."
+        State.OFF -> "Enable recording below when you need it."
+        State.READY -> if (automatic)
+            "Automatic recording is enabled and the shell helper is ready."
+        else "Manual recording is available for a connected call."
         State.SETUP_NEEDED -> "The shell helper needs attention before new calls can be captured."
     }
 }

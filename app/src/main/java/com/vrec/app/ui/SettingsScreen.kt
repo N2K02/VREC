@@ -267,7 +267,7 @@ fun SettingsScreen(
                 Text(
                     if (Build.VERSION.SDK_INT < 34)
                         "Enhanced VoIP playback capture requires Android 14 or newer."
-                    else if (voipArmed) "Enhanced ADB VoIP ready · WhatsApp, Telegram, Signal, Viber and other supported apps."
+                    else if (voipArmed) "VoIP watcher armed · confirm audio quality after saving a test call."
                     else voipMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

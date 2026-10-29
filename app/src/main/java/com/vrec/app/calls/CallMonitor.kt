@@ -613,6 +613,24 @@ object CallMonitor {
      * confirms one active cellular or enabled VoIP call. Never advertise a phantom recording.
      * The shell's STARTED wake owns the UI recording state.
      */
+    private suspend fun stopUnexpectedManualStart(context: Context, filename: String) {
+        val snapshot = ExperimentalCaptureDaemon.captureSnapshot(context)
+        // Don't stop a different call if the original segment has already ended.
+        if (snapshot is ExperimentalCaptureDaemon.CaptureSnapshot.Recording &&
+            snapshot.file == filename) {
+            val result = ExperimentalCaptureDaemon.captureControl(context, 'S')
+            if (result != "STOPPED") {
+                RecordingFailureNotice.warn(context,
+                    "Could not confirm that the unexpected recording stopped. Check VRec diagnostics.",
+                    keepUntilDismissed = true)
+            }
+        } else if (snapshot == ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable) {
+            RecordingFailureNotice.warn(context,
+                "Cannot verify whether the unexpected shell recording stopped. Restore the helper.",
+                keepUntilDismissed = true)
+        }
+    }
+
     private fun requestManualSegment(context: Context, expectedSession: String?, again: Boolean) {
         val app = context.applicationContext
         modeScope.launch {
@@ -650,17 +668,17 @@ object CallMonitor {
                 if (result.isSuccess && !com.vrec.app.experimental.daemon.ManualCaptureIdentityPolicy.matches(
                         result.getOrThrow(), expected.first, expected.second, expected.third)) {
                     Log.w("Manual shell start source did not match selected call; stopping segment")
-                    ExperimentalCaptureDaemon.captureControl(app, 'S')
+                    stopUnexpectedManualStart(app, result.getOrThrow())
                     RecordingFailureNotice.warn(app,
-                        "The shell reported another call source. Recording stopped to prevent a misattributed file.")
+                        "Shell selected another call source; rejected its recording identity.")
                     return@withLock
                 }
                 if (result.isSuccess && !synchronized(this@CallMonitor) {
                         sessions[sessionId]?.let { it.active && it.packageName == expected.first } == true
                     }) {
                     // The call ended or changed while COMMAND_START was running.
-                    ExperimentalCaptureDaemon.captureControl(app, 'S')
-                    Log.w("Manual shell capture stopped because the chosen call ended during start")
+                    stopUnexpectedManualStart(app, result.getOrThrow())
+                    Log.w("Manual shell capture rejected because the chosen call ended during start")
                     return@withLock
                 }
                 if (result.isSuccess) {

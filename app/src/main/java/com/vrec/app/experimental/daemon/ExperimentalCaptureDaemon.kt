@@ -429,7 +429,7 @@ object ExperimentalCaptureDaemon {
                 voipResult == "VOIP ${requestedApps.size} armed"
             voipMessage.value = when {
                 requestedApps.isEmpty() -> "Enhanced VoIP capture off (or requires Android 14+)."
-                voipArmed.value -> "Enhanced VoIP capture armed for ${requestedApps.size} apps."
+                voipArmed.value -> "VoIP watcher armed for ${requestedApps.size} apps; audio quality requires a saved test call."
                 else -> "Enhanced VoIP audio policy not available on this phone."
             }
             ready.value = verified

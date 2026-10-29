@@ -33,6 +33,13 @@ class HomeDashboardPresentationTest {
                 recording = false, paused = false))
     }
 
+    @Test fun readyCardReflectsOnDemandModeWithoutClaimingAutomaticCapture() {
+        assertEquals("Manual recording is available for a connected call.",
+            HomeDashboardPresentation.detail(HomeDashboardPresentation.State.READY, automatic = false))
+        assertEquals("Automatic recording is enabled and the shell helper is ready.",
+            HomeDashboardPresentation.detail(HomeDashboardPresentation.State.READY, automatic = true))
+    }
+
     @Test fun helperProblemsAreNotDescribedAsSuccessfulRecording() {
         assertEquals("The shell helper needs attention before new calls can be captured.",
             HomeDashboardPresentation.detail(HomeDashboardPresentation.State.SETUP_NEEDED))
