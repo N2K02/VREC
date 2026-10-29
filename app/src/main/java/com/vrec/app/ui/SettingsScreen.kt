@@ -206,6 +206,11 @@ fun SettingsScreen(
                 modifier = Modifier.clickable(onClick = onOpenSetup),
             )
             HorizontalDivider()
+            ListItem(
+                headlineContent = { Text("Logs") },
+                supportingContent = { Text("Persistent diagnostic logs and crash reports") },
+                modifier = Modifier.clickable { context.startActivity(android.content.Intent(context, com.vrec.app.LogsActivity::class.java)) },
+            )
             // Diagnostics and updates remain together at the bottom like mRadio.
             ListItem(
                 headlineContent = { Text("Activity log") },
