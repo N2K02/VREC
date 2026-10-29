@@ -48,6 +48,25 @@ class HomeDashboardVisualContractTest {
         assertTrue(adb.contains("Stat(\"Shell UID\""))
     }
 
+    @Test fun manualCaptureAndADBOnlyLiveTransportRemainVisible() {
+        val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
+        val transport = read("app/src/main/java/com/vrec/app/LiveRecordingTransport.kt")
+        val coordinator = read("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
+        val helper = read("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        assertTrue(main.contains("ManualRecordingCard("))
+        assertTrue(main.contains("Text(\"Record manually\""))
+        assertTrue(main.contains("val manualCallAvailable by CallMonitor.manualCallAvailable.collectAsState()"))
+        assertTrue(main.contains("if (enhancedActive) {"))
+        assertTrue(main.contains("recordingState !is RecordingService.State.Idle || shellActive"))
+        assertTrue(transport.contains("val shellPaused by AdbFallbackNotice.enhancedPaused.collectAsState()"))
+        assertTrue(transport.contains("if (paused) 'R' else 'P'"))
+        assertTrue(coordinator.contains("(!it.isVoip || Prefs.recordVoip(app))"))
+        assertTrue(coordinator.contains("ExperimentalCaptureDaemon.startCurrentCall(app)"))
+        assertTrue(helper.contains("suspend fun startCurrentCall("))
+        assertTrue(coordinator.contains("verifyVoipShellCapture("))
+        assertFalse(main.contains("ManualRecordButton("))
+    }
+
     @Test fun helperActionsAndPermissionsRemainGuarded() {
         val adb = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
         val setup = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
