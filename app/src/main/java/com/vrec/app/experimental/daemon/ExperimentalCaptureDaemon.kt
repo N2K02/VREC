@@ -579,8 +579,11 @@ object ExperimentalCaptureDaemon {
             }.getOrDefault(false)
         }
 
-    /** Start a new enhanced segment during an already-observed phone call. */
-    suspend fun startCurrentCellularCall(context: Context): Result<String> =
+    /** Start a new shell segment during an independently confirmed active call.
+     * The authenticated daemon chooses the actual cellular/VoIP source; it refuses
+     * to start if its watcher has no active call.
+     */
+    suspend fun startCurrentCall(context: Context): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 check(Prefs.recordingEnabled(context)) {
