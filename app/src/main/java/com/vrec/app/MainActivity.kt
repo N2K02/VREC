@@ -286,7 +286,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                     onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
                     onOpenSetup = { navigateTo(Screen.SETUP, fromSettings = true) },
                 )
-                Screen.LOG -> VRECLogsPage(onBack = { navigateBack() })
+                Screen.LOG -> VRECLogsPage()
                 Screen.UPDATE -> UpdateScreen()
             }
         }
