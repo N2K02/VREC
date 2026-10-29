@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 internal fun VRECLogsPage(modifier: Modifier = Modifier, onBack: () -> Unit) {
     val recordingHistory by Log.lines.collectAsState()
     N2K02UnifiedLogsPage(
-        modifier = modifier, appName = "VRec", onBack = onBack,
+        modifier = modifier, appName = "VRec",
         extraLabel = "Recording activity",
         extraLines = recordingHistory,
         clearExtra = Log::clear,
