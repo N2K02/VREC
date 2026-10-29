@@ -8,8 +8,10 @@ import com.vrec.app.recording.RecordingService
  */
 internal object RecordingTransportPresentation {
     fun canPauseOrResume(state: RecordingService.State, shellActive: Boolean): Boolean =
-        shellActive && (state is RecordingService.State.Recording ||
-            state is RecordingService.State.Paused)
+        // In ADB-only mode the Android RecordingService is deliberately idle.
+        // An authenticated shell STARTED/PAUSED state is the capture authority.
+        shellActive && state !is RecordingService.State.Starting &&
+            state !is RecordingService.State.Stopping
 
     fun canStop(state: RecordingService.State, shellActive: Boolean): Boolean =
         canPauseOrResume(state, shellActive)
