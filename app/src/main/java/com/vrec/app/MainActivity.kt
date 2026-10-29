@@ -278,7 +278,10 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                     try {
                                         // Prevent reconnect/rearm before calling the shell.
                                         Prefs.setRecordingEnabled(app, false)
-                                        val stopped = VrecQuitSafety.sequence(
+                                        val helperConnected = ExperimentalCaptureDaemon.probe(app)
+                                        // Nothing to stop/import if the shell helper is absent.
+                                        // Do not require an ADB session simply to exit the UI.
+                                        val stopped = !helperConnected || VrecQuitSafety.sequence(
                                             stopCapture = { ExperimentalCaptureDaemon.setMode(app, false) },
                                             importCompleted = { ExperimentalCaptureDaemon.collect(app).isSuccess },
                                             quitHelper = {
