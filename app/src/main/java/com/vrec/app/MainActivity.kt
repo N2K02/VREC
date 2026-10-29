@@ -104,6 +104,8 @@ import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
@@ -162,6 +164,8 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     var settingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     var returnToSettings by rememberSaveable { mutableStateOf(false) }
     val quitContext = LocalContext.current
+    val quitScope = rememberCoroutineScope()
+    var quitting by remember { mutableStateOf(false) }
 
     LaunchedEffect(openAdbSetup) {
         if (openAdbSetup) {
@@ -256,16 +260,55 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                         NavigationBarItem(
                             selected = false,
                             onClick = {
-                                // Disable all recording modes, stop and save any active segment,
-                                // dismiss floating controls, and disable ADB capture.
-                                CallMonitor.setRecordingEnabled(quitContext, false)
-                                LiveUpdater.controller.cancel()
-                                RecordingFailureNotice.dismiss(quitContext)
-                                // Stops recovery loop, Wi-Fi listener, discovery, in-flight
-                                // connects and closes VRec's ADB session.
-                                com.vrec.app.experimental.adb.AdbLifecycle.quit(quitContext)
-                                (quitContext as? ComponentActivity)?.finishAndRemoveTask()
+                                if (quitting) return@NavigationBarItem
+                                // Quit cannot silently abandon an ongoing call recording or import.
+                                // The shell rejects exit during active capture (BUSY); keep the
+                                // activity open so the call can complete and its audio be saved.
+                                if (!VrecQuitSafety.idle(
+                                        RecordingService.state.value,
+                                        AdbFallbackNotice.enhancedActive.value,
+                                        CallMonitor.isRecording)) {
+                                    RecordingFailureNotice.warn(quitContext,
+                                        "Recording is active. Finish the call and save its audio before quitting.")
+                                    return@NavigationBarItem
+                                }
+                                quitting = true
+                                quitScope.launch {
+                                    val app = quitContext.applicationContext
+                                    try {
+                                        // Prevent reconnect/rearm before calling the shell.
+                                        Prefs.setRecordingEnabled(app, false)
+                                        val stopped = VrecQuitSafety.sequence(
+                                            stopCapture = { ExperimentalCaptureDaemon.setMode(app, false) },
+                                            importCompleted = { ExperimentalCaptureDaemon.collect(app).isSuccess },
+                                            quitHelper = {
+                                                ExperimentalCaptureDaemon.quit(app).let {
+                                                    it == ExperimentalCaptureDaemon.QuitResult.STOPPED ||
+                                                        it == ExperimentalCaptureDaemon.QuitResult.NOT_RUNNING
+                                                }
+                                            },
+                                        )
+                                        if (!stopped) {
+                                            RecordingFailureNotice.warn(app,
+                                                "Safe shutdown was not confirmed. VRec remains open so recordings can be recovered.")
+                                            return@launch
+                                        }
+                                        LiveUpdater.controller.cancel()
+                                        RecordingFailureNotice.dismiss(app)
+                                        com.vrec.app.experimental.adb.AdbLifecycle.quit(app)
+                                        (quitContext as? ComponentActivity)?.finishAndRemoveTask()
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Exception) {
+                                        Log.w("Safe Quit failed; recordings retained for recovery", error)
+                                        RecordingFailureNotice.warn(app,
+                                            "Could not finish saving and stopping the recorder. Check Logs before quitting.")
+                                    } finally {
+                                        quitting = false
+                                    }
+                                }
                             },
+                            enabled = !quitting,
                             icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Quit") },
                             label = { Text("Quit") },
                             alwaysShowLabel = true,
