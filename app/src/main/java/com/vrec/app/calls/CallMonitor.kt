@@ -531,6 +531,8 @@ object CallMonitor {
     private fun reconcile(context: Context) {
         refreshManualCallAvailability(context)
         if (!Prefs.recordingEnabled(context)) return
+        if (sessions.values.any { it.active && it.source != Source.MANUAL })
+            com.vrec.app.experimental.adb.AdbLifecycle.watchLiveCall(context)
         val current = recordingId?.let(sessions::get)
         if (current != null) {
             updateRecording(context, current)
@@ -641,10 +643,22 @@ object CallMonitor {
                         } == true
                 }
                 if (!stillEligible) return@withLock
+                val expected = synchronized(this@CallMonitor) {
+                    sessions[sessionId]?.let { Triple(it.packageName, it.direction, it.isVoip) }
+                } ?: return@withLock
                 val result = ExperimentalCaptureDaemon.startCurrentCall(app)
+                if (result.isSuccess && !com.vrec.app.experimental.daemon.ManualCaptureIdentityPolicy.matches(
+                        result.getOrThrow(), expected.first, expected.second, expected.third)) {
+                    Log.w("Manual shell start source did not match selected call; stopping segment")
+                    ExperimentalCaptureDaemon.captureControl(app, 'S')
+                    RecordingFailureNotice.warn(app,
+                        "The shell reported another call source. Recording stopped to prevent a misattributed file.")
+                    return@withLock
+                }
                 if (result.isSuccess) {
                     synchronized(this@CallMonitor) {
-                        if (sessions[sessionId]?.active == true) {
+                        if (sessions[sessionId]?.active == true &&
+                            sessions[sessionId]?.packageName == expected.first) {
                             suppressed.add(sessionId)
                             autoAttempted.add(sessionId)
                             recordingId = sessionId

@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.vrec.app.Log
+import com.vrec.app.calls.CallMonitor
 import com.vrec.app.Prefs
 import com.vrec.app.recording.AdbFallbackNotice
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
@@ -35,6 +36,7 @@ object AdbLifecycle {
         private set
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
+    private var callReconciliation: Job? = null
     // Periodic recovery is single-flight, but may await wireless discovery.
     // Never hold transportMutex across that wait: the mDNS callback must be
     // able to finish pairing and switching while recovery observes it.
@@ -57,12 +59,8 @@ object AdbLifecycle {
                 recover(app, "process start")
                 delay(45_000L)
                 while (isActive) {
-                    if (Prefs.recordingEnabled(app) &&
-                        (AdbFallbackNotice.enhancedActive.value ||
-                            !ExperimentalCaptureDaemon.ready.value ||
-                            AdbPrivilegedApiHelper.state.value != AdbPrivilegedApiHelper.State.RUNNING)) {
-                        recover(app, "background check")
-                    }
+                    // Recover missed ENDED imports, even when the UI thinks capture is idle.
+                    if (Prefs.recordingEnabled(app)) recover(app, "background check")
                     delay(120_000L)
                 }
             }
@@ -84,6 +82,31 @@ object AdbLifecycle {
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
             if (catchingNonCancellation { cm.registerNetworkCallback(request, callback) }.isSuccess)
                 wifiCallback = callback
+        }
+    }
+
+    /** Authenticated snapshot and import reconciliation while a live call is tracked. */
+    @Synchronized fun watchLiveCall(context: Context) {
+        if (quitting || callReconciliation?.isActive == true) return
+        val app = context.applicationContext
+        callReconciliation = scope.launch {
+            delay(4_000L)
+            while (isActive && !quitting && Prefs.recordingEnabled(app) &&
+                CallMonitor.hasLiveCall()) {
+                if (ExperimentalCaptureDaemon.probe(app)) {
+                    when (val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)) {
+                        is ExperimentalCaptureDaemon.CaptureSnapshot.Recording ->
+                            AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Paused ->
+                            AdbFallbackNotice.reconcileAuthenticatedPaused(app)
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Idle ->
+                            AdbFallbackNotice.reconcileAuthenticatedIdle(app)
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> Unit
+                    }
+                    ExperimentalCaptureDaemon.collect(app)
+                }
+                delay(20_000L)
+            }
         }
     }
 
@@ -126,6 +149,8 @@ object AdbLifecycle {
         quitting = true
         loop?.cancel()
         loop = null
+        callReconciliation?.cancel()
+        callReconciliation = null
         wifiRecoveryJobs.forEach { it.cancel() }
         wifiRecoveryJobs.clear()
         wifiCallback?.let { cb ->

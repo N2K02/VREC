@@ -277,21 +277,27 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 quitScope.launch {
                                     val app = quitContext.applicationContext
                                     try {
-                                        // Prevent reconnect/rearm before calling the shell.
-                                        Prefs.setRecordingEnabled(app, false)
+                                        // A failed probe is unknown, not evidence of a stopped recorder.
                                         val helperConnected = ExperimentalCaptureDaemon.probe(app)
-                                        // Nothing to stop/import if the shell helper is absent.
-                                        // Do not require an ADB session simply to exit the UI.
-                                        val stopped = !helperConnected || VrecQuitSafety.sequence(
-                                            stopCapture = { ExperimentalCaptureDaemon.setMode(app, false) },
-                                            importCompleted = { ExperimentalCaptureDaemon.collect(app).isSuccess },
-                                            quitHelper = {
-                                                ExperimentalCaptureDaemon.quit(app).let {
-                                                    it == ExperimentalCaptureDaemon.QuitResult.STOPPED ||
-                                                        it == ExperimentalCaptureDaemon.QuitResult.NOT_RUNNING
-                                                }
-                                            },
-                                        )
+                                        val stopped = if (!helperConnected) {
+                                            VrecQuitSafety.canQuitWithoutHelper(
+                                                com.vrec.app.experimental.adb.ExperimentalRecording
+                                                    .recoveryAuthorization(app).allowed,
+                                                ExperimentalCaptureDaemon.ready.value)
+                                        } else {
+                                            val previous = Prefs.recordingEnabled(app)
+                                            Prefs.setRecordingEnabled(app, false)
+                                            val confirmed = VrecQuitSafety.sequence(
+                                                stopCapture = { ExperimentalCaptureDaemon.setMode(app, false) },
+                                                importCompleted = { ExperimentalCaptureDaemon.collect(app).isSuccess },
+                                                quitHelper = {
+                                                    ExperimentalCaptureDaemon.quit(app) ==
+                                                        ExperimentalCaptureDaemon.QuitResult.STOPPED
+                                                },
+                                            )
+                                            if (!confirmed) Prefs.setRecordingEnabled(app, previous)
+                                            confirmed
+                                        }
                                         if (!stopped) {
                                             RecordingFailureNotice.warn(app,
                                                 "Safe shutdown was not confirmed. VRec remains open so recordings can be recovered.")
@@ -553,7 +559,7 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         com.vrec.app.ui.LocalAdbHomeCard(
             recordingActive = recState is RecordingService.State.Recording || enhancedActive,
-            standardRecording = recState is RecordingService.State.Recording && !enhancedActive,
+            standardRecording = false,
         )
         com.vrec.app.ui.PermissionDashboardCard()
         if (recordingEnabled && !ready) {

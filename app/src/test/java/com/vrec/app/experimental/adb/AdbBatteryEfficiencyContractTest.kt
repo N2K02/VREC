@@ -197,7 +197,8 @@ class AdbBatteryEfficiencyContractTest {
         val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
         val section = monitor.substringAfter("private fun requestManualSegment")
             .substringBefore("@Synchronized\\n    fun manualStop")
-        assertTrue(section.contains("startCurrentCellularCall(app)"))
+        assertTrue(section.contains("startCurrentCall(app)"))
+        assertTrue(section.contains("ManualCaptureIdentityPolicy.matches("))
         assertTrue(section.contains("if (result.isSuccess)"))
         assertFalse(section.contains("RecordingService.start("))
         assertTrue(section.contains("candidates.singleOrNull()"))
@@ -216,6 +217,9 @@ class AdbBatteryEfficiencyContractTest {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         assertTrue(lifecycle.contains("recoveryMutex.withLock"))
         assertTrue(lifecycle.contains("wifiRecoveryJobs.forEach { it.cancel() }"))
+        assertTrue(lifecycle.contains("callReconciliation?.cancel()"))
+        assertTrue(lifecycle.contains("CallMonitor.hasLiveCall()"))
+        assertTrue(lifecycle.contains("ExperimentalCaptureDaemon.collect(app)"))
     }
 
     @Test fun shellLifecycleFeedsLegacyUiAndControlsFailClosed() {

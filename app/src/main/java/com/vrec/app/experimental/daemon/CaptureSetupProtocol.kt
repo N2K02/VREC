@@ -37,10 +37,20 @@ internal object CaptureSetupProtocol {
         return false
     }
 
-    fun modeAccepted(reply: String?, enabled: Boolean, waitForAnswer: Boolean): Boolean {
-        val mode = if (enabled) 1 else 0
-        val wait = if (enabled && waitForAnswer) 1 else 0
-        return reply == "$mode WAIT $wait" || (!waitForAnswer && reply == mode.toString())
+    /** Off=0, Automatic=1, On-demand=2; the Home master switch always wins. */
+    fun selectedMode(recordingEnabled: Boolean, automatic: Boolean): Int = when {
+        !recordingEnabled -> 0
+        automatic -> 1
+        else -> 2
+    }
+
+    fun modeAccepted(reply: String?, enabled: Boolean, waitForAnswer: Boolean): Boolean =
+        modeAcceptedMode(reply, if (enabled) 1 else 0, waitForAnswer)
+
+    fun modeAcceptedMode(reply: String?, mode: Int, waitForAnswer: Boolean): Boolean {
+        if (mode !in 0..2) return false
+        val wait = if (mode == 1 && waitForAnswer) 1 else 0
+        return reply == "$mode WAIT $wait" || (wait == 0 && reply == mode.toString())
     }
 
     fun classifySource(reply: String?, requested: Int): Source = when (reply) {
@@ -54,8 +64,14 @@ internal object CaptureSetupProtocol {
     fun evaluate(
         modeReply: String?, sourceReply: String?, enabled: Boolean,
         waitForAnswer: Boolean, requestedSource: Int,
+    ): Verdict = evaluateMode(modeReply, sourceReply, if (enabled) 1 else 0,
+        waitForAnswer, requestedSource)
+
+    fun evaluateMode(
+        modeReply: String?, sourceReply: String?, mode: Int,
+        waitForAnswer: Boolean, requestedSource: Int,
     ): Verdict {
-        if (!modeAccepted(modeReply, enabled, waitForAnswer)) {
+        if (!modeAcceptedMode(modeReply, mode, waitForAnswer)) {
             return Verdict(
                 ready = false, source = Source.UNCONFIRMED,
                 incompatible = !modeReply.isNullOrBlank(),

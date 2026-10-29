@@ -2,6 +2,11 @@ package com.vrec.app.experimental.daemon
 
 /** Preserve damaged shell originals while reporting successful sibling imports. */
 internal object ImportBatchPolicy {
+    /** Never delete a one-sided or unknown recording. */
+    fun shouldDiscardSilent(enabled: Boolean, health: String?): Boolean =
+        enabled && health != null &&
+            (health.contains("BOTH_CHANNELS_QUIET") || health.contains("NO_AUDIO"))
+
     fun message(imported: Int, failed: Int): String =
         when {
             failed > 0 && imported > 0 -> "Imported $imported recordings; $failed failed and kept on the device for recovery."

@@ -123,6 +123,16 @@ class CaptureSetupFlowTest {
         assertEquals(3, attempts)
     }
 
+    @Test fun recordingModesRespectMasterAndAutoRecordPreferences() {
+        assertEquals(0, protocol.selectedMode(false, true))
+        assertEquals(0, protocol.selectedMode(false, false))
+        assertEquals(1, protocol.selectedMode(true, true))
+        assertEquals(2, protocol.selectedMode(true, false))
+        assertTrue(protocol.evaluateMode("2 WAIT 0", "SOURCE 0", 2, false, 0).ready)
+        assertFalse(protocol.evaluateMode("1 WAIT 0", "SOURCE 0", 2, false, 0).ready)
+        assertFalse(protocol.modeAcceptedMode("2 WAIT 1", 2, true))
+    }
+
     @Test fun noTelecomAppOpDoesNotAffectModeOrSimConfirmation() {
         // Advanced Telecom detection is optional. E uses WAIT 0 when denied;
         // the helper itself must still be able to start in automatic mode.

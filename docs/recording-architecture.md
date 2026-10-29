@@ -1,4 +1,4 @@
-# VRec recording architecture — experimental PR #40
+# VRec recording architecture — experimental PR #41
 
 ## Capture path
 
@@ -8,7 +8,9 @@ RecordingStore → Recordings UI.
 
 New captures use the authorized shell helper only; no microphone fallback.
 Capture STARTED/PAUSED/ENDED events, authenticated snapshots, and the helper
-control protocol drive recording state.
+control protocol drive recording state. Recording mode follows Off (0),
+Automatic (1), and on-demand (2) semantics. Manual shell starts are verified
+against the selected call source and refused on mismatch.
 
 ## ADB initialization and recovery
 
@@ -35,6 +37,10 @@ writes the playable OGG file via a temporary file. It writes complete JSON
 sidecar metadata using Android AtomicFile before deleting the shell original.
 Write failures keep the shell original for retry. Metadata edits and bookmarks
 use atomic writes, and deletions/saves report failures to the UI.
+Confirmed-silent recordings are discarded only when the user enables that
+option and both channels are quiet or audio is missing. Unknown results are
+retained. Live calls reconcile authenticated capture status every 20 seconds;
+background checks retry completed imports even after missed END events.
 
 Storage and capture errors appear as Home warnings and Android notifications
 where allowed, with no call identity in the notification. The app never treats

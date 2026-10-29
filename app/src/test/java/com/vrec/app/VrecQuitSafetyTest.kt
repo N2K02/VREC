@@ -8,6 +8,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VrecQuitSafetyTest {
+    @Test fun unreachablePreviouslyAuthorizedHelperCannotBeTreatedAsIdle() {
+        org.junit.Assert.assertFalse(VrecQuitSafety.canQuitWithoutHelper(true, false))
+        org.junit.Assert.assertFalse(VrecQuitSafety.canQuitWithoutHelper(false, true))
+        org.junit.Assert.assertTrue(VrecQuitSafety.canQuitWithoutHelper(false, false))
+    }
+
     @Test fun activeRecordingAndShellAreNeverEligibleForQuit() {
         assertTrue(VrecQuitSafety.idle(RecordingService.State.Idle, false, false))
         assertFalse(VrecQuitSafety.idle(RecordingService.State.Idle, true, false))

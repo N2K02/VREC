@@ -170,6 +170,10 @@ fun SettingsScreen(
         if (section == "Recording") SettingCard("Recording") {
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
+                scope.launch {
+                    if (!ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)))
+                        com.vrec.app.Log.w("Recording mode update was not confirmed by shell")
+                }
             }
             ToggleRow(
                 "Discard silent recordings",

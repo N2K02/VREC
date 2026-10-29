@@ -28,6 +28,19 @@ data class ShellRecordingIdentity(
     }
 }
 
+/** Bind each manual shell start to its selected call, never a competing watcher. */
+internal object ManualCaptureIdentityPolicy {
+    fun matches(file: String, expectedPackage: String?, expectedDirection: CallDirection,
+                isVoip: Boolean): Boolean {
+        val actual = ShellRecordingIdentity.fromName(file) ?: return false
+        return if (isVoip) actual.direction == CallDirection.VOIP &&
+            expectedPackage != null && actual.appPackage == expectedPackage
+        else actual.appPackage == null &&
+            expectedDirection in setOf(CallDirection.INCOMING, CallDirection.OUTGOING) &&
+            actual.direction == expectedDirection
+    }
+}
+
 /** Stable display labels when a VoIP app's package manager entry is not visible. */
 object ShellVoipLabels {
     private val labels = mapOf(

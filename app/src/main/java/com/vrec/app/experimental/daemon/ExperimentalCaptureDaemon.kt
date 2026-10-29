@@ -225,8 +225,11 @@ object ExperimentalCaptureDaemon {
             android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
 
     private fun shouldArmForNextCall(context: Context): Boolean =
-        Prefs.recordingEnabled(context) &&
-            true
+        Prefs.recordingEnabled(context)
+
+    private fun requestedMode(context: Context, enabled: Boolean): Int =
+        CaptureSetupProtocol.selectedMode(
+            enabled && shouldArmForNextCall(context), Prefs.autoRecord(context))
 
     /** A daemon can answer PONG before its configuration worker has settled.
      * Retry short transient handshakes; never recreate a working helper just
@@ -318,7 +321,7 @@ object ExperimentalCaptureDaemon {
                 sharedStage?.cleanup?.invoke()
             }
             val launch = "VREC_TOKEN=" + token(context) +
-                " VREC_MODE=" + (if (shouldArmForNextCall(context)) "1" else "0") +
+                " VREC_MODE=" + requestedMode(context, Prefs.recordingEnabled(context)) +
                 " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
                 " VREC_TRACK=0 VREC_VOIP='" +
                     EnhancedCapturePreferences.voipPackages(context).joinToString(",") +
@@ -377,11 +380,12 @@ object ExperimentalCaptureDaemon {
         modeMutex.withLock {
             // Serialize mode updates and reread Home preference at the point of use.
             // A late enable operation must never re-arm capture after the user switched off.
-            val allowed = enabled && shouldArmForNextCall(context)
-            val waitForAnswer = allowed && requireOutgoingAnswer(context)
+            val mode = requestedMode(context, enabled)
+            val allowed = mode != 0
+            val waitForAnswer = mode == 1 && requireOutgoingAnswer(context)
             val modeReply = runCatching {
                 open(context, 'E', byteArrayOf(
-                    if (allowed) 1 else 0,
+                    mode.toByte(),
                     if (waitForAnswer) 1 else 0,
                 )).use {
                     it.getInputStream().bufferedReader().readLine()?.trim()
@@ -389,7 +393,7 @@ object ExperimentalCaptureDaemon {
             }.getOrNull()
             val selected = EnhancedCapturePreferences.simSource(context)
             var sourceTransportError: String? = null
-            val sourceReply = if (CaptureSetupProtocol.modeAccepted(modeReply, allowed, waitForAnswer)) {
+            val sourceReply = if (CaptureSetupProtocol.modeAcceptedMode(modeReply, mode, waitForAnswer)) {
                 CaptureSourceHandshake.request(
                     read = {
                         open(context, 'J', byteArrayOf(selected.wireValue.toByte())).use {
@@ -400,8 +404,8 @@ object ExperimentalCaptureDaemon {
                     onTransportError = { sourceTransportError = it.javaClass.simpleName },
                 )
             } else null
-            val verdict = CaptureSetupProtocol.evaluate(
-                modeReply, sourceReply, allowed, waitForAnswer, selected.wireValue,
+            val verdict = CaptureSetupProtocol.evaluateMode(
+                modeReply, sourceReply, mode, waitForAnswer, selected.wireValue,
             )
             val verified = verdict.ready
             incompatibleProtocol.value = verdict.incompatible
@@ -678,6 +682,14 @@ object ExperimentalCaptureDaemon {
                     val durationMs = packets * 20L
                     val voip = direction == CallDirection.VOIP
                     val health = recordingHealth(context, name)
+                    if (ImportBatchPolicy.shouldDiscardSilent(Prefs.discardSilent(context), health)) {
+                        check(dest.delete()) { "Cannot discard confirmed silent audio" }
+                        if (caller != null) journal.consumeMatch(context, caller)
+                        else journal.consume(context, started, identity.appPackage)
+                        delete(context, name)
+                        com.vrec.app.Log.i("Capture diagnostic: discarded confirmed silent shell recording")
+                        continue
+                    }
                     val label = if (voip) "Enhanced VoIP playback + microphone"
                         else health?.substringBefore(" | ")?.let { "Shell " + it }
                             ?: "Enhanced shell capture"
