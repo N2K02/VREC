@@ -213,7 +213,7 @@ fun SettingsScreen(
             )
             // Diagnostics and updates remain together at the bottom like mRadio.
             ListItem(
-                headlineContent = { Text("Activity log") },
+                headlineContent = { Text("Recording diagnostics") },
                 supportingContent = { Text("Recording events and diagnostics") },
                 leadingContent = { Icon(Icons.Rounded.Article, contentDescription = null) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
