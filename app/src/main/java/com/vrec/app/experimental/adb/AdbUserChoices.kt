@@ -19,6 +19,44 @@ object AdbUserChoices {
     private const val RESTORE_AFTER_RESTART = "restore_after_restart"
     private const val TCP_MODE = "tcp_5555_mode"
     private const val VERIFIED_BOOT = "last_verified_wireless_boot"
+    private const val VERIFIED_PORT = "last_verified_wireless_port"
+    private const val PORT_BOOT = "wireless_port_boot"
+    private const val AUTO_PAIR = "automatic_pairing_code"
+    private const val MANUALLY_STOPPED = "manual_quit"
+
+    /** Optional and off by default: inspect only Android's pairing dialog. */
+    fun autoPairCode(context: Context): Boolean = prefs(context).getBoolean(AUTO_PAIR, false)
+    fun setAutoPairCode(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(AUTO_PAIR, enabled).apply()
+    }
+
+    /** A deliberate Quit must survive a worker/boot receiver starting the process. */
+    fun manuallyStopped(context: Context): Boolean =
+        prefs(context).getBoolean(MANUALLY_STOPPED, false)
+    fun setManuallyStopped(context: Context, stopped: Boolean) {
+        prefs(context).edit().putBoolean(MANUALLY_STOPPED, stopped).commit()
+    }
+
+    /** Reuse a *verified* TLS endpoint only during the current Android boot.
+     * The port may rotate at any moment: consumers must reconnect and verify UID 2000. */
+    fun rememberVerifiedPort(context: Context, port: Int) {
+        if (port !in 1..65535) return
+        val boot = bootCount(context)
+        if (boot < 0) return
+        prefs(context).edit().putInt(VERIFIED_PORT, port).putInt(PORT_BOOT, boot).apply()
+    }
+
+    fun lastVerifiedPort(context: Context): Int? {
+        val boot = bootCount(context)
+        if (boot < 0 || prefs(context).getInt(PORT_BOOT, -1) != boot) return null
+        return prefs(context).getInt(VERIFIED_PORT, -1).takeIf { it in 1..65535 }
+    }
+
+    fun clearVerifiedPort(context: Context, port: Int) {
+        if (lastVerifiedPort(context) == port) {
+            prefs(context).edit().remove(VERIFIED_PORT).remove(PORT_BOOT).apply()
+        }
+    }
 
     fun restoreAfterRestart(context: Context): Boolean =
         prefs(context).getBoolean(RESTORE_AFTER_RESTART, false)
