@@ -54,22 +54,30 @@ object AdbLifecycle {
         // A boot receiver or WorkManager must not undo a deliberate Quit.
         if (AdbUserChoices.manuallyStopped(app)) return
         quitting = false
-        // Persistent watchdog also survives process death. All recovery paths
-        // share recoveryMutex, while pairing has its separate transport lock.
-        catchingNonCancellation { AdbRecoveryWorker.schedule(app) }
-            .onFailure { Log.w("ADB watchdog scheduling unavailable", it) }
-        if (loop?.isActive != true) {
-            // A quick check now, again once Wi-Fi has had time to come up after
-            // boot, then every 2 minutes. Recovery's own backoff limits attempts.
-            loop = scope.launch {
-                recover(app, "process start")
-                delay(45_000L)
-                while (isActive) {
-                    // Recover missed ENDED imports, even when the UI thinks capture is idle.
-                    if (Prefs.recordingEnabled(app)) recover(app, "background check")
-                    delay(120_000L)
+        // The watchdog switch controls BOTH periodic in-process recovery and
+        // the persisted WorkManager safety net. Manual and boot recovery remain
+        // independent and available when periodic monitoring is disabled.
+        if (AdbUserChoices.connectionWatchdog(app)) {
+            catchingNonCancellation { AdbRecoveryWorker.schedule(app) }
+                .onFailure { Log.w("ADB watchdog scheduling unavailable", it) }
+            if (loop?.isActive != true) {
+                // Immediate check, then every two minutes. Transport recovery
+                // already applies its own authorization rules and backoff.
+                loop = scope.launch {
+                    recover(app, "process start")
+                    delay(45_000L)
+                    while (isActive && AdbUserChoices.connectionWatchdog(app)) {
+                        if (Prefs.recordingEnabled(app)) recover(app, "background check")
+                        delay(120_000L)
+                    }
                 }
             }
+        } else {
+            loop?.cancel()
+            loop = null
+            catchingNonCancellation { AdbRecoveryWorker.cancel(app) }
+                .onFailure { Log.w("ADB watchdog cancel unavailable", it) }
+            requestRecovery(app, "app opened")
         }
         if (wifiCallback == null) {
             val cm = app.getSystemService(ConnectivityManager::class.java) ?: return
@@ -88,6 +96,24 @@ object AdbLifecycle {
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
             if (catchingNonCancellation { cm.registerNetworkCallback(request, callback) }.isSuccess)
                 wifiCallback = callback
+        }
+    }
+
+    /**
+     * Apply the watchdog switch without disconnecting an authorized shell or
+     * interrupting a live recording. One-off boot, Wi-Fi and user recovery are
+     * separate paths; Quit remains stronger than every preference.
+     */
+    @Synchronized fun configureWatchdog(context: Context, enabled: Boolean) {
+        val app = context.applicationContext
+        AdbUserChoices.setConnectionWatchdog(app, enabled)
+        if (!enabled) {
+            loop?.cancel()
+            loop = null
+            catchingNonCancellation { AdbRecoveryWorker.cancel(app) }
+                .onFailure { Log.w("ADB watchdog cancel unavailable", it) }
+        } else if (!quitting && !AdbUserChoices.manuallyStopped(app)) {
+            startBackground(app)
         }
     }
 
