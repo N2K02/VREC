@@ -23,7 +23,8 @@ class AdbRecoveryWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext
-        if (AdbUserChoices.manuallyStopped(app) || !Prefs.recordingEnabled(app))
+        if (AdbUserChoices.manuallyStopped(app) || !AdbUserChoices.connectionWatchdog(app) ||
+            !Prefs.recordingEnabled(app))
             return Result.success()
         try {
             AdbLifecycle.recoverOnce(app, "persistent watchdog")
