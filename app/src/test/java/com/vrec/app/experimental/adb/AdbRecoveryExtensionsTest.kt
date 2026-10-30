@@ -97,11 +97,15 @@ class AdbRecoveryExtensionsTest {
         val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         assertTrue(choices.contains("prefs(context).getBoolean(AUTO_PAIR, true)"))
         assertTrue(service.contains("AdbUserChoices.autoPairCode(this)"))
-        assertTrue(service.contains("pkg != \"com.android.settings\""))
+        assertTrue(service.contains("PairingCodeUiPolicy.isSettingsPackage("))
         assertTrue(service.contains("state.pairingPort == null || state.pairing"))
         assertTrue(service.contains("LocalWirelessAdb.pair(applicationContext, code)"))
+        assertTrue(service.contains("pairingHandler.postDelayed(this, 400L)"))
+        assertTrue(service.contains("pairingHandler.removeCallbacks(pairingWindowRead)"))
+        assertTrue(read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+            .contains("VrecAccessibilityService.onPairingPortDiscovered()"))
         assertFalse(service.contains("Log.i(\"pairing code"))
         assertTrue(ui.contains("AdbUserChoices.setAutoPairCode(context, enabled)"))
-        assertTrue(ui.contains("Manual code entry remains available."))
+        assertTrue(ui.contains("Turn this off to use manual pairing only."))
     }
 }
