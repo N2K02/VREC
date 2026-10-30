@@ -260,6 +260,9 @@ object ExperimentalRecording {
         }
         rememberVerifiedWireless(context)
         AdbUserChoices.rememberVerifiedWirelessBoot(context)
+        // Never cache an mDNS announcement alone: only a real UID 2000 handshake
+        // earns same-boot fast-reconnect preference.
+        AdbUserChoices.rememberVerifiedPort(context, port)
         Log.i("ADB: wireless TLS Android shell UID 2000 verified")
         status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
             shellUid = 2000, message = "Wireless ADB UID 2000 verified; configuring transport…")
