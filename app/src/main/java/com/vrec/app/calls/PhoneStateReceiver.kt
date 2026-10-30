@@ -20,9 +20,17 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
                 CallMonitor.onSimState(context, state, number)
             }
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                // No persistent state to restore; the manifest-registered receiver is enough to
-                // catch the next call. Nothing to do.
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_USER_UNLOCKED,
+            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                val app = context.applicationContext
+                // Recovery is idempotent and checks explicit user authorization.
+                // Credential-protected pairing keys are available after unlock;
+                // never claim they can be used before unlock on stock Android.
+                if (!com.vrec.app.experimental.adb.AdbUserChoices.manuallyStopped(app)) {
+                    com.vrec.app.experimental.adb.AdbLifecycle.startBackground(app)
+                    com.vrec.app.experimental.adb.AdbLifecycle.requestRecovery(app,
+                        intent.action ?: "system restart")
+                }
             }
         }
     }
