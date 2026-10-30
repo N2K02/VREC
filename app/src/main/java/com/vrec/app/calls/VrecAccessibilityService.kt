@@ -10,6 +10,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vrec.app.Log
 import com.vrec.app.Prefs
+import com.vrec.app.experimental.adb.AdbUserChoices
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import java.util.ArrayDeque
 
 /**
@@ -43,7 +45,47 @@ class VrecAccessibilityService : AccessibilityService() {
         Log.i("Accessibility recording helper connected")
     }
 
+    /**
+     * Explicit user opt-in only. Read the short-lived pairing code from Android
+     * Settings, never arbitrary application windows. This is not a way to enable
+     * Wireless debugging or authorize ADB without Android's pairing dialog.
+     */
+    private fun tryPairingFromSettings(event: AccessibilityEvent?): Boolean {
+        if (!AdbUserChoices.autoPairCode(this)) return false
+        val pkg = event?.packageName?.toString() ?: return false
+        if (pkg != "com.android.settings" && pkg != "com.google.android.settings") return false
+        val state = LocalWirelessAdb.status.value
+        if (state.pairingPort == null || state.pairing) return false
+        val root = rootInActiveWindow ?: return false
+        if (root.packageName?.toString() != pkg) return false
+        val items: ArrayDeque<AccessibilityNodeInfo> = ArrayDeque()
+        val labels = mutableListOf<String>()
+        items.add(root)
+        var seen = 0
+        while (items.isNotEmpty() && seen++ < 100) {
+            val node = items.removeFirst()
+            node.text?.toString()?.let(labels::add)
+            node.contentDescription?.toString()?.let(labels::add)
+            for (i in 0 until node.childCount.coerceAtMost(20)) {
+                node.getChild(i)?.let(items::add)
+            }
+        }
+        val dialogVisible = labels.any {
+            it.contains("pair device with pairing code", ignoreCase = true) ||
+                it.contains("pair with device", ignoreCase = true) ||
+                it.contains("wi-fi pairing code", ignoreCase = true) ||
+                it.contains("pairing code", ignoreCase = true)
+        }
+        if (!dialogVisible) return false
+        val code = labels.asSequence().map { it.trim() }
+            .firstOrNull { it.matches(Regex("[0-9]{6}")) } ?: return false
+        LocalWirelessAdb.pair(applicationContext, code)
+        // Pairing code is intentionally not persisted or logged.
+        return true
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (tryPairingFromSettings(event)) return
         if (!Prefs.experimentalCallDetection(this)) return
         val pkg = event?.packageName?.toString() ?: return
         val dialer = runCatching {
