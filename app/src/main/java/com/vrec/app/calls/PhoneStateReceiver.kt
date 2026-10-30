@@ -8,8 +8,8 @@ import android.telephony.TelephonyManager
 /**
  * SIM call detection. Android delivers RINGING / OFFHOOK / IDLE here as the call progresses.
  * The incoming number is only present when the OS chooses to include it; VREC records either way.
- * Also re-arms nothing on boot/update — recording is driven live by call state — but the entry is
- * kept so the app's process is around to receive the first call-state broadcast after a reboot.
+ * BOOT_COMPLETED recovery respects the Start on boot preference and deliberate Quit;
+ * MY_PACKAGE_REPLACED can rearm existing authorized recovery after updates.
  */
 class PhoneStateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
