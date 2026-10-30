@@ -16,9 +16,19 @@ class SettingsConsistencyContractTest {
         assertTrue("Settings menu item is missing", menu.contains("Triple(\"Recording\", \"Automatic recording and silent files\""))
         assertTrue(!menu.contains("RecordingMethodOption("))
         assertTrue(!menu.contains("Permissions & setup"))
+        assertTrue("ADB connection submenu missing", menu.contains(
+            "Triple(\"ADB connection\", \"Automatic pairing, reboot recovery and network access\""))
         assertTrue("Updates or diagnostic footer missing", menu.contains("headlineContent = { Text(\"About & updates\") }"))
         val divider = menu.indexOf("HorizontalDivider()")
         val update = menu.indexOf("headlineContent = { Text(\"About & updates\") }")
         assertTrue("Divider must separate settings and diagnostic/update links", divider >= 0 && update > divider)
+        assertTrue("ADB connection belongs before Diagnostics/Logs/Updates",
+            menu.indexOf("Triple(\"ADB connection\"") in 0 until divider)
+        assertTrue("ADB preferences must be under their own submenu",
+            source.contains("if (section == \"ADB connection\") {"))
+        assertTrue("Automatic pairing toggle must be in ADB connection preferences",
+            source.contains("AdbPairingRecoveryChoices()"))
+        assertTrue("No secondary setup wizard in Settings",
+            !source.contains("AdbSetupProgressCard("))
     }
 }
