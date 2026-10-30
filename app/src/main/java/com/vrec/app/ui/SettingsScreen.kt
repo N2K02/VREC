@@ -375,6 +375,8 @@ private fun AdbPairingRecoveryChoices() {
     val wireless by LocalWirelessAdb.status.collectAsState()
     val connection by ExperimentalRecording.status.collectAsState()
     var autoPair by remember { mutableStateOf(AdbUserChoices.autoPairCode(context)) }
+    var watchdogEnabled by remember { mutableStateOf(AdbUserChoices.connectionWatchdog(context)) }
+    var bootEnabled by remember { mutableStateOf(AdbUserChoices.startOnBoot(context)) }
 
     SettingCard("Automatic wireless pairing") {
         ToggleRow(
@@ -411,9 +413,29 @@ private fun AdbPairingRecoveryChoices() {
     }
 
     SettingCard("Automatic recovery") {
+        ToggleRow(
+            "Connection watchdog",
+            "On by default. Periodic ADB health checks (about every 2 minutes) and an " +
+                "Android-managed 15-minute recovery worker. When off, manual setup, " +
+                "boot startup and event-triggered recovery remain available.",
+            watchdogEnabled,
+        ) { enabled ->
+            watchdogEnabled = enabled
+            com.vrec.app.experimental.adb.AdbLifecycle.configureWatchdog(context, enabled)
+        }
+        ToggleRow(
+            "Start on boot",
+            "On by default. Request authorized ADB recovery after Android finishes booting " +
+                "and user storage unlocks. This does not grant ADB permission or automatically " +
+                "enable Wireless debugging; that requires the separate Restore after restart setting.",
+            bootEnabled,
+        ) { enabled ->
+            bootEnabled = enabled
+            AdbUserChoices.setStartOnBoot(context, enabled)
+        }
         Text(
-            "Watchdog: VRec checks ADB in the background and uses an Android-managed " +
-                "15-minute recovery job if the app process is stopped. Android may defer its execution.",
+            if (watchdogEnabled) "Watchdog enabled. Android may defer background recovery jobs."
+            else "Watchdog disabled. Existing authorized ADB sessions and recordings are not stopped.",
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
