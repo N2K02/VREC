@@ -23,6 +23,9 @@ object ExperimentalRecording {
         val connected: Boolean = false,
         /** Socket presence only; never grants access to the shell helper. */
         val tcpPortOpen: Boolean = false,
+        /** Endpoint of the currently UID-2000-verified live ADB session, not merely a listening socket. */
+        val activePort: Int? = null,
+        val activeTransport: String? = null,
         val busy: Boolean = false,
         /** Typed reason for the last failed attempt; cleared on success. */
         val lastFailure: AdbFailure? = null,
@@ -80,7 +83,7 @@ object ExperimentalRecording {
         val current = status.value
         if (current.busy) return
         status.value = if (current.connected && !transportConnected) {
-            current.copy(connected = false, shellUid = null,
+            current.copy(connected = false, shellUid = null, activePort = null, activeTransport = null,
                 tcpPortOpen = tcpListening,
                 message = "ADB session ended. The recording helper can keep running independently.")
         } else current.copy(tcpPortOpen = tcpListening)
@@ -140,7 +143,7 @@ object ExperimentalRecording {
         if (!automatic) allowManualRetry()
         if (status.value.busy)
             return Result.failure(AdbConnectionException(AdbFailure.CONNECTION_LOST, "ADB setup is already running"))
-        status.value = status.value.copy(busy = true, connected = false, shellUid = null,
+        status.value = status.value.copy(busy = true, connected = false, shellUid = null, activePort = null, activeTransport = null,
             message = "Checking USB-bootstrapped localhost ADB…")
         Log.i("ADB: verifying localhost:5555 authorization (15-second limit)")
         val result: Result<Int> = try {
@@ -166,7 +169,7 @@ object ExperimentalRecording {
         } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
             // Quit must not leave a permanently busy or falsely authorized ADB
             // status after interrupting an in-progress transport handshake.
-            status.value = status.value.copy(busy = false, connected = false, shellUid = null)
+            status.value = status.value.copy(busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null)
             withContext(kotlinx.coroutines.NonCancellable) { AdbTransport.close() }
             throw cancelled
         }
@@ -178,7 +181,7 @@ object ExperimentalRecording {
             if (AdbFailurePolicy.requiresManualRetry(kind)) awaitingManualRetry = true
             withContext(Dispatchers.IO) { AdbTransport.close() }
             status.value = status.value.copy(
-                busy = false, connected = false, shellUid = null, lastFailure = kind,
+                busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null, lastFailure = kind,
                 tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },
                 message = failureMessage(kind, result.exceptionOrNull()?.message),
             )
@@ -187,7 +190,7 @@ object ExperimentalRecording {
         Log.i("ADB: Android shell UID 2000 verified")
         rememberVerifiedTcp(context)
         status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
-            shellUid = 2000, tcpPortOpen = true,
+            shellUid = 2000, tcpPortOpen = true, activePort = 5555, activeTransport = "TCP",
             message = "Android shell UID 2000 verified. Configuring supported permissions…")
         // startWithAdb performs the same live UID check and permission bootstrap
         // for every entry point; do not repeat grants in this transport wrapper.
@@ -227,7 +230,7 @@ object ExperimentalRecording {
         if (status.value.busy)
             return Result.failure(AdbConnectionException(AdbFailure.CONNECTION_LOST, "ADB setup is already running"))
         if (!automatic) allowManualRetry()
-        status.value = status.value.copy(busy = true, connected = false, shellUid = null,
+        status.value = status.value.copy(busy = true, connected = false, shellUid = null, activePort = null, activeTransport = null,
             message = "Connecting to this phone's Wireless debugging TLS endpoint…")
         val attempt: Result<Int> = try {
             withTimeout(15_000L) {
@@ -245,7 +248,7 @@ object ExperimentalRecording {
             Result.failure(AdbConnectionException(AdbFailure.AUTH_TIMEOUT,
                 "Wireless ADB authorization timed out after 15 seconds"))
         } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
-            status.value = status.value.copy(busy = false, connected = false, shellUid = null)
+            status.value = status.value.copy(busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null)
             withContext(kotlinx.coroutines.NonCancellable) { AdbTransport.close() }
             throw cancelled
         }
@@ -253,7 +256,7 @@ object ExperimentalRecording {
             val kind = attempt.exceptionOrNull().adbFailure
             if (AdbFailurePolicy.requiresManualRetry(kind)) awaitingManualRetry = true
             AdbTransport.close()
-            status.value = status.value.copy(busy = false, connected = false, shellUid = null,
+            status.value = status.value.copy(busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null,
                 lastFailure = kind, message = failureMessage(kind, attempt.exceptionOrNull()?.message))
             Log.w("ADB: Wireless connection failed ($kind) — ${attempt.exceptionOrNull()?.message}")
             return attempt
@@ -265,7 +268,8 @@ object ExperimentalRecording {
         AdbUserChoices.rememberVerifiedPort(context, port)
         Log.i("ADB: wireless TLS Android shell UID 2000 verified")
         status.value = status.value.copy(busy = true, connected = true, lastFailure = null,
-            shellUid = 2000, message = "Wireless ADB UID 2000 verified; configuring transport…")
+            shellUid = 2000, activePort = port, activeTransport = "TLS",
+            message = "Wireless ADB UID 2000 verified; configuring transport…")
         if (deferHelperUntilTcp) {
             // TCP promotion restarts adbd and drops the TLS stream. Starting the
             // recording helper before this transition can fail and abort TCP
@@ -346,7 +350,7 @@ object ExperimentalRecording {
         status.value = status.value.copy(busy = true, message = "Disconnecting ADB…")
         AdbTransport.close()
         status.value = status.value.copy(
-            busy = false, connected = false, shellUid = null, 
+            busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null, 
             tcpPortOpen = withContext(Dispatchers.IO) { tcpPresent() },
             message = "ADB disconnected. The enhanced helper may keep running; " +
                 "use Home to turn recording on or off.",
@@ -372,7 +376,7 @@ object ExperimentalRecording {
             }
         }
         status.value = status.value.copy(
-            busy = false, connected = false, shellUid = null,
+            busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null,
             tcpPortOpen = listening,
             message = when {
                 result.isFailure -> "TCP disable failed: " + result.exceptionOrNull()?.message
