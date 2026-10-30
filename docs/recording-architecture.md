@@ -29,6 +29,26 @@ against the selected call source and refused on mismatch.
   the pairing callback.
 - A detached healthy helper does not require a permanently attached ADB client;
   reboot or OEM policies can still stop the helper and TCP listener.
+- Previously UID-2000-verified dynamic TLS ports are cached **within the same boot only**.
+  An optimistic reconnect keeps mDNS discovery running and falls back to the newest
+  observed local port on connection failure; stale service-lost callbacks cannot
+  erase newer ports. Authentication and UID 2000 are rechecked, never inferred
+  from a cached port or a listening socket.
+- The app's existing ADB lifecycle mutex coordinates manual starts, background
+  recovery, and wireless pairing. A 15-minute WorkManager watchdog provides a
+  best-effort process-death backstop; boot and package-update receivers request
+  safe recovery after user storage is available. Android may defer background
+  jobs, so this is not an always-running service.
+- Deliberate Quit persists a stop latch, cancels the watchdog, discovery and
+  background recovery; only reopening VRec re-enables them.
+- Pairing code auto-read is optional and OFF by default. When enabled and when
+  VRec's accessibility service is explicitly enabled, it reads the six-digit
+  code only from the visible Android Settings pairing dialog. Code is never
+  stored or logged, and manual pairing remains supported.
+- A classic TCP/5555 port is **not guaranteed to persist across reboot**:
+  unprivileged shell UID 2000 cannot generally write persist.adb.tcp.port
+  on stock Android. This app never requires root or quietly modifies persistent
+  system properties. Any TCP listener may be network-accessible.
 
 ## Recording data integrity
 
