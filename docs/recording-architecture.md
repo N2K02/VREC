@@ -39,9 +39,10 @@ against the selected call source and refused on mismatch.
   **Start on boot** switches, both enabled by default. Disabling the watchdog
   cancels periodic in-process checks and the unique WorkManager job immediately,
   while preserving manual, boot and event-triggered reconnects. Disabling Start
-  on boot suppresses BOOT_COMPLETED-triggered recovery, but does not disable
-  the separate watchdog if it is enabled; normal activity opening and package
-  updates may also recover. Restore after restart is a third, opt-in action
+  on boot prevents BOOT_COMPLETED, watchdog and package-update recovery after
+  reboot until VRec is opened manually in that Android boot. After manual
+  reopening, the independent watchdog operates according to its own switch.
+  Restore after restart is a third, opt-in action
   that may enable Android Wireless debugging again if securely authorized.
 - The Home dashboard displays the UID-2000-verified active ADB localhost port
   and transport (TLS dynamic port or TCP/5555). A listening TCP/5555 socket
