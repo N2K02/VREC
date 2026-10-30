@@ -46,11 +46,15 @@ object AdbUserChoices {
         prefs(context).edit().putInt(VERIFIED_PORT, port).putInt(PORT_BOOT, boot).apply()
     }
 
-    fun lastVerifiedPort(context: Context): Int? {
-        val boot = bootCount(context)
-        if (boot < 0 || prefs(context).getInt(PORT_BOOT, -1) != boot) return null
-        return prefs(context).getInt(VERIFIED_PORT, -1).takeIf { it in 1..65535 }
-    }
+    /** Pure policy: never reuse a TLS port across reboot or with unknown boot count. */
+    internal fun reusablePort(port: Int, rememberedBoot: Int, currentBoot: Int): Int? =
+        port.takeIf { it in 1..65535 && currentBoot >= 0 && rememberedBoot == currentBoot }
+
+    fun lastVerifiedPort(context: Context): Int? = reusablePort(
+        prefs(context).getInt(VERIFIED_PORT, -1),
+        prefs(context).getInt(PORT_BOOT, -1),
+        bootCount(context),
+    )
 
     fun clearVerifiedPort(context: Context, port: Int) {
         if (lastVerifiedPort(context) == port) {
