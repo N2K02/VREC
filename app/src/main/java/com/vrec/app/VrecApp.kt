@@ -1,10 +1,7 @@
 package com.vrec.app
 
 import android.app.Application
-import com.vrec.app.experimental.adb.AdbSelfRecovery
-import com.vrec.app.experimental.adb.AdbLifecycle
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.experimental.adb.LocalWirelessAdb
 
 class VrecApp : Application() {
     override fun onCreate() {
