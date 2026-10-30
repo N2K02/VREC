@@ -34,6 +34,19 @@ import java.util.Collections
  * Addresses must belong to THIS device. All actual ADB traffic goes to
  * localhost, not to another network device. No code is ever persisted.
  */
+/** Pure retry policy, separate from Android discovery callbacks for JVM testing. */
+internal object WirelessPortRetryPolicy {
+    fun freshPort(
+        failedPort: Int, observedPort: Int?, attemptedPorts: Set<Int>,
+        failure: AdbFailure?,
+    ): Int? =
+        observedPort?.takeIf {
+            (failure == AdbFailure.CONNECTION_LOST || failure == AdbFailure.NETWORK_UNAVAILABLE) &&
+                it in 1..65535 && it != failedPort && it !in attemptedPorts &&
+                attemptedPorts.size < 3
+        }
+}
+
 object LocalWirelessAdb {
     /**
      * Where the wireless setup is. Transitions happen only inside [transition],
@@ -327,8 +340,9 @@ object LocalWirelessAdb {
                 AdbUserChoices.clearVerifiedPort(app, port)
                 // A newer mDNS port may have arrived while the transport lock
                 // was held. Retry that fresh port once without another search.
-                val fresh = status.value.connectPort
-                if (fresh != null && fresh != port && fresh !in attemptedPorts)
+                val fresh = WirelessPortRetryPolicy.freshPort(
+                    port, status.value.connectPort, attemptedPorts + port, kind)
+                if (fresh != null)
                     return connectAndSwitch(app, fresh, automatic, attemptedPorts + port)
                 // Keep mDNS active for the next advertisement. Do not convert
                 // a stale socket into a permanent authorization failure.
