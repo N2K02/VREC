@@ -16,6 +16,7 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.provider.Settings
 import com.vrec.app.Log
+import com.vrec.app.calls.VrecAccessibilityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -219,7 +220,12 @@ object LocalWirelessAdb {
                         emptySearches = 0
                         if (pairing) {
                             status.value = status.value.copy(pairingPort = port, scanning = false,
-                                message = "Pairing code detected. Enter the six-digit code from Android.")
+                                message = "Pairing code service detected. Reading Android Settings if Accessibility is active; otherwise enter the code manually.")
+                            // Android may publish the pairing port after its
+                            // Settings dialog stops emitting accessibility events.
+                            VrecAccessibilityService.onPairingPortDiscovered()
+                            // Keep notification RemoteInput as a fallback if the
+                            // user hasn't enabled Accessibility or detection fails.
                             showPairingNotification(app)
                         } else {
                             status.value = status.value.copy(connectPort = port, scanning = false,
@@ -292,7 +298,7 @@ object LocalWirelessAdb {
                 pairing = false, paired = true,
                 message = "Paired. Connecting to the Android shell…")
             else status.value.copy(pairing = false, phase = Phase.RECOVERY_REQUIRED,
-                message = "Pairing failed: ${outcome.exceptionOrNull()?.message}")
+                message = "Pairing unsuccessful. Reopen Android pairing dialog and retry the code.")
             if (outcome.isSuccess) {
                 val port = status.value.connectPort
                 if (port != null) {
