@@ -13,7 +13,8 @@ internal object PairingCodeUiPolicy {
     private val standaloneCode = Regex("""[0-9]{6}""")
     private val inlineCode = Regex("""(?<![0-9])[0-9]{6}(?![0-9])""")
 
-    fun isSettingsPackage(packageName: String?): Boolean = packageName in systemSettingsPackages
+    fun isSettingsPackage(packageName: String?): Boolean =
+        packageName != null && packageName in systemSettingsPackages
 
     fun extractCode(labels: List<String>): String? {
         val isPairingDialog = labels.any {
