@@ -15,7 +15,8 @@ against the selected call source and refused on mismatch.
 ## ADB initialization and recovery
 
 - On Android 11+, the user enables USB and Wireless debugging and enters the
-  one-time Android wireless pairing code.
+  one-time Android pairing-code dialog. With the user-enabled Accessibility
+  service, VRec reads the code automatically; otherwise it supports manual entry.
 - The embedded ADB transport connects to this phone's TLS pairing/connection
   ports, verifies `id -u == 2000`, then configures eligible permissions.
 - Automatic TCP/5555 is enabled by default. After verification, VRec switches
@@ -41,10 +42,12 @@ against the selected call source and refused on mismatch.
   jobs, so this is not an always-running service.
 - Deliberate Quit persists a stop latch, cancels the watchdog, discovery and
   background recovery; only reopening VRec re-enables them.
-- Pairing code auto-read is optional and OFF by default. When enabled and when
-  VRec's accessibility service is explicitly enabled, it reads the six-digit
-  code only from the visible Android Settings pairing dialog. Code is never
-  stored or logged, and manual pairing remains supported.
+- Pairing-code auto-read is ON by default when the user enables VRec's existing
+  Accessibility service (no additional Accessibility service is installed).
+  It reads only the Android Settings pairing dialog and retries short-lived
+  window reads while Android renders the code after the opening event. The
+  user can disable this in VRec; no code is persisted or logged, and manual
+  code entry and notification RemoteInput remain available.
 - A classic TCP/5555 port is **not guaranteed to persist across reboot**:
   unprivileged shell UID 2000 cannot generally write persist.adb.tcp.port
   on stock Android. This app never requires root or quietly modifies persistent
