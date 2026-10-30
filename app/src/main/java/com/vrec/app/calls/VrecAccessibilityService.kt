@@ -59,6 +59,7 @@ class VrecAccessibilityService : AccessibilityService() {
     // Ephemeral signature only (not the code itself), for suppressing retries
     // on unchanged Android Settings dialogs. Never persisted or logged.
     private var lastAttemptSignature: Int? = null
+    private var lastDiscoveryRequestMs = 0L
     private val pairingWindowRead = object : Runnable {
         override fun run() {
             if (!AdbUserChoices.autoPairCode(this@VrecAccessibilityService)) return
@@ -90,7 +91,6 @@ class VrecAccessibilityService : AccessibilityService() {
     private fun tryPairingFromSettingsWindow(): Boolean {
         val state = LocalWirelessAdb.status.value
         if (state.pairing) return true
-        if (state.pairingPort == null) return false
         val root = rootInActiveWindow ?: return false
         if (!PairingCodeUiPolicy.isSettingsPackage(root.packageName?.toString())) return false
         val nodes: ArrayDeque<AccessibilityNodeInfo> = ArrayDeque()
@@ -106,6 +106,18 @@ class VrecAccessibilityService : AccessibilityService() {
             }
         }
         val code = PairingCodeUiPolicy.extractCode(labels) ?: return false
+        if (state.pairingPort == null) {
+            // The user may open Android's pairing-code dialog directly from
+            // Developer options without first opening VRec. Recognizing this
+            // *visible dialog* is enough to begin local mDNS discovery; it is
+            // NOT permission to enable debugging or authorize a key.
+            val now = SystemClock.elapsedRealtime()
+            if (lastDiscoveryRequestMs == 0L || now - lastDiscoveryRequestMs > 10_000L) {
+                lastDiscoveryRequestMs = now
+                LocalWirelessAdb.start(applicationContext, userInitiated = true)
+            }
+            return false // Re-read the live dialog when the local port resolves.
+        }
         val signature = (state.pairingPort.toString() + ":" + root.windowId + ":" + code).hashCode()
         if (signature == lastAttemptSignature) return true
         lastAttemptSignature = signature
