@@ -16,6 +16,14 @@ class AdbRecoveryPreferencesContractTest {
         val prefs = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
         assertTrue(prefs.contains("getBoolean(CONNECTION_WATCHDOG, true)"))
         assertTrue(prefs.contains("getBoolean(START_ON_BOOT, true)"))
+        assertFalse("Disabled Start on boot must suppress unseen-boot recovery",
+            AdbUserChoices.backgroundRecoveryAllowed(false, 42, 41))
+        assertTrue("Foreground-opened same-boot recovery is allowed",
+            AdbUserChoices.backgroundRecoveryAllowed(false, 42, 42))
+        assertTrue("Unknown boot state must not bypass a disabled boot switch",
+            !AdbUserChoices.backgroundRecoveryAllowed(false, -1, -1))
+        assertTrue("Enabled Start on boot works independently of foreground history",
+            AdbUserChoices.backgroundRecoveryAllowed(true, 42, -1))
         assertTrue(prefs.contains("fun setConnectionWatchdog(context: Context, enabled: Boolean)"))
         assertTrue(prefs.contains("fun setStartOnBoot(context: Context, enabled: Boolean)"))
         assertTrue(prefs.contains("getBoolean(RESTORE_AFTER_RESTART, false)"))
@@ -30,6 +38,7 @@ class AdbRecoveryPreferencesContractTest {
         assertTrue(lifecycle.contains("if (AdbUserChoices.connectionWatchdog(app))"))
         assertTrue(lifecycle.contains("while (isActive && AdbUserChoices.connectionWatchdog(app))"))
         assertTrue(worker.contains("!AdbUserChoices.connectionWatchdog(app)"))
+        assertTrue(worker.contains("!AdbUserChoices.backgroundRecoveryAllowed(app)"))
         assertTrue(body.contains("loop?.cancel()"))
         assertTrue(body.contains("AdbRecoveryWorker.cancel(app)"))
         assertTrue(body.contains("startBackground(app)"))
@@ -42,7 +51,9 @@ class AdbRecoveryPreferencesContractTest {
         val application = source("app/src/main/java/com/vrec/app/VrecApp.kt")
         val activity = source("app/src/main/java/com/vrec/app/MainActivity.kt")
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
-        assertTrue(receiver.contains("intent.action != Intent.ACTION_BOOT_COMPLETED || choices.startOnBoot(app)"))
+        assertTrue(receiver.contains("choices.backgroundRecoveryAllowed(app)"))
+        assertTrue(application.contains("Do not start recovery from Application.onCreate"))
+        assertTrue(activity.contains("AdbUserChoices.markUserOpenedThisBoot(applicationContext)"))
         assertTrue(receiver.contains("choices.manuallyStopped(app)"))
         assertFalse(application.contains("AdbLifecycle.startBackground(this)"))
         assertTrue(activity.contains("AdbLifecycle.startBackground(applicationContext)"))
