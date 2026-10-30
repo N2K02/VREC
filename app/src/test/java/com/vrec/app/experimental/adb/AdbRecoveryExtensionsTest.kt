@@ -91,11 +91,11 @@ class AdbRecoveryExtensionsTest {
         assertTrue(activity.contains("AdbUserChoices.setManuallyStopped(applicationContext, false)"))
     }
 
-    @Test fun pairingAssistanceIsExplicitAndSettingsOnly() {
+    @Test fun automaticPairingDefaultsOnButStillRequiresEnabledSettingsAccessibility() {
         val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
         val service = source("app/src/main/java/com/vrec/app/calls/VrecAccessibilityService.kt")
         val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
-        assertTrue(choices.contains("prefs(context).getBoolean(AUTO_PAIR, false)"))
+        assertTrue(choices.contains("prefs(context).getBoolean(AUTO_PAIR, true)"))
         assertTrue(service.contains("AdbUserChoices.autoPairCode(this)"))
         assertTrue(service.contains("pkg != \"com.android.settings\""))
         assertTrue(service.contains("state.pairingPort == null || state.pairing"))
