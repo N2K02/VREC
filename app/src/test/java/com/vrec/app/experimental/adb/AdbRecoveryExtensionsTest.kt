@@ -98,7 +98,7 @@ class AdbRecoveryExtensionsTest {
         assertTrue(choices.contains("prefs(context).getBoolean(AUTO_PAIR, true)"))
         assertTrue(service.contains("AdbUserChoices.autoPairCode(this)"))
         assertTrue(service.contains("PairingCodeUiPolicy.isSettingsPackage("))
-        assertTrue(service.contains("state.pairingPort == null || state.pairing"))
+        assertTrue(service.contains("if (state.pairingPort == null) return false"))
         assertTrue(service.contains("LocalWirelessAdb.pair(applicationContext, code)"))
         assertTrue(service.contains("pairingHandler.postDelayed(this, 400L)"))
         assertTrue(service.contains("pairingHandler.removeCallbacks(pairingWindowRead)"))
@@ -107,5 +107,9 @@ class AdbRecoveryExtensionsTest {
         assertFalse(service.contains("Log.i(\"pairing code"))
         assertTrue(ui.contains("AdbUserChoices.setAutoPairCode(context, enabled)"))
         assertTrue(ui.contains("Turn this off to use manual pairing only."))
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        assertTrue(wireless.contains("VrecAccessibilityService.running"))
+        assertTrue(wireless.contains("kotlinx.coroutines.delay(7_000L)"))
+        assertTrue(wireless.contains("!pairedInThisSession"))
     }
 }
