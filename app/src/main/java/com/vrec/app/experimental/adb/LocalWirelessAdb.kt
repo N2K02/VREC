@@ -99,7 +99,7 @@ object LocalWirelessAdb {
      */
     fun start(context: Context, userInitiated: Boolean = false) {
         val app = context.applicationContext
-        if (AdbLifecycle.quitting) return
+        if (AdbLifecycle.quitting || AdbUserChoices.manuallyStopped(app)) return
         val now = android.os.SystemClock.elapsedRealtime()
         if (userInitiated) {
             emptySearches = 0
