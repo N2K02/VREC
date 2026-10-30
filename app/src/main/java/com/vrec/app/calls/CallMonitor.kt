@@ -280,7 +280,12 @@ object CallMonitor {
             if (stillUnrecorded) {
                 Log.w("Capture diagnostic: VoIP connected but shell recording unconfirmed" +
                     " app=" + packageName + " snapshot=" +
-                    snapshot.javaClass.simpleName + " voipArmed=" +
+                    when (snapshot) {
+                        is ExperimentalCaptureDaemon.CaptureSnapshot.Recording -> "RECORDING_OTHER_SOURCE"
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Paused -> "PAUSED"
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Idle -> "IDLE"
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> "UNAVAILABLE"
+                    } + " voipArmed=" +
                     ExperimentalCaptureDaemon.voipArmed.value + " helperReady=" +
                     ExperimentalCaptureDaemon.ready.value)
                 RecordingFailureNotice.warn(context,

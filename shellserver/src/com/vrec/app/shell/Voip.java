@@ -100,6 +100,26 @@ final class Voip {
         return policy != null;
     }
 
+    /**
+     * Independent evidence that one configured messenger is BOTH playing
+     * voice-communication audio and capturing. A Telecom state alone is
+     * insufficient. Ambiguous simultaneous apps must never be guessed.
+     */
+    static String uniquelyCallingApp(AudioManager audio) {
+        if (audio == null || policy == null) return null;
+        String only = null;
+        for (int uid : callingUids(audio, false)) {
+            String[] packages = FakeContext.get().getPackageManager().getPackagesForUid(uid);
+            if (packages == null) continue;
+            for (String pkg : packages) {
+                if (!apps.contains(pkg)) continue;
+                if (only != null && !only.equals(pkg)) return null;
+                only = pkg;
+            }
+        }
+        return only;
+    }
+
     /** "com.whatsapp,com.viber.voip" - the environment's form and the command's. */
     static Set<String> parse(String list) {
         Set<String> out = new LinkedHashSet<>();
