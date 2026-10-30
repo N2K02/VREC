@@ -54,6 +54,13 @@ object AdbLifecycle {
         // A boot receiver or WorkManager must not undo a deliberate Quit.
         if (AdbUserChoices.manuallyStopped(app)) return
         quitting = false
+        // Preserve automatic TLS discovery previously triggered in Application,
+        // but only AFTER an authorized entry point (Activity or enabled boot
+        // receiver) calls startBackground. Otherwise Application.onCreate would
+        // bypass the Start on boot preference before BOOT_COMPLETED is handled.
+        if (ExperimentalRecording.wirelessRecoveryAllowed(app) &&
+            AdbSelfRecovery.onWifi(app))
+            LocalWirelessAdb.start(app)
         // The watchdog switch controls BOTH periodic in-process recovery and
         // the persisted WorkManager safety net. Manual and boot recovery remain
         // independent and available when periodic monitoring is disabled.
