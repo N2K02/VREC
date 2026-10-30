@@ -380,11 +380,11 @@ object LocalWirelessAdb {
         // Only report readiness after reconnecting and rechecking UID 2000.
         status.value = status.value.copy(phase = Phase.SWITCHING)
         val switched = AdbTransport.switchToTcpip(5555)
-        if (switched.isFailure) {
-            status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
-                "Wireless shell verified, but TCP/5555 switch failed: ${switched.exceptionOrNull()?.message}")
-            return false
-        }
+        // adbd often closes the command socket as it restarts. Even if the
+        // command returns a connection-reset error, the listener might already
+        // be up. Only subsequent port+UID+helper checks settle the outcome.
+        if (switched.isFailure)
+            com.vrec.app.Log.w("ADB TCP switch lost its command socket; checking listener before failing")
         status.value = status.value.copy(phase = Phase.VERIFYING_TCP)
         // tcpip restarts adbd: the old TLS UID 2000 is no longer a live
         // verification. Clear it until localhost TCP reconnects and rechecks UID.
