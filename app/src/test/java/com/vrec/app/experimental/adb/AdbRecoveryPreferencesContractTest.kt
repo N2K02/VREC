@@ -41,10 +41,13 @@ class AdbRecoveryPreferencesContractTest {
         val receiver = source("app/src/main/java/com/vrec/app/calls/PhoneStateReceiver.kt")
         val application = source("app/src/main/java/com/vrec/app/VrecApp.kt")
         val activity = source("app/src/main/java/com/vrec/app/MainActivity.kt")
+        val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         assertTrue(receiver.contains("intent.action != Intent.ACTION_BOOT_COMPLETED || choices.startOnBoot(app)"))
         assertTrue(receiver.contains("choices.manuallyStopped(app)"))
         assertFalse(application.contains("AdbLifecycle.startBackground(this)"))
         assertTrue(activity.contains("AdbLifecycle.startBackground(applicationContext)"))
+        assertTrue("Previously paired TLS discovery must still start from authorized entry points",
+            lifecycle.contains("LocalWirelessAdb.start(app)"))
     }
 
     @Test fun homeShowsVerifiedLivePortAndSeparatesCachedOrListeningEndpoints() {
