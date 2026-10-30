@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.AdbUserChoices
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalWirelessAdb
+import com.vrec.app.calls.VrecAccessibilityService
 
 /**
  * Shizuku-style code entry: Android owns Wireless debugging switch and the
@@ -51,11 +52,12 @@ fun WirelessAdbSetupCard() {
     var code by remember { mutableStateOf("") }
     var tcpApproved by remember { mutableStateOf(AdbUserChoices.tcpMode(context)) }
     var autoPair by remember { mutableStateOf(AdbUserChoices.autoPairCode(context)) }
+    val resumeTick = rememberOnResumeTick()
+    val accessibilityActive = remember(resumeTick) { VrecAccessibilityService.isEnabled(context) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
         // Keep notification workflow compatible with split-screen Android Settings.
-        LocalWirelessAdb.start(context, userInitiated = true)
         LocalWirelessAdb.openSettings(context)
     }
     if (!wireless.supported) {
@@ -81,20 +83,28 @@ fun WirelessAdbSetupCard() {
             }
             Text("Enabled by default: VRec switches to TCP/5555 after verified pairing, then automatically reconnects on this phone. Other devices on the network may reach TCP/5555. Disable in Settings to close an active port when authorized.", style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Read pairing code from Android Settings", modifier = Modifier.weight(1f))
+                Text("Automatic code detection", modifier = Modifier.weight(1f))
                 Switch(checked = autoPair, onCheckedChange = { enabled ->
                     autoPair = enabled
                     AdbUserChoices.setAutoPairCode(context, enabled)
                 })
             }
-            Text("Optional (off by default). Requires VRec's Accessibility helper to be enabled. " +
-                "Reads only the visible Android Wireless debugging pairing dialog, never stores or logs the code. " +
-                "Manual code entry remains available.", style = MaterialTheme.typography.bodySmall)
+            Text("On by default when VRec Accessibility is enabled. VRec reads only the visible Android " +
+                "Wireless debugging pairing dialog. Code is never saved or logged. " +
+                "Turn this off to use manual pairing only.", style = MaterialTheme.typography.bodySmall)
+            if (autoPair && !accessibilityActive) {
+                Text("Enable VRec's Accessibility helper to read codes automatically; " +
+                    "until then, enter the code below or through the pairing notification.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text(
                 when {
                     adb.connected && adb.shellUid == 2000 -> "Android shell UID 2000 verified."
                     wireless.pairing -> "Pairing with Android…"
-                    wireless.pairingPort != null -> "Pairing code service found. Enter the Android code below or via VRec's notification."
+                    wireless.pairingPort != null -> if (autoPair && accessibilityActive)
+                        "Pairing service found. Reading the code from Android Settings automatically…"
+                    else "Pairing service found. Enter the six-digit code below or via notification."
                     wireless.connectPort != null && wireless.paired -> "Paired with Android; connecting…"
                     wireless.connectPort != null -> "Wireless debugging detected. Open its 'Pair device with pairing code' screen."
                     else -> "If your phone supports Wireless debugging, enable it in Developer options. " +
@@ -107,18 +117,19 @@ fun WirelessAdbSetupCard() {
                     "1. For first-time setup, enable USB debugging and Wireless debugging in Android Developer options (Wi-Fi required). " +
                         "If Android asks, tick \"Always allow on this network\".\n" +
                     "2. Tap 'Pair device with pairing code'. Keep that Android screen open.\n" +
-                    "3. Enter Android's six-digit code using the VRec notification, or return here to enter it. Android requires this one-time approval.\n" +
+                    "3. VRec reads the code automatically with Accessibility enabled; otherwise use notification or manual entry. Android still requires you to open its pairing dialog.\n" +
                     "4. VRec pairs, connects, verifies UID 2000 and configures the recording helper automatically.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(onClick = {
-                    if (Build.VERSION.SDK_INT >= 33 &&
+                    if (autoPair && accessibilityActive) {
+                        LocalWirelessAdb.openSettings(context)
+                    } else if (Build.VERSION.SDK_INT >= 33 &&
                         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                         PackageManager.PERMISSION_GRANTED) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        LocalWirelessAdb.start(context, userInitiated = true)
                         LocalWirelessAdb.openSettings(context)
                     }
                 }, modifier = Modifier.fillMaxWidth()) {
@@ -148,7 +159,7 @@ fun WirelessAdbSetupCard() {
                 if (Build.VERSION.SDK_INT >= 33 &&
                     context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                     PackageManager.PERMISSION_GRANTED) {
-                    Text("Notification permission is off: pair using the code field inside VRec.",
+                    Text("Notifications are off: automatic code detection or the manual field can still pair.",
                         style = MaterialTheme.typography.bodySmall)
                 }
             }
