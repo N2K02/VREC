@@ -89,7 +89,8 @@ class VrecAccessibilityService : AccessibilityService() {
     /** Read only the foreground Android Settings pairing dialog (never other apps). */
     private fun tryPairingFromSettingsWindow(): Boolean {
         val state = LocalWirelessAdb.status.value
-        if (state.pairingPort == null || state.pairing) return false
+        if (state.pairing) return true
+        if (state.pairingPort == null) return false
         val root = rootInActiveWindow ?: return false
         if (!PairingCodeUiPolicy.isSettingsPackage(root.packageName?.toString())) return false
         val nodes: ArrayDeque<AccessibilityNodeInfo> = ArrayDeque()
