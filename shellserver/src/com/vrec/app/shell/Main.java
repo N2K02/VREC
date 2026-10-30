@@ -1463,7 +1463,19 @@ public final class Main {
     /** Off-hook handling, by mode: automatic records at once; on-demand asks
      *  first and records nothing until the yes comes back as COMMAND_START. */
     private static void onCallStart(boolean incoming) {
-        onCallStart(incoming, null);
+        // Telephony OFFHOOK can also fire for a messenger call. When Android
+        // independently identifies one armed messenger playing AND recording
+        // communication audio, do not claim that call as cellular.
+        String messenger = null;
+        try {
+            if (callAudio != null &&
+                    callAudio.getMode() == AudioManager.MODE_IN_COMMUNICATION) {
+                messenger = Voip.uniquelyCallingApp(callAudio);
+            }
+        } catch (Throwable t) {
+            Ln.w("recording: could not classify phone-state audio: " + t);
+        }
+        onCallStart(incoming, messenger);
     }
 
     /**
@@ -1474,6 +1486,21 @@ public final class Main {
      */
     private static void onCallStart(boolean incoming, String app) {
         synchronized (Main.class) {
+            if (callActive && app != null && app.equals(callVoipApp)) {
+                // Telephony and the VoIP watcher can report the same call.
+                // It is already owned; never open a second recording.
+                return;
+            }
+            if (callActive && app != null && callVoipApp == null &&
+                    activeRecording == null && Voip.uniquelyCallingApp(callAudio) != null &&
+                    app.equals(Voip.uniquelyCallingApp(callAudio))) {
+                // A false cellular OFFHOOK claimed this VoIP call, but no audio
+                // capture began. Correct ownership before any file exists.
+                // Never replace a running recording or a different VoIP call.
+                Ln.i("recording: correcting unrecorded cellular session to " + app);
+                callActive = false;
+                answerGate.reset();
+            }
             if (callActive && (app != null || callVoipApp != null)) {
                 Ln.w("recording: a " + (app != null ? "messenger" : "phone") + " call started during "
                         + (callVoipApp != null ? "a messenger call" : "a phone call") + "; not recording it");
