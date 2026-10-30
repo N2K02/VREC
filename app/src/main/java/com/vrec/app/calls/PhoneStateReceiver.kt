@@ -22,10 +22,12 @@ class PhoneStateReceiver : BroadcastReceiver() {
             }
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 val app = context.applicationContext
-                // Recovery is idempotent and checks explicit user authorization.
-                // Credential-protected pairing keys are available after unlock;
-                // never claim they can be used before unlock on stock Android.
-                if (!com.vrec.app.experimental.adb.AdbUserChoices.manuallyStopped(app)) {
+                val choices = com.vrec.app.experimental.adb.AdbUserChoices
+                // Start on boot only controls BOOT_COMPLETED. An app upgrade
+                // may still rearm already-authorized background recovery.
+                // Credential-protected ADB keys require device unlock.
+                if (!choices.manuallyStopped(app) &&
+                    (intent.action != Intent.ACTION_BOOT_COMPLETED || choices.startOnBoot(app))) {
                     com.vrec.app.experimental.adb.AdbLifecycle.startBackground(app)
                     com.vrec.app.experimental.adb.AdbLifecycle.requestRecovery(app,
                         intent.action ?: "system restart")
