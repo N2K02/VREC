@@ -19,7 +19,7 @@ class WirelessTransitionContractTest {
         assertTrue(src.contains("scope.launch { transition.withLock {"))
         assertTrue(src.contains("AdbLifecycle.coordinateSetup {"))
         assertTrue(src.contains("transition.withLock {\n                AdbLifecycle.coordinateSetup {"))
-        assertEquals(3, Regex("connectAndSwitch\\((app|context)[,.]").findAll(src).count())
+        // Cached-port reconnect and fresh-port fallback also run under the single-flight lock.\n        assertEquals(5, Regex("connectAndSwitch\\((app|context)[,.]").findAll(src).count())
     }
 
     @Test fun staleCallbacksAreRejectedAfterStop() {
