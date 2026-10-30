@@ -425,9 +425,9 @@ private fun AdbPairingRecoveryChoices() {
         }
         ToggleRow(
             "Start on boot",
-            "On by default. Request authorized ADB recovery after Android finishes booting " +
-                "and user storage unlocks. This does not grant ADB permission or automatically " +
-                "enable Wireless debugging; that requires the separate Restore after restart setting.",
+            "On by default. Recover after boot and unlock. When off, boot and watchdog recovery " +
+                "stay paused until you open VRec again. This never grants ADB approval or " +
+                "enables Wireless debugging; use Restore after restart for that.",
             bootEnabled,
         ) { enabled ->
             bootEnabled = enabled
