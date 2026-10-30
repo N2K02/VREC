@@ -24,8 +24,8 @@ object AdbUserChoices {
     private const val AUTO_PAIR = "automatic_pairing_code"
     private const val MANUALLY_STOPPED = "manual_quit"
 
-    /** Optional and off by default: inspect only Android's pairing dialog. */
-    fun autoPairCode(context: Context): Boolean = prefs(context).getBoolean(AUTO_PAIR, false)
+    /** Automatic with existing user-enabled Accessibility: inspect only Android's pairing dialog. */
+    fun autoPairCode(context: Context): Boolean = prefs(context).getBoolean(AUTO_PAIR, true)
     fun setAutoPairCode(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(AUTO_PAIR, enabled).apply()
     }
