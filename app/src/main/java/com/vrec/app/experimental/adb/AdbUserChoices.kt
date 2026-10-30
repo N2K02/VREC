@@ -23,6 +23,23 @@ object AdbUserChoices {
     private const val PORT_BOOT = "wireless_port_boot"
     private const val AUTO_PAIR = "automatic_pairing_code"
     private const val MANUALLY_STOPPED = "manual_quit"
+    private const val CONNECTION_WATCHDOG = "connection_watchdog"
+    private const val START_ON_BOOT = "start_on_boot"
+
+    /** Enables periodic in-process recovery and the WorkManager safety net. */
+    fun connectionWatchdog(context: Context): Boolean =
+        prefs(context).getBoolean(CONNECTION_WATCHDOG, true)
+    fun setConnectionWatchdog(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(CONNECTION_WATCHDOG, enabled).apply()
+    }
+
+    /** Controls BOOT_COMPLETED recovery, distinct from Wireless debugging restore. */
+    fun startOnBoot(context: Context): Boolean =
+        prefs(context).getBoolean(START_ON_BOOT, true)
+    fun setStartOnBoot(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(START_ON_BOOT, enabled).apply()
+    }
+
 
     /** Automatic with existing user-enabled Accessibility: inspect only Android's pairing dialog. */
     fun autoPairCode(context: Context): Boolean = prefs(context).getBoolean(AUTO_PAIR, true)
