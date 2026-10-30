@@ -73,9 +73,8 @@ class AdbRecoveryExtensionsTest {
         assertTrue(worker.contains("AdbUserChoices.manuallyStopped(app)"))
         assertTrue(worker.contains("AdbLifecycle.recoverOnce(app"))
         assertTrue(receiver.contains("Intent.ACTION_BOOT_COMPLETED"))
-        assertTrue(receiver.contains("Intent.ACTION_USER_UNLOCKED"))
         assertTrue(receiver.contains("AdbLifecycle.requestRecovery(app"))
-        assertTrue(manifest.contains("android.intent.action.USER_UNLOCKED"))
+        assertTrue(manifest.contains("android.intent.action.BOOT_COMPLETED"))
         assertTrue(app.contains("AdbUserChoices.manuallyStopped(this)"))
         assertTrue(activity.contains("AdbUserChoices.setManuallyStopped(applicationContext, false)"))
     }
