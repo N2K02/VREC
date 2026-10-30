@@ -35,6 +35,19 @@ against the selected call source and refused on mismatch.
   observed local port on connection failure; stale service-lost callbacks cannot
   erase newer ports. Authentication and UID 2000 are rechecked, never inferred
   from a cached port or a listening socket.
+- Settings → ADB connection offers independent **Connection watchdog** and
+  **Start on boot** switches, both enabled by default. Disabling the watchdog
+  cancels periodic in-process checks and the unique WorkManager job immediately,
+  while preserving manual, boot and event-triggered reconnects. Disabling Start
+  on boot suppresses BOOT_COMPLETED-triggered recovery, but does not disable
+  the separate watchdog if it is enabled; normal activity opening and package
+  updates may also recover. Restore after restart is a third, opt-in action
+  that may enable Android Wireless debugging again if securely authorized.
+- The Home dashboard displays the UID-2000-verified active ADB localhost port
+  and transport (TLS dynamic port or TCP/5555). A listening TCP/5555 socket
+  is labeled **unverified** unless the current ADB session passed the UID check.
+  It also shows live discovered TLS and same-boot cached verified TLS ports;
+  cached ports are hints, not proof of an active connection.
 - The app's existing ADB lifecycle mutex coordinates manual starts, background
   recovery, and wireless pairing. A 15-minute WorkManager watchdog provides a
   best-effort process-death backstop; boot and package-update receivers request
