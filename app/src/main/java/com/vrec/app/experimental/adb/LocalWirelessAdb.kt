@@ -143,6 +143,26 @@ object LocalWirelessAdb {
         }
         pairingDiscovery = discover(app, service, "_adb-tls-pairing._tcp", true, session)
         connectDiscovery = discover(app, service, "_adb-tls-connect._tcp", false, session)
+        // Optimistic reconnect with the previously UID-2000-verified port, but
+        // ONLY within the same boot. Discovery stays alive while it is tried:
+        // Android can silently rotate TLS ports during network changes.
+        val cachedPort = if (!userInitiated &&
+            ExperimentalRecording.wirelessRecoveryAllowed(app) &&
+            !ExperimentalRecording.awaitingManualRetry)
+            AdbUserChoices.lastVerifiedPort(app) else null
+        if (cachedPort != null && !ExperimentalRecording.status.value.connected) {
+            scope.launch {
+                if (!transition.tryLock()) return@launch
+                try {
+                    AdbLifecycle.coordinateSetup {
+                        if (session == searchSession && attached && !AdbLifecycle.quitting &&
+                            !ExperimentalRecording.status.value.connected &&
+                            !ExperimentalRecording.status.value.busy)
+                            connectAndSwitch(app, cachedPort, automatic = true)
+                    }
+                } finally { transition.unlock() }
+            }
+        }
     }
 
     private fun discover(
@@ -163,8 +183,14 @@ object LocalWirelessAdb {
             override fun onServiceLost(info: NsdServiceInfo) {
                 // Service may stop when the Android pairing-code dialog closes.
                 if (stale()) return
-                status.value = if (pairing) status.value.copy(pairingPort = null)
-                    else status.value.copy(connectPort = null)
+                // Stale lost events must not erase a newer resolved TLS port.
+                status.value = if (pairing) {
+                    if (info.port == status.value.pairingPort)
+                        status.value.copy(pairingPort = null) else status.value
+                } else {
+                    if (info.port == status.value.connectPort)
+                        status.value.copy(connectPort = null) else status.value
+                }
             }
             @Suppress("DEPRECATION")
             override fun onServiceFound(info: NsdServiceInfo) {
@@ -276,7 +302,11 @@ object LocalWirelessAdb {
      * Must be called while holding [transition]. Re-checks state first, so a
      * Retry that waited behind an automatic attempt doesn't connect twice.
      */
-    private suspend fun connectAndSwitch(app: Context, port: Int, automatic: Boolean): Boolean {
+    private suspend fun connectAndSwitch(
+        app: Context, port: Int, automatic: Boolean,
+        attemptedPorts: Set<Int> = emptySet(),
+    ): Boolean {
+        if (port in attemptedPorts || attemptedPorts.size >= 3) return false
         val link = ExperimentalRecording.status.value
         if (link.connected && link.shellUid == 2000 &&
             (!AdbUserChoices.tcpMode(app) || ExperimentalRecording.tcpPortListening()) &&
@@ -292,8 +322,22 @@ object LocalWirelessAdb {
             app, port, automatic = automatic, deferHelperUntilTcp = switchToTcp,
         )
         if (result.isFailure) {
+            val kind = result.exceptionOrNull().adbFailure
+            if (kind == AdbFailure.CONNECTION_LOST || kind == AdbFailure.NETWORK_UNAVAILABLE) {
+                AdbUserChoices.clearVerifiedPort(app, port)
+                // A newer mDNS port may have arrived while the transport lock
+                // was held. Retry that fresh port once without another search.
+                val fresh = status.value.connectPort
+                if (fresh != null && fresh != port && fresh !in attemptedPorts)
+                    return connectAndSwitch(app, fresh, automatic, attemptedPorts + port)
+                // Keep mDNS active for the next advertisement. Do not convert
+                // a stale socket into a permanent authorization failure.
+                status.value = status.value.copy(phase = Phase.SEARCHING,
+                    message = "ADB TLS port changed or went away; awaiting a fresh Android port.")
+                return false
+            }
             status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED,
-                message = ExperimentalRecording.failureMessage(result.exceptionOrNull().adbFailure,
+                message = ExperimentalRecording.failureMessage(kind,
                     result.exceptionOrNull()?.message))
             return false
         }
