@@ -25,6 +25,25 @@ object AdbUserChoices {
     private const val MANUALLY_STOPPED = "manual_quit"
     private const val CONNECTION_WATCHDOG = "connection_watchdog"
     private const val START_ON_BOOT = "start_on_boot"
+    private const val LAST_USER_OPEN_BOOT = "last_foreground_boot"
+
+    /** A disabled boot toggle must also suppress an old WorkManager schedule
+     * after reboot, until the user opens VRec in the new Android boot. */
+    fun markUserOpenedThisBoot(context: Context) {
+        val boot = bootCount(context)
+        if (boot >= 0) prefs(context).edit().putInt(LAST_USER_OPEN_BOOT, boot).apply()
+    }
+
+    internal fun backgroundRecoveryAllowed(
+        startOnBoot: Boolean, boot: Int, lastOpenedBoot: Int,
+    ): Boolean = startOnBoot || (boot >= 0 && lastOpenedBoot == boot)
+
+    fun backgroundRecoveryAllowed(context: Context): Boolean = backgroundRecoveryAllowed(
+        startOnBoot(context),
+        bootCount(context),
+        prefs(context).getInt(LAST_USER_OPEN_BOOT, -1),
+    )
+
 
     /** Enables periodic in-process recovery and the WorkManager safety net. */
     fun connectionWatchdog(context: Context): Boolean =
