@@ -223,10 +223,23 @@ object LocalWirelessAdb {
                                 message = "Pairing code service detected. Reading Android Settings if Accessibility is active; otherwise enter the code manually.")
                             // Android may publish the pairing port after its
                             // Settings dialog stops emitting accessibility events.
-                            VrecAccessibilityService.onPairingPortDiscovered()
-                            // Keep notification RemoteInput as a fallback if the
-                            // user hasn't enabled Accessibility or detection fails.
-                            showPairingNotification(app)
+                            if (AdbUserChoices.autoPairCode(app) &&
+                                VrecAccessibilityService.running) {
+                                VrecAccessibilityService.onPairingPortDiscovered()
+                                // A heads-up notification can cover Settings and
+                                // steal its accessibility root. Let the short
+                                // automatic scan finish before showing the manual
+                                // RemoteInput fallback.
+                                scope.launch {
+                                    kotlinx.coroutines.delay(7_000L)
+                                    if (session == searchSession && attached &&
+                                        status.value.pairingPort == port &&
+                                        !status.value.pairing && !pairedInThisSession)
+                                        showPairingNotification(app)
+                                }
+                            } else {
+                                showPairingNotification(app)
+                            }
                         } else {
                             status.value = status.value.copy(connectPort = port, scanning = false,
                                 message = "This phone's Wireless debugging is available.",
