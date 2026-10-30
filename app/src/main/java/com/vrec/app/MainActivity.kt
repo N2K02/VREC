@@ -135,6 +135,7 @@ class MainActivity : ComponentActivity() {
         openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
         // Opening VRec after Quit resumes background ADB recovery.
         com.vrec.app.experimental.adb.AdbUserChoices.setManuallyStopped(applicationContext, false)
+        com.vrec.app.experimental.adb.AdbUserChoices.markUserOpenedThisBoot(applicationContext)
         com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
