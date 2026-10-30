@@ -57,6 +57,18 @@ class AdbRecoveryExtensionsTest {
             controller.indexOf("AdbUserChoices.rememberVerifiedPort(context, port)"))
     }
 
+    @Test fun tcpSwitchTreatsStreamResetAsUncertainUntilNewUidIsVerified() {
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        val body = wireless.substringAfter("private suspend fun switchToLocalTcp(")
+            .substringBefore("fun promoteVerifiedShellToTcp(")
+        assertTrue(body.contains("val switched = AdbTransport.switchToTcpip(5555)"))
+        assertTrue(body.contains("if (switched.isFailure)"))
+        assertTrue(body.contains("listening = ExperimentalRecording.tcpPortListening()"))
+        assertTrue(body.contains("reconnectTcpWithinSetup(context, automatic = automatic)"))
+        assertTrue(body.indexOf("if (switched.isFailure)") <
+            body.indexOf("if (!listening)"))
+    }
+
     @Test fun watchdogAndBootRecoveryHonorQuitAndShareSingleFlight() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         val worker = source("app/src/main/java/com/vrec/app/experimental/adb/AdbRecoveryWorker.kt")
