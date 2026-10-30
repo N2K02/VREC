@@ -20,8 +20,7 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
                 CallMonitor.onSimState(context, state, number)
             }
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_USER_UNLOCKED,
-            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 val app = context.applicationContext
                 // Recovery is idempotent and checks explicit user authorization.
                 // Credential-protected pairing keys are available after unlock;
