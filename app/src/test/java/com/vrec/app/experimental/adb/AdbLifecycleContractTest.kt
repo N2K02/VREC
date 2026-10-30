@@ -26,7 +26,7 @@ class AdbLifecycleContractTest {
         assertTrue(main.contains("AdbLifecycle.startBackground(applicationContext)"))
         val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(wireless.substringAfter("fun shutdown(").contains("scope.coroutineContext.cancelChildren()"))
-        assertTrue(wireless.contains("if (AdbLifecycle.quitting) return"))
+        assertTrue(wireless.contains("if (AdbLifecycle.quitting || AdbUserChoices.manuallyStopped(app)) return"))
     }
 
     @Test fun setupPropagatesCancellationInsteadOfReportingFailure() {
