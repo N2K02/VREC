@@ -102,7 +102,7 @@ class AdbRecoveryExtensionsTest {
         assertTrue(service.contains("LocalWirelessAdb.pair(applicationContext, code)"))
         assertTrue(service.contains("pairingHandler.postDelayed(this, 400L)"))
         assertTrue(service.contains("pairingHandler.removeCallbacks(pairingWindowRead)"))
-        assertTrue(read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        assertTrue(source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
             .contains("VrecAccessibilityService.onPairingPortDiscovered()"))
         assertFalse(service.contains("Log.i(\"pairing code"))
         assertTrue(ui.contains("AdbUserChoices.setAutoPairCode(context, enabled)"))
