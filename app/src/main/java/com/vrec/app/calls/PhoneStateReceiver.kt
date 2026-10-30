@@ -23,11 +23,10 @@ class PhoneStateReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 val app = context.applicationContext
                 val choices = com.vrec.app.experimental.adb.AdbUserChoices
-                // Start on boot only controls BOOT_COMPLETED. An app upgrade
-                // may still rearm already-authorized background recovery.
+                // A disabled boot option also blocks post-reboot worker or
+                // update-driven recovery until the user has opened VRec.
                 // Credential-protected ADB keys require device unlock.
-                if (!choices.manuallyStopped(app) &&
-                    (intent.action != Intent.ACTION_BOOT_COMPLETED || choices.startOnBoot(app))) {
+                if (!choices.manuallyStopped(app) && choices.backgroundRecoveryAllowed(app)) {
                     com.vrec.app.experimental.adb.AdbLifecycle.startBackground(app)
                     com.vrec.app.experimental.adb.AdbLifecycle.requestRecovery(app,
                         intent.action ?: "system restart")
