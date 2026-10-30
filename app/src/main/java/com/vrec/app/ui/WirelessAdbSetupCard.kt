@@ -50,6 +50,7 @@ fun WirelessAdbSetupCard() {
     }
     var code by remember { mutableStateOf("") }
     var tcpApproved by remember { mutableStateOf(AdbUserChoices.tcpMode(context)) }
+    var autoPair by remember { mutableStateOf(AdbUserChoices.autoPairCode(context)) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -79,6 +80,16 @@ fun WirelessAdbSetupCard() {
                 })
             }
             Text("Enabled by default: VRec switches to TCP/5555 after verified pairing, then automatically reconnects on this phone. Other devices on the network may reach TCP/5555. Disable in Settings to close an active port when authorized.", style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Read pairing code from Android Settings", modifier = Modifier.weight(1f))
+                Switch(checked = autoPair, onCheckedChange = { enabled ->
+                    autoPair = enabled
+                    AdbUserChoices.setAutoPairCode(context, enabled)
+                })
+            }
+            Text("Optional (off by default). Requires VRec's Accessibility helper to be enabled. " +
+                "Reads only the visible Android Wireless debugging pairing dialog, never stores or logs the code. " +
+                "Manual code entry remains available.", style = MaterialTheme.typography.bodySmall)
             Text(
                 when {
                     adb.connected && adb.shellUid == 2000 -> "Android shell UID 2000 verified."
