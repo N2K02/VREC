@@ -51,7 +51,13 @@ object AdbLifecycle {
     /** Idempotent. Called at process start and when VRec is opened after Quit. */
     @Synchronized fun startBackground(context: Context) {
         val app = context.applicationContext
+        // A boot receiver or WorkManager must not undo a deliberate Quit.
+        if (AdbUserChoices.manuallyStopped(app)) return
         quitting = false
+        // Persistent watchdog also survives process death. All recovery paths
+        // share recoveryMutex, while pairing has its separate transport lock.
+        catchingNonCancellation { AdbRecoveryWorker.schedule(app) }
+            .onFailure { Log.w("ADB watchdog scheduling unavailable", it) }
         if (loop?.isActive != true) {
             // A quick check now, again once Wi-Fi has had time to come up after
             // boot, then every 2 minutes. Recovery's own backoff limits attempts.
@@ -83,6 +89,21 @@ object AdbLifecycle {
             if (catchingNonCancellation { cm.registerNetworkCallback(request, callback) }.isSuccess)
                 wifiCallback = callback
         }
+    }
+
+    /** Boot, user-unlock and package-replaced starts are safe to request repeatedly. */
+    fun requestRecovery(context: Context, reason: String) {
+        val app = context.applicationContext
+        if (quitting || AdbUserChoices.manuallyStopped(app)) return
+        scope.launch { recover(app, reason) }
+    }
+
+    /** Used by the persistent worker; uses the exact same single-flight gate. */
+    suspend fun recoverOnce(context: Context, reason: String) {
+        val app = context.applicationContext
+        if (!quitting && !AdbUserChoices.manuallyStopped(app) &&
+            Prefs.recordingEnabled(app))
+            recover(app, reason)
     }
 
     /** Authenticated snapshot and import reconciliation while a live call is tracked. */
@@ -152,6 +173,9 @@ object AdbLifecycle {
      */
     @Synchronized fun quit(context: Context) {
         val app = context.applicationContext
+        AdbUserChoices.setManuallyStopped(app, true)
+        catchingNonCancellation { AdbRecoveryWorker.cancel(app) }
+            .onFailure { Log.w("ADB watchdog cancel unavailable", it) }
         quitting = true
         loop?.cancel()
         loop = null
