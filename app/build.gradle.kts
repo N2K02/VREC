@@ -80,6 +80,7 @@ dependencies {
     // crashes when users open ModalBottomSheet with NoSuchMethodError.
     implementation("androidx.compose.material3:material3:1.5.0-beta01")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.work:work-runtime-ktx:2.10.5") // persistent periodic ADB watchdog
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.compose.material:material-icons-extended")
     // Apache-2.0 alternative of libadb; TLS pairing and X509 identity dependencies.

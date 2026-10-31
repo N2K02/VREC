@@ -6,6 +6,9 @@ import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import androidx.compose.material3.OutlinedButton
 import com.vrec.app.calls.VoipNotifListener
+import com.vrec.app.calls.VrecAccessibilityService
+import com.vrec.app.experimental.adb.AdbUserChoices
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
@@ -131,6 +134,7 @@ fun SettingsScreen(
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
                 Triple("Audio source", "Enhanced SIM capture source and diagnostics", Icons.Rounded.Tune),
+                Triple("ADB connection", "Automatic pairing, reboot recovery and network access", Icons.Rounded.Settings),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -216,7 +220,6 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                AdbSecurityChoices()
                 // UID 2000 bootstrap handles eligible grants automatically.
                 val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
                 if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
@@ -226,6 +229,11 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+        }
+
+        if (section == "ADB connection") {
+            AdbPairingRecoveryChoices()
+            AdbSecurityChoices()
         }
 
         if (section == "Audio source") {
@@ -349,6 +357,112 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
     }
 }
 
+
+
+/**
+ * One dedicated Settings submenu for ADB resilience preferences. The existing
+ * Home screen remains the only first-time setup/authorization entry point.
+ * Watchdog and stale-port discovery are intentionally automatic, not extra
+ * independent switches which could silently disable recording recovery.
+ */
+@Composable
+private fun AdbPairingRecoveryChoices() {
+    val context = LocalContext.current
+    val resumeTick = rememberOnResumeTick()
+    val accessibilityEnabled = remember(resumeTick) {
+        VrecAccessibilityService.isEnabled(context)
+    }
+    val wireless by LocalWirelessAdb.status.collectAsState()
+    val connection by ExperimentalRecording.status.collectAsState()
+    var autoPair by remember { mutableStateOf(AdbUserChoices.autoPairCode(context)) }
+    var watchdogEnabled by remember { mutableStateOf(AdbUserChoices.connectionWatchdog(context)) }
+    var bootEnabled by remember { mutableStateOf(AdbUserChoices.startOnBoot(context)) }
+
+    SettingCard("Automatic wireless pairing") {
+        ToggleRow(
+            "Detect the Android pairing code automatically",
+            "On by default when VRec Accessibility is enabled. Reads only the Android Settings " +
+                "pairing-code dialog; the code is never saved or logged.",
+            autoPair,
+        ) {
+            autoPair = it
+            AdbUserChoices.setAutoPairCode(context, it)
+        }
+        if (autoPair && !accessibilityEnabled) {
+            Text(
+                "VRec Accessibility is not enabled. Enable it for automatic code detection, " +
+                    "or pair manually from Home.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }) { Text("Open Accessibility settings") }
+        } else if (autoPair) {
+            Text("VRec Accessibility enabled. Open Android's pairing dialog to pair automatically.",
+                style = MaterialTheme.typography.bodySmall)
+        } else {
+            Text("Automatic code reading is off. Manual code entry remains available on Home.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    SettingCard("Automatic recovery") {
+        ToggleRow(
+            "Connection watchdog",
+            "On by default. Periodic ADB health checks (about every 2 minutes) and an " +
+                "Android-managed 15-minute recovery worker. When off, manual setup, " +
+                "boot startup and event-triggered recovery remain available.",
+            watchdogEnabled,
+        ) { enabled ->
+            watchdogEnabled = enabled
+            com.vrec.app.experimental.adb.AdbLifecycle.configureWatchdog(context, enabled)
+        }
+        ToggleRow(
+            "Start on boot",
+            "On by default. Recover after boot and unlock. When off, boot and watchdog recovery " +
+                "stay paused until you open VRec again. This never grants ADB approval or " +
+                "enables Wireless debugging; use Restore after restart for that.",
+            bootEnabled,
+        ) { enabled ->
+            bootEnabled = enabled
+            AdbUserChoices.setStartOnBoot(context, enabled)
+        }
+        Text(
+            if (watchdogEnabled) "Watchdog enabled. Android may defer background recovery jobs."
+            else "Watchdog disabled. Existing authorized ADB sessions and recordings are not stopped.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "Port recovery: VRec reuses a previously verified TLS port only within the same " +
+                "Android boot. When that port becomes stale, it discovers the new local port " +
+                "and retries without asking for a new pairing code.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "Last verified TLS port (current boot): " +
+                (AdbUserChoices.lastVerifiedPort(context)?.toString() ?: "none"),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "ADB status: " + if (connection.connected && connection.shellUid == 2000)
+                "Connected (UID 2000 verified)" else wireless.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "A deliberate Quit stops recovery until VRec is reopened. " +
+                "To set up or manually retry authorization, use Home.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
 
 /**

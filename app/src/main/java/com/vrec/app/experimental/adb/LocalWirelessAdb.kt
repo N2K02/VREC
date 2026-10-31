@@ -16,6 +16,7 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.provider.Settings
 import com.vrec.app.Log
+import com.vrec.app.calls.VrecAccessibilityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,19 @@ import java.util.Collections
  * Addresses must belong to THIS device. All actual ADB traffic goes to
  * localhost, not to another network device. No code is ever persisted.
  */
+/** Pure retry policy, separate from Android discovery callbacks for JVM testing. */
+internal object WirelessPortRetryPolicy {
+    fun freshPort(
+        failedPort: Int, observedPort: Int?, attemptedPorts: Set<Int>,
+        failure: AdbFailure?,
+    ): Int? =
+        observedPort?.takeIf {
+            (failure == AdbFailure.CONNECTION_LOST || failure == AdbFailure.NETWORK_UNAVAILABLE) &&
+                it in 1..65535 && it != failedPort && it !in attemptedPorts &&
+                attemptedPorts.size < 3
+        }
+}
+
 object LocalWirelessAdb {
     /**
      * Where the wireless setup is. Transitions happen only inside [transition],
@@ -85,7 +99,7 @@ object LocalWirelessAdb {
      */
     fun start(context: Context, userInitiated: Boolean = false) {
         val app = context.applicationContext
-        if (AdbLifecycle.quitting) return
+        if (AdbLifecycle.quitting || AdbUserChoices.manuallyStopped(app)) return
         val now = android.os.SystemClock.elapsedRealtime()
         if (userInitiated) {
             emptySearches = 0
@@ -143,6 +157,26 @@ object LocalWirelessAdb {
         }
         pairingDiscovery = discover(app, service, "_adb-tls-pairing._tcp", true, session)
         connectDiscovery = discover(app, service, "_adb-tls-connect._tcp", false, session)
+        // Optimistic reconnect with the previously UID-2000-verified port, but
+        // ONLY within the same boot. Discovery stays alive while it is tried:
+        // Android can silently rotate TLS ports during network changes.
+        val cachedPort = if (!userInitiated &&
+            ExperimentalRecording.wirelessRecoveryAllowed(app) &&
+            !ExperimentalRecording.awaitingManualRetry)
+            AdbUserChoices.lastVerifiedPort(app) else null
+        if (cachedPort != null && !ExperimentalRecording.status.value.connected) {
+            scope.launch {
+                if (!transition.tryLock()) return@launch
+                try {
+                    AdbLifecycle.coordinateSetup {
+                        if (session == searchSession && attached && !AdbLifecycle.quitting &&
+                            !ExperimentalRecording.status.value.connected &&
+                            !ExperimentalRecording.status.value.busy)
+                            connectAndSwitch(app, cachedPort, automatic = true)
+                    }
+                } finally { transition.unlock() }
+            }
+        }
     }
 
     private fun discover(
@@ -163,8 +197,14 @@ object LocalWirelessAdb {
             override fun onServiceLost(info: NsdServiceInfo) {
                 // Service may stop when the Android pairing-code dialog closes.
                 if (stale()) return
-                status.value = if (pairing) status.value.copy(pairingPort = null)
-                    else status.value.copy(connectPort = null)
+                // Stale lost events must not erase a newer resolved TLS port.
+                status.value = if (pairing) {
+                    if (info.port == status.value.pairingPort)
+                        status.value.copy(pairingPort = null) else status.value
+                } else {
+                    if (info.port == status.value.connectPort)
+                        status.value.copy(connectPort = null) else status.value
+                }
             }
             @Suppress("DEPRECATION")
             override fun onServiceFound(info: NsdServiceInfo) {
@@ -180,8 +220,26 @@ object LocalWirelessAdb {
                         emptySearches = 0
                         if (pairing) {
                             status.value = status.value.copy(pairingPort = port, scanning = false,
-                                message = "Pairing code detected. Enter the six-digit code from Android.")
-                            showPairingNotification(app)
+                                message = "Pairing code service detected. Reading Android Settings if Accessibility is active; otherwise enter the code manually.")
+                            // Android may publish the pairing port after its
+                            // Settings dialog stops emitting accessibility events.
+                            if (AdbUserChoices.autoPairCode(app) &&
+                                VrecAccessibilityService.running) {
+                                VrecAccessibilityService.onPairingPortDiscovered()
+                                // A heads-up notification can cover Settings and
+                                // steal its accessibility root. Let the short
+                                // automatic scan finish before showing the manual
+                                // RemoteInput fallback.
+                                scope.launch {
+                                    kotlinx.coroutines.delay(7_000L)
+                                    if (session == searchSession && attached &&
+                                        status.value.pairingPort == port &&
+                                        !status.value.pairing && !pairedInThisSession)
+                                        showPairingNotification(app)
+                                }
+                            } else {
+                                showPairingNotification(app)
+                            }
                         } else {
                             status.value = status.value.copy(connectPort = port, scanning = false,
                                 message = "This phone's Wireless debugging is available.",
@@ -253,7 +311,7 @@ object LocalWirelessAdb {
                 pairing = false, paired = true,
                 message = "Paired. Connecting to the Android shell…")
             else status.value.copy(pairing = false, phase = Phase.RECOVERY_REQUIRED,
-                message = "Pairing failed: ${outcome.exceptionOrNull()?.message}")
+                message = "Pairing unsuccessful. Reopen Android pairing dialog and retry the code.")
             if (outcome.isSuccess) {
                 val port = status.value.connectPort
                 if (port != null) {
@@ -276,7 +334,11 @@ object LocalWirelessAdb {
      * Must be called while holding [transition]. Re-checks state first, so a
      * Retry that waited behind an automatic attempt doesn't connect twice.
      */
-    private suspend fun connectAndSwitch(app: Context, port: Int, automatic: Boolean): Boolean {
+    private suspend fun connectAndSwitch(
+        app: Context, port: Int, automatic: Boolean,
+        attemptedPorts: Set<Int> = emptySet(),
+    ): Boolean {
+        if (port in attemptedPorts || attemptedPorts.size >= 3) return false
         val link = ExperimentalRecording.status.value
         if (link.connected && link.shellUid == 2000 &&
             (!AdbUserChoices.tcpMode(app) || ExperimentalRecording.tcpPortListening()) &&
@@ -292,8 +354,23 @@ object LocalWirelessAdb {
             app, port, automatic = automatic, deferHelperUntilTcp = switchToTcp,
         )
         if (result.isFailure) {
+            val kind = result.exceptionOrNull().adbFailure
+            if (kind == AdbFailure.CONNECTION_LOST || kind == AdbFailure.NETWORK_UNAVAILABLE) {
+                AdbUserChoices.clearVerifiedPort(app, port)
+                // A newer mDNS port may have arrived while the transport lock
+                // was held. Retry that fresh port once without another search.
+                val fresh = WirelessPortRetryPolicy.freshPort(
+                    port, status.value.connectPort, attemptedPorts + port, kind)
+                if (fresh != null)
+                    return connectAndSwitch(app, fresh, automatic, attemptedPorts + port)
+                // Keep mDNS active for the next advertisement. Do not convert
+                // a stale socket into a permanent authorization failure.
+                status.value = status.value.copy(phase = Phase.SEARCHING,
+                    message = "ADB TLS port changed or went away; awaiting a fresh Android port.")
+                return false
+            }
             status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED,
-                message = ExperimentalRecording.failureMessage(result.exceptionOrNull().adbFailure,
+                message = ExperimentalRecording.failureMessage(kind,
                     result.exceptionOrNull()?.message))
             return false
         }
@@ -322,11 +399,11 @@ object LocalWirelessAdb {
         // Only report readiness after reconnecting and rechecking UID 2000.
         status.value = status.value.copy(phase = Phase.SWITCHING)
         val switched = AdbTransport.switchToTcpip(5555)
-        if (switched.isFailure) {
-            status.value = status.value.copy(phase = Phase.RECOVERY_REQUIRED, message =
-                "Wireless shell verified, but TCP/5555 switch failed: ${switched.exceptionOrNull()?.message}")
-            return false
-        }
+        // adbd often closes the command socket as it restarts. Even if the
+        // command returns a connection-reset error, the listener might already
+        // be up. Only subsequent port+UID+helper checks settle the outcome.
+        if (switched.isFailure)
+            com.vrec.app.Log.w("ADB TCP switch lost its command socket; checking listener before failing")
         status.value = status.value.copy(phase = Phase.VERIFYING_TCP)
         // tcpip restarts adbd: the old TLS UID 2000 is no longer a live
         // verification. Clear it until localhost TCP reconnects and rechecks UID.

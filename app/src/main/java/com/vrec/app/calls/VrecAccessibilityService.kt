@@ -4,12 +4,16 @@ import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.telecom.TelecomManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.vrec.app.Log
 import com.vrec.app.Prefs
+import com.vrec.app.experimental.adb.AdbUserChoices
+import com.vrec.app.experimental.adb.LocalWirelessAdb
 import java.util.ArrayDeque
 
 /**
@@ -20,6 +24,19 @@ class VrecAccessibilityService : AccessibilityService() {
     companion object {
         @Volatile var running = false
             private set
+        @Volatile private var activeService: VrecAccessibilityService? = null
+
+        /**
+         * mDNS can resolve *after* the Settings window sends its last event.
+         * Re-read that window on the service main thread when a pairing port
+         * appears, so automatic pairing doesn't depend on another user tap.
+         */
+        fun onPairingPortDiscovered() {
+            val service = activeService ?: return
+            service.pairingHandler.post {
+                if (activeService === service) service.schedulePairingWindowRead()
+            }
+        }
 
         fun isEnabled(context: Context): Boolean {
             val flat = Settings.Secure.getString(
@@ -37,13 +54,85 @@ class VrecAccessibilityService : AccessibilityService() {
 
     private val lastScan = mutableMapOf<String, Long>()
 
+    private val pairingHandler = Handler(Looper.getMainLooper())
+    private var readsRemaining = 0
+    // Ephemeral signature only (not the code itself), for suppressing retries
+    // on unchanged Android Settings dialogs. Never persisted or logged.
+    private var lastAttemptSignature: Int? = null
+    private var lastDiscoveryRequestMs = 0L
+    private val pairingWindowRead = object : Runnable {
+        override fun run() {
+            if (!AdbUserChoices.autoPairCode(this@VrecAccessibilityService)) return
+            if (tryPairingFromSettingsWindow()) return
+            if (readsRemaining-- > 0) pairingHandler.postDelayed(this, 400L)
+        }
+    }
+
+    private fun schedulePairingWindowRead() {
+        if (!AdbUserChoices.autoPairCode(this)) return
+        pairingHandler.removeCallbacks(pairingWindowRead)
+        // Android 17 may render the code AFTER its last accessibility event.
+        // Poll only briefly, only while the pairing port is present, and only
+        // inspect Android Settings' actual root window.
+        readsRemaining = 15
+        pairingWindowRead.run()
+    }
+
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
+        activeService = this
+        if (LocalWirelessAdb.status.value.pairingPort != null) schedulePairingWindowRead()
         Log.i("Accessibility recording helper connected")
     }
 
+    /** Read only the foreground Android Settings pairing dialog (never other apps). */
+    private fun tryPairingFromSettingsWindow(): Boolean {
+        val state = LocalWirelessAdb.status.value
+        if (state.pairing) return true
+        val root = rootInActiveWindow ?: return false
+        if (!PairingCodeUiPolicy.isSettingsPackage(root.packageName?.toString())) return false
+        val nodes: ArrayDeque<AccessibilityNodeInfo> = ArrayDeque()
+        val labels = mutableListOf<String>()
+        nodes.add(root)
+        var examined = 0
+        while (nodes.isNotEmpty() && examined++ < 100) {
+            val node = nodes.removeFirst()
+            node.text?.toString()?.let(labels::add)
+            node.contentDescription?.toString()?.let(labels::add)
+            for (index in 0 until node.childCount.coerceAtMost(20)) {
+                node.getChild(index)?.let(nodes::add)
+            }
+        }
+        val code = PairingCodeUiPolicy.extractCode(labels) ?: return false
+        if (state.pairingPort == null) {
+            // The user may open Android's pairing-code dialog directly from
+            // Developer options without first opening VRec. Recognizing this
+            // *visible dialog* is enough to begin local mDNS discovery; it is
+            // NOT permission to enable debugging or authorize a key.
+            val now = SystemClock.elapsedRealtime()
+            if (lastDiscoveryRequestMs == 0L || now - lastDiscoveryRequestMs > 10_000L) {
+                lastDiscoveryRequestMs = now
+                LocalWirelessAdb.start(applicationContext, userInitiated = true)
+            }
+            return false // Re-read the live dialog when the local port resolves.
+        }
+        val signature = (state.pairingPort.toString() + ":" + root.windowId + ":" + code).hashCode()
+        if (signature == lastAttemptSignature) return true
+        lastAttemptSignature = signature
+        LocalWirelessAdb.pair(applicationContext, code)
+        // No code is written to preferences, diagnostics, or activity logs.
+        return true
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val packageName = event?.packageName?.toString()
+        if (PairingCodeUiPolicy.isSettingsPackage(packageName)) {
+            // The Settings dialog may render the code asynchronously.
+            schedulePairingWindowRead()
+            return
+        }
         if (!Prefs.experimentalCallDetection(this)) return
         val pkg = event?.packageName?.toString() ?: return
         val dialer = runCatching {
@@ -90,6 +179,8 @@ class VrecAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        pairingHandler.removeCallbacks(pairingWindowRead)
+        if (activeService === this) activeService = null
         running = false
         super.onDestroy()
     }

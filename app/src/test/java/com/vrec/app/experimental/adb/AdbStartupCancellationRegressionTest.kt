@@ -48,7 +48,7 @@ class AdbStartupCancellationRegressionTest {
     @Test fun cancelledHandshakeAndHelperLaunchResetBusy() {
         val connection = source("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         assertTrue(connection.contains("withContext(kotlinx.coroutines.NonCancellable) { AdbTransport.close() }"))
-        assertTrue(connection.contains("status.value = status.value.copy(busy = false, connected = false, shellUid = null)"))
+        assertTrue(connection.contains("status.value = status.value.copy(busy = false, connected = false, shellUid = null, activePort = null, activeTransport = null)"))
         val helper = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
         assertTrue(helper.contains("catch (cancelled: CancellationException)"))
         assertTrue(helper.contains("state.value = State.STOPPED"))

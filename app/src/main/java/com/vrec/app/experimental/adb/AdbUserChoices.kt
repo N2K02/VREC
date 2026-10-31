@@ -19,6 +19,84 @@ object AdbUserChoices {
     private const val RESTORE_AFTER_RESTART = "restore_after_restart"
     private const val TCP_MODE = "tcp_5555_mode"
     private const val VERIFIED_BOOT = "last_verified_wireless_boot"
+    private const val VERIFIED_PORT = "last_verified_wireless_port"
+    private const val PORT_BOOT = "wireless_port_boot"
+    private const val AUTO_PAIR = "automatic_pairing_code"
+    private const val MANUALLY_STOPPED = "manual_quit"
+    private const val CONNECTION_WATCHDOG = "connection_watchdog"
+    private const val START_ON_BOOT = "start_on_boot"
+    private const val LAST_USER_OPEN_BOOT = "last_foreground_boot"
+
+    /** A disabled boot toggle must also suppress an old WorkManager schedule
+     * after reboot, until the user opens VRec in the new Android boot. */
+    fun markUserOpenedThisBoot(context: Context) {
+        val boot = bootCount(context)
+        if (boot >= 0) prefs(context).edit().putInt(LAST_USER_OPEN_BOOT, boot).apply()
+    }
+
+    internal fun backgroundRecoveryAllowed(
+        startOnBoot: Boolean, boot: Int, lastOpenedBoot: Int,
+    ): Boolean = startOnBoot || (boot >= 0 && lastOpenedBoot == boot)
+
+    fun backgroundRecoveryAllowed(context: Context): Boolean = backgroundRecoveryAllowed(
+        startOnBoot(context),
+        bootCount(context),
+        prefs(context).getInt(LAST_USER_OPEN_BOOT, -1),
+    )
+
+
+    /** Enables periodic in-process recovery and the WorkManager safety net. */
+    fun connectionWatchdog(context: Context): Boolean =
+        prefs(context).getBoolean(CONNECTION_WATCHDOG, true)
+    fun setConnectionWatchdog(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(CONNECTION_WATCHDOG, enabled).apply()
+    }
+
+    /** Controls BOOT_COMPLETED recovery, distinct from Wireless debugging restore. */
+    fun startOnBoot(context: Context): Boolean =
+        prefs(context).getBoolean(START_ON_BOOT, true)
+    fun setStartOnBoot(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(START_ON_BOOT, enabled).apply()
+    }
+
+
+    /** Automatic with existing user-enabled Accessibility: inspect only Android's pairing dialog. */
+    fun autoPairCode(context: Context): Boolean = prefs(context).getBoolean(AUTO_PAIR, true)
+    fun setAutoPairCode(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(AUTO_PAIR, enabled).apply()
+    }
+
+    /** A deliberate Quit must survive a worker/boot receiver starting the process. */
+    fun manuallyStopped(context: Context): Boolean =
+        prefs(context).getBoolean(MANUALLY_STOPPED, false)
+    fun setManuallyStopped(context: Context, stopped: Boolean) {
+        prefs(context).edit().putBoolean(MANUALLY_STOPPED, stopped).commit()
+    }
+
+    /** Reuse a *verified* TLS endpoint only during the current Android boot.
+     * The port may rotate at any moment: consumers must reconnect and verify UID 2000. */
+    fun rememberVerifiedPort(context: Context, port: Int) {
+        if (port !in 1..65535) return
+        val boot = bootCount(context)
+        if (boot < 0) return
+        prefs(context).edit().putInt(VERIFIED_PORT, port).putInt(PORT_BOOT, boot).apply()
+    }
+
+    /** Pure policy: never reuse a TLS port across reboot or with unknown boot count. */
+    internal fun reusablePort(port: Int, rememberedBoot: Int, currentBoot: Int): Int? =
+        port.takeIf { it in 1..65535 && currentBoot >= 0 && rememberedBoot == currentBoot }
+
+    fun lastVerifiedPort(context: Context): Int? = reusablePort(
+        prefs(context).getInt(VERIFIED_PORT, -1),
+        prefs(context).getInt(PORT_BOOT, -1),
+        bootCount(context),
+    )
+
+    fun clearVerifiedPort(context: Context, port: Int) {
+        if (lastVerifiedPort(context) == port) {
+            prefs(context).edit().remove(VERIFIED_PORT).remove(PORT_BOOT).apply()
+        }
+    }
 
     fun restoreAfterRestart(context: Context): Boolean =
         prefs(context).getBoolean(RESTORE_AFTER_RESTART, false)

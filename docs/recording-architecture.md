@@ -15,7 +15,8 @@ against the selected call source and refused on mismatch.
 ## ADB initialization and recovery
 
 - On Android 11+, the user enables USB and Wireless debugging and enters the
-  one-time Android wireless pairing code.
+  one-time Android pairing-code dialog. With the user-enabled Accessibility
+  service, VRec reads the code automatically; otherwise it supports manual entry.
 - The embedded ADB transport connects to this phone's TLS pairing/connection
   ports, verifies `id -u == 2000`, then configures eligible permissions.
 - Automatic TCP/5555 is enabled by default. After verification, VRec switches
@@ -29,6 +30,42 @@ against the selected call source and refused on mismatch.
   the pairing callback.
 - A detached healthy helper does not require a permanently attached ADB client;
   reboot or OEM policies can still stop the helper and TCP listener.
+- Previously UID-2000-verified dynamic TLS ports are cached **within the same boot only**.
+  An optimistic reconnect keeps mDNS discovery running and falls back to the newest
+  observed local port on connection failure; stale service-lost callbacks cannot
+  erase newer ports. Authentication and UID 2000 are rechecked, never inferred
+  from a cached port or a listening socket.
+- Settings → ADB connection offers independent **Connection watchdog** and
+  **Start on boot** switches, both enabled by default. Disabling the watchdog
+  cancels periodic in-process checks and the unique WorkManager job immediately,
+  while preserving manual, boot and event-triggered reconnects. Disabling Start
+  on boot prevents BOOT_COMPLETED, watchdog and package-update recovery after
+  reboot until VRec is opened manually in that Android boot. After manual
+  reopening, the independent watchdog operates according to its own switch.
+  Restore after restart is a third, opt-in action
+  that may enable Android Wireless debugging again if securely authorized.
+- The Home dashboard displays the UID-2000-verified active ADB localhost port
+  and transport (TLS dynamic port or TCP/5555). A listening TCP/5555 socket
+  is labeled **unverified** unless the current ADB session passed the UID check.
+  It also shows live discovered TLS and same-boot cached verified TLS ports;
+  cached ports are hints, not proof of an active connection.
+- The app's existing ADB lifecycle mutex coordinates manual starts, background
+  recovery, and wireless pairing. A 15-minute WorkManager watchdog provides a
+  best-effort process-death backstop; boot and package-update receivers request
+  safe recovery after user storage is available. Android may defer background
+  jobs, so this is not an always-running service.
+- Deliberate Quit persists a stop latch, cancels the watchdog, discovery and
+  background recovery; only reopening VRec re-enables them.
+- Pairing-code auto-read is ON by default when the user enables VRec's existing
+  Accessibility service (no additional Accessibility service is installed).
+  It reads only the Android Settings pairing dialog and retries short-lived
+  window reads while Android renders the code after the opening event. The
+  user can disable this in VRec; no code is persisted or logged, and manual
+  code entry and notification RemoteInput remain available.
+- A classic TCP/5555 port is **not guaranteed to persist across reboot**:
+  unprivileged shell UID 2000 cannot generally write persist.adb.tcp.port
+  on stock Android. This app never requires root or quietly modifies persistent
+  system properties. Any TCP listener may be network-accessible.
 
 ## Recording data integrity
 

@@ -1,10 +1,7 @@
 package com.vrec.app
 
 import android.app.Application
-import com.vrec.app.experimental.adb.AdbSelfRecovery
-import com.vrec.app.experimental.adb.AdbLifecycle
 import com.vrec.app.update.AppUpdater
-import com.vrec.app.experimental.adb.LocalWirelessAdb
 
 class VrecApp : Application() {
     override fun onCreate() {
@@ -12,13 +9,11 @@ class VrecApp : Application() {
         // Initialize diagnostics before updater, ADB discovery and recovery can emit events.
         Log.initialize(this)
         AppUpdater.init(this, repo = "N2K02/VREC", appName = "VREC")
-        // Re-discover a previously paired wireless endpoint after a process restart.
-        if (com.vrec.app.experimental.adb.ExperimentalRecording.wirelessRecoveryAllowed(this) &&
-            AdbSelfRecovery.onWifi(this))
-            LocalWirelessAdb.start(this)
-        // Reattach or restore the helper at process start (also after boot, when the
-        // accessibility service starts the process), then periodically and on Wi-Fi.
-        // Owned by AdbLifecycle so Quit can stop all of it.
-        AdbLifecycle.startBackground(this)
+        // Do not start recovery from Application.onCreate: Android creates the
+        // process BEFORE delivering BOOT_COMPLETED, so that would ignore the
+        // Start on boot switch. Activity, boot receiver, and enabled watchdog
+        // jobs own their respective entry points. Deliberate Quit remains
+        // persistent until the user opens the Activity.
+        // AdbUserChoices.manuallyStopped(this) is checked at those entry points.
     }
 }
