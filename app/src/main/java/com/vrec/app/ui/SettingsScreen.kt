@@ -81,7 +81,6 @@ import com.vrec.app.Prefs
 fun SettingsScreen(
     section: String?,
     onSectionChange: (String?) -> Unit,
-    onOpenLog: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
     onOpenRecordings: () -> Unit = {},
 ) {
@@ -146,7 +145,7 @@ fun SettingsScreen(
             }
             // Supported runtime permissions are configured after UID 2000 verification.
             HorizontalDivider()
-            // Diagnostics, logs and updates remain together at the bottom like mRadio.
+            // ADB diagnostics and updates remain grouped below the divider.
             ListItem(
                 headlineContent = { Text("ADB diagnostics") },
                 supportingContent = { Text("Helper status and access exceptions") },
@@ -154,13 +153,7 @@ fun SettingsScreen(
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
                 modifier = Modifier.clickable { onSectionChange("Experimental") },
             )
-            ListItem(
-                headlineContent = { Text("Logs") },
-                supportingContent = { Text("Recording activity, diagnostics and crash reports") },
-                leadingContent = { Icon(Icons.Rounded.Article, contentDescription = null) },
-                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = onOpenLog),
-            )
+            
             ListItem(
                 headlineContent = { Text("About & updates") },
                 supportingContent = {

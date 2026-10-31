@@ -106,7 +106,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import com.vrec.app.ui.LogScreen
 import com.vrec.app.ui.RecordingsList
 import com.vrec.app.ui.SettingsScreen
 import com.vrec.app.ui.SetupScreen
@@ -116,7 +115,7 @@ import com.vrec.app.ui.HomePanelStyle
 import com.vrec.app.update.AppUpdater
 import com.vrec.app.update.UpdateScreen
 
-private enum class Screen { HOME, RECORDINGS, SETTINGS, LOG, UPDATE }
+private enum class Screen { HOME, RECORDINGS, SETTINGS, UPDATE }
 
 class MainActivity : ComponentActivity() {
 
@@ -202,7 +201,6 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
         Screen.HOME -> "Home"
         Screen.RECORDINGS -> "Recordings"
         Screen.SETTINGS -> "Settings"
-        Screen.LOG -> "Logs"
         Screen.UPDATE -> "About & updates"
     }
 
@@ -314,7 +312,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                     } catch (error: Exception) {
                                         Log.w("Safe Quit failed; recordings retained for recovery", error)
                                         RecordingFailureNotice.warn(app,
-                                            "Could not finish saving and stopping the recorder. Check Logs before quitting.")
+                                            "Could not finish saving and stopping the recorder. Review the recorder status before quitting.")
                                     } finally {
                                         quitting = false
                                     }
@@ -339,11 +337,9 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                 Screen.SETTINGS -> SettingsScreen(
                     section = settingsSection,
                     onSectionChange = { settingsSection = it },
-                    onOpenLog = { navigateTo(Screen.LOG, fromSettings = true) },
                     onOpenUpdates = { navigateTo(Screen.UPDATE, fromSettings = true) },
                     onOpenRecordings = { navigateTo(Screen.RECORDINGS, fromSettings = true) },
                 )
-                Screen.LOG -> VRECLogsPage()
                 Screen.UPDATE -> UpdateScreen()
             }
         }
@@ -357,7 +353,6 @@ private fun VrecBrandHeader(title: String, screen: Screen) {
         Screen.HOME -> Icons.Rounded.Home
         Screen.RECORDINGS -> Icons.Rounded.Folder
         Screen.SETTINGS -> Icons.Rounded.Settings
-        Screen.LOG -> Icons.Rounded.Article
         Screen.UPDATE -> Icons.Rounded.Info
     }
     Surface(color = MaterialTheme.colorScheme.surface) {
