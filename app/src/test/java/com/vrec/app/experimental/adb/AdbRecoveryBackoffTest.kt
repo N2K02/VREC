@@ -44,7 +44,18 @@ class BackgroundRecoveryContractTest {
         val lifecycle = read("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         assertTrue(lifecycle.contains("recover(app, \"background check\")"))
         assertTrue(lifecycle.contains("registerNetworkCallback"))
-        assertTrue(read("app/src/main/java/com/vrec/app/VrecApp.kt").contains("AdbLifecycle.startBackground(this)"))
+        // Recovery must start from Activity, enabled boot broadcasts, and a
+        // persistent worker—not unconditionally from Application.onCreate,
+        // which would defeat the user's Start on boot toggle.
+        val app = read("app/src/main/java/com/vrec/app/VrecApp.kt")
+        val activity = read("app/src/main/java/com/vrec/app/MainActivity.kt")
+        val receiver = read("app/src/main/java/com/vrec/app/calls/PhoneStateReceiver.kt")
+        val worker = read("app/src/main/java/com/vrec/app/experimental/adb/AdbRecoveryWorker.kt")
+        assertFalse(app.contains("AdbLifecycle.startBackground(this)"))
+        assertTrue(activity.contains("AdbLifecycle.startBackground(applicationContext)"))
+        assertTrue(receiver.contains("AdbLifecycle.startBackground(app)"))
+        assertTrue(receiver.contains("choices.backgroundRecoveryAllowed(app)"))
+        assertTrue(worker.contains("AdbLifecycle.recoverOnce(app"))
     }
 
     @Test fun automaticDiscoveryIsBoundedAndPausesAfterRepeatedEmptySearches() {
