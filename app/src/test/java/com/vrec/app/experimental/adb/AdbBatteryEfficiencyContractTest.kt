@@ -48,15 +48,13 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(service.contains("stopSelf(startId)"))
     }
 
-    @Test fun loggingSuppressesRepeatedInfoBeforePersistence() {
+    @Test fun loggingIsSanitizedAndUsesOnlyLogcat() {
         val log = source("app/src/main/java/com/vrec/app/Log.kt")
-        assertTrue(log.contains("DUPLICATE_INFO_WINDOW_MS"))
-        assertTrue(log.contains("redact(message)"))
-        assertTrue(log.contains("lastInfoTimes[safe]"))
-        val guarded = log.substringAfter("val previous = lastInfoTimes[safe]")
-        assertTrue(guarded.indexOf("lastInfoTimes[safe] = now") in
-            0 until guarded.indexOf("AndroidLog.i(TAG, safe)"))
-        assertTrue(log.contains("if (!_enabled.value)"))
+        assertTrue(log.contains("private fun redact(message: String)"))
+        assertTrue(log.contains("AndroidLog.i(TAG, redact(message)"))
+        assertTrue(log.contains("AndroidLog.w(TAG, safe"))
+        assertFalse(log.contains("persistNow("))
+        assertFalse(log.contains("lastInfoTimes"))
     }
 
     @Test fun recoveryStatusAndRoutineLogsDoNotChurn() {
@@ -231,11 +229,13 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(receiver.contains("CaptureControlPolicy.isAllowed(action"))
     }
 
-    @Test fun diagnosticsAreBatched() {
+    @Test fun diagnosticsAvoidBackgroundDiskWrites() {
         val log = source("app/src/main/java/com/vrec/app/Log.kt")
-        assertTrue(log.contains("postDelayed(flush, 1500L)"))
-        assertTrue(log.contains("writeHandler.removeCallbacks(flush)"))
-        assertTrue(log.contains("persistNow()"))
+        assertTrue(log.contains("AndroidLog.i("))
+        assertTrue(log.contains("AndroidLog.w("))
+        assertFalse(log.contains("postDelayed("))
+        assertFalse(log.contains("writeHandler"))
+        assertFalse(log.contains("persistNow("))
     }
 
     @Test fun recoveryIsSerialized() {
