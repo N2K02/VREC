@@ -1,9 +1,8 @@
 # VRec — Android call recorder
 
 VRec records supported SIM and VoIP calls locally using a separate, authorized
-Android shell recording helper (UID 2000). In experimental [PR #40](https://github.com/N2K02/VREC/pull/40),
-all **new** recordings are ADB-backed: no Standard/ADB mode selector or
-automatic microphone fallback. Stable `main` remains unchanged until merge.
+Android shell recording helper (UID 2000). All new recordings are ADB-backed:
+there is no Standard/ADB mode selector or automatic microphone fallback.
 
 ## First-time ADB setup
 
@@ -11,8 +10,11 @@ automatic microphone fallback. Stable `main` remains unchanged until merge.
    devices with Wi-Fi, **Wireless debugging**.
 2. In VRec Home, tap **Set up ADB recording** and open Android Wireless debugging.
    Select **Pair device with pairing code**.
-3. Enter the one-time six-digit Android pairing code in VRec or its pairing
-   notification. Android controls pairing approval; VRec cannot self-authorize.
+3. With the user-enabled **VRec Accessibility** service, automatic pairing-code
+   detection is on by default: keep Android's pairing dialog open and VRec
+   reads the displayed code. Without Accessibility, enter the six-digit code
+   manually in VRec or its pairing notification. Android controls pairing
+   approval; VRec cannot self-authorize.
 4. VRec connects to this phone's TLS ADB listener, verifies `id -u == 2000`,
    attempts supported permissions, and starts the independent recording helper.
 5. **Automatic TCP/5555 is on by default.** After UID 2000 verification, VRec
@@ -54,13 +56,41 @@ remain user-controlled.
 - Audio channel/silence diagnostics, pause/resume/stop controls.
 - Saved recordings with playback, search, details, notes, favorites and sharing.
 - On-device recording and import failure warnings, metadata integrity checks.
-- Background ADB recovery, Settings diagnostics, logs, updates and Quit.
+- **Settings → ADB connection:** toggles for automatic pairing-code detection,
+  Connection watchdog (on by default), Start on boot (on by default),
+  Restore after restart (opt-in), and TCP/5555 mode.
+- The watchdog checks connection health in-process and has a best-effort
+  15-minute Android WorkManager recovery backstop. Turning it off stops
+  scheduled checks without deliberately ending an active recording.
+- Start on boot honors Android unlock and existing authorization; switching it
+  off pauses boot/background restoration until you open VRec again.
+  Restore after restart is a separate option for re-enabling Wireless debugging
+  when Android permits it.
+- **Home → ADB connection ports:** shows the live UID-2000-verified transport
+  (TLS or TCP/5555) and active local port, a discovered TLS port, the last
+  verified TLS port cached for this boot, and a temporary pairing port when
+  present. A listening socket or cached port is not proof of an authorized
+  ADB session.
+- Same-boot TLS port reuse and automatic rediscovery when a cached port
+  changes, subject to Android authorization.
+- Settings diagnostics, logs, updates, and a Quit action that stops VRec-owned
+  background recovery until the app is opened again.
+
+## Reference and inspiration
+
+- [**Shizuku-Next**](https://github.com/rushiranpise/Shizuku-Next) — reference
+  for wireless ADB pairing ergonomics, automatic pairing-code detection,
+  reconnect/recovery strategies, watchdogs, and boot-start controls.
+
+VRec implements its **own** authorized ADB client and recording helper.
+Shizuku-Next is credited as an engineering reference; VRec does **not**
+require the Shizuku-Next app or server, and does not bundle its runtime.
 
 ## APKs
 
 - [Stable releases](https://github.com/N2K02/VREC/releases/latest)
 - [All releases](https://github.com/N2K02/VREC/releases)
-- [Experimental PR #40](https://github.com/N2K02/VREC/pull/40)
+- [ADB reliability implementation (merged PR #44)](https://github.com/N2K02/VREC/pull/44)
 
 **Validation:** CI does not prove hardware capture quality. Verify a consented
 call and playback on the target device before relying on automatic recording.
