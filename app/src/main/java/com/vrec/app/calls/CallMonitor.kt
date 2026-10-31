@@ -494,9 +494,13 @@ object CallMonitor {
             flow !in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) return
         val matches = sessions.values.filter { it.isVoip && it.packageName == packageName }
         if (matches.size > 1) return
+        val target = matches.singleOrNull()
+        // Never cache a conflicting hint when Telecom or a notification has
+        // already established this call's incoming/outgoing direction.
+        if (target != null && target.flowDirection != CallDirection.UNKNOWN) return
         pendingVoipDirections[packageName] =
             PendingVoipDirection(flow, SystemClock.elapsedRealtime())
-        val target = matches.singleOrNull() ?: return
+        if (target == null) return
         if (target.flowDirection == CallDirection.UNKNOWN) {
             applyPendingVoipDirection(target)
             if (target.id == recordingId) updateRecording(context, target)
