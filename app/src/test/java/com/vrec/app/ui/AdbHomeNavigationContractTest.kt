@@ -11,12 +11,13 @@ class AdbHomeNavigationContractTest {
         listOf(File(path), File("../$path")).firstOrNull { it.isFile }?.readText()
             ?: error("Missing $path")
 
-    @Test fun settingsContainsDiagnosticsNotDuplicateAuthorization() {
+    @Test fun settingsKeepsAdbPreferencesWithoutDuplicateDiagnostics() {
         val settings = read("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
         assertFalse(settings.contains("AdbSetupProgressCard("))
         assertFalse(settings.contains("ExperimentalRecorderCard()"))
         assertFalse(settings.contains("TelecomAdbInstructionCard("))
-        assertTrue(settings.contains("SettingCard(\"ADB connection\")"))
+        assertTrue(settings.contains("SettingCard(\"Pairing & recovery\")"))
+        assertFalse(settings.contains("onSectionChange(\"Experimental\")"))
         assertTrue(settings.contains("SettingCard(\"Enhanced SIM capture source\")"))
     }
 
