@@ -39,8 +39,13 @@ class ActivityLogContractTest {
     @Test fun loggerInitializesBeforeBackgroundRecoveryAndNotOnEveryActivityLaunch() {
         val app = source("com/vrec/app/VrecApp.kt")
         val initializer = app.indexOf("Log.initialize(this)")
-        val recovery = app.indexOf("AdbLifecycle.startBackground(this)")
-        assertTrue(initializer > 0 && recovery > initializer)
+        val updater = app.indexOf("AppUpdater.init(this")
+        assertTrue(initializer > 0 && updater > initializer)
+        // Background recovery now starts in Activity / boot receiver / worker,
+        // so disabling Start on boot cannot be bypassed by Application init.
+        assertFalse(app.contains("AdbLifecycle.startBackground(this)"))
+        val activity = source("com/vrec/app/MainActivity.kt")
+        assertTrue(activity.contains("AdbLifecycle.startBackground(applicationContext)"))
         val main = source("com/vrec/app/MainActivity.kt")
         assertFalse(main.contains("Log.initialize(applicationContext)"))
         val log = source("com/vrec/app/Log.kt")
