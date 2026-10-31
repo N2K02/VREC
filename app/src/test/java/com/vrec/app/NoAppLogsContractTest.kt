@@ -9,7 +9,7 @@ class NoAppLogsContractTest {
         val ui=src("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
         assertFalse(ui.contains("onOpenLog"))
         assertFalse(ui.contains("headlineContent = { Text(\"Logs\") }"))
-        assertTrue(ui.contains("headlineContent = { Text(\"ADB diagnostics\") }"))
+        assertFalse(ui.contains("headlineContent = { Text(\"ADB diagnostics\") }"))
         assertTrue(ui.contains("headlineContent = { Text(\"About & updates\") }"))
         assertFalse(src("app/src/main/java/com/vrec/app/MainActivity.kt").contains("Screen.LOG"))
     }

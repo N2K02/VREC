@@ -18,12 +18,13 @@ class SettingsConsistencyContractTest {
         assertTrue(!menu.contains("Permissions & setup"))
         assertTrue("ADB connection submenu missing", menu.contains(
             "Triple(\"ADB connection\", \"Automatic pairing, reboot recovery and network access\""))
-        assertTrue("Updates or diagnostic footer missing", menu.contains("headlineContent = { Text(\"About & updates\") }"))
+        assertTrue("Updates footer missing", menu.contains("headlineContent = { Text(\"About & updates\") }"))
         val divider = menu.indexOf("HorizontalDivider()")
         val update = menu.indexOf("headlineContent = { Text(\"About & updates\") }")
-        assertTrue("Divider must separate settings and diagnostic/update links", divider >= 0 && update > divider)
-        assertTrue("ADB connection belongs before Diagnostics/Logs/Updates",
+        assertTrue("Divider must separate settings and updates", divider >= 0 && update > divider)
+        assertTrue("ADB connection belongs before the update footer",
             menu.indexOf("Triple(\"ADB connection\"") in 0 until divider)
+        assertTrue("No duplicate ADB diagnostics submenu", !menu.contains("ADB diagnostics"))
         assertTrue("ADB preferences must be under their own submenu",
             source.contains("if (section == \"ADB connection\") {"))
         assertTrue("Automatic pairing toggle must be in ADB connection preferences",

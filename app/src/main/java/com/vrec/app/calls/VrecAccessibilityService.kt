@@ -140,7 +140,9 @@ class VrecAccessibilityService : AccessibilityService() {
         }.getOrNull()
         val isDialer = pkg == dialer
         if (pkg !in packages && !isDialer) return
-        if (!CallMonitor.needsScreenMetadata(pkg, isDialer)) return
+        val needsMetadata = CallMonitor.needsScreenMetadata(pkg, isDialer)
+        // An outgoing "Calling…" screen often precedes any active notification.
+        if (!needsMetadata && (isDialer || !Prefs.recordVoip(this))) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val now = SystemClock.elapsedRealtime()
@@ -158,6 +160,7 @@ class VrecAccessibilityService : AccessibilityService() {
             val description = node.contentDescription?.toString()?.trim().orEmpty()
             val text = node.text?.toString()?.trim().orEmpty()
             if (text.length in 1..120) labels.add(text)
+            if (description.length in 1..120) labels.add(description)
             val controls = (description + " " + text).lowercase()
             if (controls.contains("end call") || controls.contains("hang up") ||
                 controls.contains("disconnect call") || controls.contains("end voice call")) {
@@ -172,6 +175,12 @@ class VrecAccessibilityService : AccessibilityService() {
             }
         }
         if (!hasEndCallControl) return
+        if (!isDialer && Prefs.recordVoip(this)) {
+            VoipAccessibilityDirection.fromCallLabels(labels)?.let { flow ->
+                CallMonitor.onAccessibilityCallDirection(this, pkg, flow)
+            }
+        }
+        if (!needsMetadata) return
         val metadata = CallMetadataResolver.fromVisibleLabels(this, labels) ?: return
         CallMonitor.onAccessibilityMetadata(this, pkg, metadata, isDialer)
     }

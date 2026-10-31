@@ -98,6 +98,11 @@ object CallMonitor {
     private var recordingId: String? = null
     private var overlayDismissed = false
     private val recentlyEndedVoip = mutableMapOf<String, Long>()
+    // A "Calling…" screen may disappear before WhatsApp posts an ACTIVE notification.
+    // Carry only an explicit direction, briefly, until the same app's call is observed.
+    private data class PendingVoipDirection(val value: CallDirection, val atMs: Long)
+    private val pendingVoipDirections = mutableMapOf<String, PendingVoipDirection>()
+    private const val VOIP_DIRECTION_WINDOW_MS = 45_000L
     private const val RECENT_CALL_GUARD_MS = 12_000L
     private const val CONTROL_CHANNEL = "vrec_call_controls"
     private const val CONTROL_ID = 84
@@ -146,6 +151,8 @@ object CallMonitor {
         session.direction = if (voip) CallDirection.VOIP else flow
         if (flow == CallDirection.INCOMING || flow == CallDirection.OUTGOING) {
             session.flowDirection = flow
+        } else if (voip && packageName != null) {
+            applyPendingVoipDirection(session)
         }
         session.accountId = accountId ?: session.accountId
         if (videoCall == true) session.mediaType = "VIDEO"
@@ -185,6 +192,7 @@ object CallMonitor {
                 // as a brand-new recording session.
                 recentlyEndedVoip[packageName] =
                     SystemClock.elapsedRealtime() + RECENT_CALL_GUARD_MS
+                pendingVoipDirections.remove(packageName)
             }
             Log.i("Telecom call ended app=" + (packageName ?: "phone") + " state=" + state)
             remove(context, id)
@@ -429,7 +437,10 @@ object CallMonitor {
         if (!Prefs.recordVoip(context)) return
 
         val id = "notif:" + packageName
-        if (status == "IDLE") recentlyEndedVoip.remove(packageName)
+        if (status == "IDLE") {
+            recentlyEndedVoip.remove(packageName)
+            pendingVoipDirections.remove(packageName)
+        }
         else if (SystemClock.elapsedRealtime() <
             (recentlyEndedVoip[packageName] ?: 0L)) {
             // A late notification must not revive an already-ended Telecom call.
@@ -449,11 +460,52 @@ object CallMonitor {
             notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
             session.flowDirection = notificationFlow
         }
+        if (session.flowDirection == CallDirection.UNKNOWN) applyPendingVoipDirection(session)
         if (status == "ACTIVE") {
             session.active = true
             session.connectedAt = session.connectedAt ?: System.currentTimeMillis()
+            // Persist even when the independent shell recorder already owns audio.
+            // reconcile() intentionally returns early in that case.
+            rememberShellIdentity(context, session)
         }
         reconcile(context)
+    }
+
+    private fun applyPendingVoipDirection(session: Session) {
+        if (!session.isVoip || session.flowDirection != CallDirection.UNKNOWN) return
+        val pkg = session.packageName ?: return
+        val pending = pendingVoipDirections[pkg] ?: return
+        val age = SystemClock.elapsedRealtime() - pending.atMs
+        if (age in 0..VOIP_DIRECTION_WINDOW_MS) {
+            session.flowDirection = pending.value
+        } else {
+            pendingVoipDirections.remove(pkg)
+        }
+    }
+
+    /** Explicit call-screen direction is a hint, never proof that audio was captured.
+     * A known Telecom direction is authoritative; generic "ongoing call" is ignored.
+     */
+    @Synchronized
+    fun onAccessibilityCallDirection(
+        context: Context, packageName: String, flow: CallDirection,
+    ) {
+        if (!Prefs.recordingEnabled(context) || !Prefs.recordVoip(context) ||
+            flow !in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) return
+        val matches = sessions.values.filter { it.isVoip && it.packageName == packageName }
+        if (matches.size > 1) return
+        val target = matches.singleOrNull()
+        // Never cache a conflicting hint when Telecom or a notification has
+        // already established this call's incoming/outgoing direction.
+        if (target != null && target.flowDirection != CallDirection.UNKNOWN) return
+        pendingVoipDirections[packageName] =
+            PendingVoipDirection(flow, SystemClock.elapsedRealtime())
+        if (target == null) return
+        if (target.flowDirection == CallDirection.UNKNOWN) {
+            applyPendingVoipDirection(target)
+            if (target.id == recordingId) updateRecording(context, target)
+            else rememberShellIdentity(context, target)
+        }
     }
 
     @Synchronized
@@ -843,6 +895,7 @@ object CallMonitor {
             suppressed.clear()
             autoAttempted.clear()
             recentlyEndedVoip.clear()
+            pendingVoipDirections.clear()
             overlayDismissed = false
             dismissCallControls(context)
             dismissOverlay(context)

@@ -22,10 +22,13 @@ internal object VoipNotificationDirection {
         val messages = listOfNotNull(title, text).map { it.trim().lowercase(Locale.ROOT) }
         if (messages.any {
                 it == "incoming call" || it.startsWith("incoming call ") ||
-                    it == "incoming voice call" || it == "incoming video call"
+                    it == "incoming voice call" || it.startsWith("incoming voice call ") ||
+                    it == "incoming video call" || it.startsWith("incoming video call ")
             }) return CallDirection.INCOMING
         if (messages.any {
                 it == "outgoing call" || it.startsWith("outgoing call ") ||
+                    it == "outgoing voice call" || it.startsWith("outgoing voice call ") ||
+                    it == "outgoing video call" || it.startsWith("outgoing video call ") ||
                     it == "calling" || it.startsWith("calling ") ||
                     it.startsWith("calling…") || it.startsWith("calling...") ||
                     it == "dialing" || it.startsWith("dialing ") ||

@@ -8,7 +8,6 @@ import androidx.compose.material3.OutlinedButton
 import com.vrec.app.calls.VoipNotifListener
 import com.vrec.app.calls.VrecAccessibilityService
 import com.vrec.app.experimental.adb.AdbUserChoices
-import com.vrec.app.experimental.adb.LocalWirelessAdb
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
@@ -38,7 +37,6 @@ import com.vrec.app.experimental.daemon.EnhancedCapturePreferences
 import com.vrec.app.experimental.daemon.SimCaptureSource
 import android.os.Build
 import com.vrec.app.experimental.adb.ExperimentalRecording
-import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
 import kotlinx.coroutines.launch
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -94,13 +92,6 @@ fun SettingsScreen(
     val shellRecording by com.vrec.app.recording.AdbFallbackNotice.enhancedActive.collectAsState()
     val methodLocked = !com.vrec.app.recording.RecordingMethodPolicy.canChange(
         captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
-    val connection by ExperimentalRecording.status.collectAsState()
-    val helperState by AdbPrivilegedApiHelper.state.collectAsState()
-    val helperReady by ExperimentalCaptureDaemon.ready.collectAsState()
-    LaunchedEffect(resumeTick, section) {
-        AdbPrivilegedApiHelper.checkHealth(context)
-    }
-
     // Home and Settings share the same persisted recording method.
     // Local mirror of the stored values, so the UI updates immediately.
     var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
@@ -143,17 +134,8 @@ fun SettingsScreen(
                     modifier = Modifier.clickable { onSectionChange(name) },
                 )
             }
-            // Supported runtime permissions are configured after UID 2000 verification.
+            // Connection diagnostics and permissions remain on Home.
             HorizontalDivider()
-            // ADB diagnostics and updates remain grouped below the divider.
-            ListItem(
-                headlineContent = { Text("ADB diagnostics") },
-                supportingContent = { Text("Helper status and access exceptions") },
-                leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
-                trailingContent = { Icon(Icons.Rounded.ChevronRight, contentDescription = null) },
-                modifier = Modifier.clickable { onSectionChange("Experimental") },
-            )
-            
             ListItem(
                 headlineContent = { Text("About & updates") },
                 supportingContent = {
@@ -194,34 +176,6 @@ fun SettingsScreen(
                     }
                 }) { Text("Allow floating controls") }
             }
-        }
-
-        if (section == "Experimental") {
-                SettingCard("ADB connection") {
-                    Text(
-                        when {
-                            helperReady && helperState == AdbPrivilegedApiHelper.State.RUNNING ->
-                                "Recording helper is running."
-                            connection.connected && connection.shellUid == 2000 ->
-                                "Shell UID 2000 verified; helper is not ready yet."
-                            else -> "Open Home to set up or retry ADB authorization."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text("USB authorization and retry are managed on Home. " +
-                        "This screen contains capture configuration and diagnostics only.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // UID 2000 bootstrap handles eligible grants automatically.
-                val bootstrap by com.vrec.app.experimental.adb.AdbPermissionBootstrap.status.collectAsState()
-                if (bootstrap.finished && bootstrap.unavailable.isNotEmpty()) {
-                    SettingCard("Access still requiring attention") {
-                        Text(bootstrap.unavailable.joinToString("\n"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
         }
 
         if (section == "ADB connection") {
@@ -365,17 +319,14 @@ private fun AdbPairingRecoveryChoices() {
     val accessibilityEnabled = remember(resumeTick) {
         VrecAccessibilityService.isEnabled(context)
     }
-    val wireless by LocalWirelessAdb.status.collectAsState()
-    val connection by ExperimentalRecording.status.collectAsState()
     var autoPair by remember { mutableStateOf(AdbUserChoices.autoPairCode(context)) }
     var watchdogEnabled by remember { mutableStateOf(AdbUserChoices.connectionWatchdog(context)) }
     var bootEnabled by remember { mutableStateOf(AdbUserChoices.startOnBoot(context)) }
 
-    SettingCard("Automatic wireless pairing") {
+    SettingCard("Pairing & recovery") {
         ToggleRow(
-            "Detect the Android pairing code automatically",
-            "On by default when VRec Accessibility is enabled. Reads only the Android Settings " +
-                "pairing-code dialog; the code is never saved or logged.",
+            "Auto-detect pairing code",
+            "Read the Android pairing dialog with Accessibility.",
             autoPair,
         ) {
             autoPair = it
@@ -383,8 +334,7 @@ private fun AdbPairingRecoveryChoices() {
         }
         if (autoPair && !accessibilityEnabled) {
             Text(
-                "VRec Accessibility is not enabled. Enable it for automatic code detection, " +
-                    "or pair manually from Home.",
+                "Accessibility is needed for automatic pairing. Manual pairing is on Home.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -395,22 +345,12 @@ private fun AdbPairingRecoveryChoices() {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 }
-            }) { Text("Open Accessibility settings") }
-        } else if (autoPair) {
-            Text("VRec Accessibility enabled. Open Android's pairing dialog to pair automatically.",
-                style = MaterialTheme.typography.bodySmall)
-        } else {
-            Text("Automatic code reading is off. Manual code entry remains available on Home.",
-                style = MaterialTheme.typography.bodySmall)
+            }) { Text("Enable Accessibility") }
         }
-    }
-
-    SettingCard("Automatic recovery") {
+        HorizontalDivider()
         ToggleRow(
             "Connection watchdog",
-            "On by default. Periodic ADB health checks (about every 2 minutes) and an " +
-                "Android-managed 15-minute recovery worker. When off, manual setup, " +
-                "boot startup and event-triggered recovery remain available.",
+            "Check connection health and recover automatically when possible.",
             watchdogEnabled,
         ) { enabled ->
             watchdogEnabled = enabled
@@ -418,45 +358,14 @@ private fun AdbPairingRecoveryChoices() {
         }
         ToggleRow(
             "Start on boot",
-            "On by default. Recover after boot and unlock. When off, boot and watchdog recovery " +
-                "stay paused until you open VRec again. This never grants ADB approval or " +
-                "enables Wireless debugging; use Restore after restart for that.",
+            "Try to restore the helper after restarting and unlocking.",
             bootEnabled,
         ) { enabled ->
             bootEnabled = enabled
             AdbUserChoices.setStartOnBoot(context, enabled)
         }
-        Text(
-            if (watchdogEnabled) "Watchdog enabled. Android may defer background recovery jobs."
-            else "Watchdog disabled. Existing authorized ADB sessions and recordings are not stopped.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            "Port recovery: VRec reuses a previously verified TLS port only within the same " +
-                "Android boot. When that port becomes stale, it discovers the new local port " +
-                "and retries without asking for a new pairing code.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            "Last verified TLS port (current boot): " +
-                (AdbUserChoices.lastVerifiedPort(context)?.toString() ?: "none"),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            "ADB status: " + if (connection.connected && connection.shellUid == 2000)
-                "Connected (UID 2000 verified)" else wireless.message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "A deliberate Quit stops recovery until VRec is reopened. " +
-                "To set up or manually retry authorization, use Home.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
-
 
 /**
  * ADB network transport is automatic after UID 2000 verification.
@@ -472,13 +381,12 @@ private fun AdbSecurityChoices() {
     var note by remember { mutableStateOf<String?>(null) }
     val verified = connection.connected && connection.shellUid == 2000
 
-    SettingCard("ADB restore and network access") {
+    SettingCard("Connection & security") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Restore after restart", style = MaterialTheme.typography.bodyLarge)
-                Text("After a reboot, VRec may turn Wireless debugging back on (on Wi-Fi) to restart " +
-                    "the recording helper with your existing pairing. Never if you turn Wireless " +
-                    "debugging off yourself. Needs one extra Android permission.",
+                Text("Restore Wireless debugging after reboot, using saved pairing. " +
+                    "Requires Android permission; never overrides a manual off setting.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -504,9 +412,8 @@ private fun AdbSecurityChoices() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Keep ADB without Wi-Fi (TCP/5555)", style = MaterialTheme.typography.bodyLarge)
-                Text("Automatic after verified UID 2000 setup, repair or reconnection. " +
-                    "TCP/5555 may be reachable from other devices on your network. " +
-                    "Turn this off to use encrypted Wireless debugging instead.",
+                Text("Keeps ADB available without Wi-Fi. TCP/5555 may be " +
+                    "reachable by devices on your network.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

@@ -27,6 +27,15 @@ class VoipNotificationDirectionTest {
             VoipNotificationDirection.fromSignal(0, "ACTIVE", "Calling…", null))
     }
 
+    @Test fun callTypeAndExplicitMediaDirectionsArePreserved() {
+        assertEquals(CallDirection.OUTGOING,
+            VoipNotificationDirection.fromSignal(0, "ACTIVE", "Sam", "Outgoing voice call"))
+        assertEquals(CallDirection.OUTGOING,
+            VoipNotificationDirection.fromSignal(0, "ACTIVE", "Outgoing video call to Sam", null))
+        assertEquals(CallDirection.INCOMING,
+            VoipNotificationDirection.fromSignal(0, "UNKNOWN", "Incoming video call from Sam", null))
+    }
+
     @Test fun ongoingOrLegacyStatusAloneCannotProveOutgoing() {
         assertEquals(CallDirection.UNKNOWN,
             VoipNotificationDirection.fromSignal(2, "ACTIVE", "Sonu", "Call in progress"))
