@@ -208,8 +208,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
         topBar = {
             VrecBrandHeader(
                 title = if (screen == Screen.SETTINGS) {
-                    if (settingsSection == "Experimental") "ADB diagnostics"
-                    else settingsSection ?: "Settings"
+                    settingsSection ?: "Settings"
                 } else title,
                 screen = screen,
             )
