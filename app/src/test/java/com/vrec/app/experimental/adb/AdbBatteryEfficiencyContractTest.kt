@@ -121,9 +121,10 @@ class AdbBatteryEfficiencyContractTest {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         val liveCall = lifecycle.substringAfter("fun watchLiveCall(context: Context)")
             .substringBefore("private suspend fun recover(")
-        assertFalse(liveCall.contains("ExperimentalCaptureDaemon.probe(app)"))
+        assertFalse(liveCall.contains("if (ExperimentalCaptureDaemon.probe(app))"))
         assertTrue(liveCall.contains("ExperimentalCaptureDaemon.captureSnapshot(app)"))
-        assertTrue(liveCall.contains("CaptureSnapshot.Unavailable -> Unit"))
+        assertTrue(liveCall.contains("CaptureSnapshot.Unavailable -> {"))
+        assertTrue(liveCall.contains("ExperimentalCaptureDaemon.probe(app)"))
         assertTrue(liveCall.contains("ExperimentalCaptureDaemon.collect(app)"))
         assertTrue(liveCall.contains("delay(20_000L)"))
     }

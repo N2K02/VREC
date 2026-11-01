@@ -164,7 +164,11 @@ object AdbLifecycle {
                             AdbFallbackNotice.reconcileAuthenticatedIdle(app)
                             ExperimentalCaptureDaemon.collect(app)
                         }
-                        ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> Unit
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> {
+                            // Only on failed snapshots, check whether the helper
+                            // disappeared so the readiness badge cannot remain stale.
+                            ExperimentalCaptureDaemon.probe(app)
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
