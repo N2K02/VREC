@@ -148,17 +148,27 @@ object AdbLifecycle {
             while (isActive && !quitting && Prefs.recordingEnabled(app) &&
                 CallMonitor.hasLiveCall()) {
                 try {
-                    if (ExperimentalCaptureDaemon.probe(app)) {
-                        when (val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)) {
-                            is ExperimentalCaptureDaemon.CaptureSnapshot.Recording ->
-                                AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)
-                            ExperimentalCaptureDaemon.CaptureSnapshot.Paused ->
-                                AdbFallbackNotice.reconcileAuthenticatedPaused(app)
-                            ExperimentalCaptureDaemon.CaptureSnapshot.Idle ->
-                                AdbFallbackNotice.reconcileAuthenticatedIdle(app)
-                            ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> Unit
+                    // captureSnapshot already authenticates the loopback socket.
+                    // An extra probe doubles shell RPCs during a live call without
+                    // improving identity checks. Only collect after a valid reply.
+                    when (val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)) {
+                        is ExperimentalCaptureDaemon.CaptureSnapshot.Recording -> {
+                            AdbFallbackNotice.reconcileAuthenticatedRecording(app, snapshot.file)
+                            ExperimentalCaptureDaemon.collect(app)
                         }
-                        ExperimentalCaptureDaemon.collect(app)
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Paused -> {
+                            AdbFallbackNotice.reconcileAuthenticatedPaused(app)
+                            ExperimentalCaptureDaemon.collect(app)
+                        }
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Idle -> {
+                            AdbFallbackNotice.reconcileAuthenticatedIdle(app)
+                            ExperimentalCaptureDaemon.collect(app)
+                        }
+                        ExperimentalCaptureDaemon.CaptureSnapshot.Unavailable -> {
+                            // Only on failed snapshots, check whether the helper
+                            // disappeared so the readiness badge cannot remain stale.
+                            ExperimentalCaptureDaemon.probe(app)
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
