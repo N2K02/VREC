@@ -23,6 +23,17 @@ class AdbSessionKeyLifecycleTest {
         assertArrayEquals(saved.encoded, second.encoded)
     }
 
+    @Test fun verifiedTcpAndTlsSessionsAreReusedWithoutSkippingUidCheck() {
+        val path = "app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt"
+        val src = listOf(File(path), File("../" + path)).first { it.isFile }.readText()
+        assertTrue(src.contains("val canReuseTcp"))
+        assertTrue(src.contains("val canReuseTls"))
+        assertTrue(src.contains("verifyShellUid() == 2000"))
+        assertTrue(src.contains("if (!healthy) {"))
+        assertTrue(src.contains("AdbTransport.close()"))
+        assertTrue(src.contains("previous.activePort == port"))
+    }
+
     @Test fun timeoutAndShutdownRetireManagersWithoutDestroyingCachedKey() {
         val src = code()
         for (expected in listOf(

@@ -42,6 +42,7 @@ object AdbLifecycle {
     // able to finish pairing and switching while recovery observes it.
     private val recoveryMutex = Mutex()
     private val transportMutex = Mutex()
+    private val quitMutex = Mutex()
     private val wifiRecoveryJobs = mutableSetOf<Job>()
     private var wifiCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -214,7 +215,7 @@ object AdbLifecycle {
      * in-flight connects, and close VRec's ADB session. Recording itself is
      * switched off by the caller first; the shell helper only stops capturing.
      */
-    @Synchronized fun quit(context: Context) {
+    suspend fun quit(context: Context) = quitMutex.withLock {
         val app = context.applicationContext
         AdbUserChoices.setManuallyStopped(app, true)
         catchingNonCancellation { AdbRecoveryWorker.cancel(app) }
@@ -234,8 +235,11 @@ object AdbLifecycle {
         wifiCallback = null
         AdbForegroundSetup.shutdown()
         LocalWirelessAdb.shutdown(app)
-        CoroutineScope(Dispatchers.IO).launch {
-            withContext(NonCancellable) { AdbTransport.close() }
+        // A caller must await socket cleanup BEFORE finishing the Activity.
+        // The transport mutex prevents reconnect/quit from racing, and this
+        // NonCancellable block guarantees cleanup even if UI scope is cancelled.
+        withContext(NonCancellable + Dispatchers.IO) {
+            transportMutex.withLock { AdbTransport.close() }
             ExperimentalRecording.refreshConnectionStatus()
         }
         Log.i("Quit: background ADB recovery, discovery and listeners stopped")
