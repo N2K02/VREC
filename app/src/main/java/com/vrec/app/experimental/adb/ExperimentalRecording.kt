@@ -143,6 +143,12 @@ object ExperimentalRecording {
         if (!automatic) allowManualRetry()
         if (status.value.busy)
             return Result.failure(AdbConnectionException(AdbFailure.CONNECTION_LOST, "ADB setup is already running"))
+        // Preserve a live authorized TCP shell; helper startup still runs below.
+        // Checking the live UID is essential: a cached badge is not authority.
+        val previous = status.value
+        val canReuseTcp = previous.connected && previous.shellUid == 2000 &&
+            previous.activeTransport == "TCP" && previous.activePort == 5555 &&
+            AdbTransport.lastKnownConnected
         status.value = status.value.copy(busy = true, connected = false, shellUid = null, activePort = null, activeTransport = null,
             message = "Checking USB-bootstrapped localhost ADB…")
         Log.i("ADB: verifying localhost:5555 authorization (15-second limit)")
@@ -155,11 +161,18 @@ object ExperimentalRecording {
                                 "No local ADB endpoint. An authorized USB ADB host must first run adb tcpip 5555."
                             }
                         }
-                        AdbTransport.close()
-                        AdbFailurePolicy.staged(AdbFailurePolicy.Stage.HANDSHAKE) {
-                            AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
-                        }
-                        verifyShellUid()
+                        val healthy = if (canReuseTcp) try {
+                            verifyShellUid() == 2000
+                        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) { false } else false
+                        if (!healthy) {
+                            AdbTransport.close()
+                            AdbFailurePolicy.staged(AdbFailurePolicy.Stage.HANDSHAKE) {
+                                AdbTransport.connect(context.applicationContext, "127.0.0.1", 5555).getOrThrow()
+                            }
+                            verifyShellUid()
+                        } else 2000
                     }
                 }
             }
@@ -230,17 +243,28 @@ object ExperimentalRecording {
         if (status.value.busy)
             return Result.failure(AdbConnectionException(AdbFailure.CONNECTION_LOST, "ADB setup is already running"))
         if (!automatic) allowManualRetry()
+        val previous = status.value
+        val canReuseTls = previous.connected && previous.shellUid == 2000 &&
+            previous.activeTransport == "TLS" && previous.activePort == port &&
+            AdbTransport.lastKnownConnected
         status.value = status.value.copy(busy = true, connected = false, shellUid = null, activePort = null, activeTransport = null,
             message = "Connecting to this phone's Wireless debugging TLS endpoint…")
         val attempt: Result<Int> = try {
             withTimeout(15_000L) {
                 withContext(Dispatchers.IO) {
                     typed {
-                        AdbTransport.close()
-                        AdbFailurePolicy.staged(AdbFailurePolicy.Stage.HANDSHAKE) {
-                            AdbTransport.connectLocalTls(context, port).getOrThrow()
-                        }
-                        verifyShellUid()
+                        val healthy = if (canReuseTls) try {
+                            verifyShellUid() == 2000
+                        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) { false } else false
+                        if (!healthy) {
+                            AdbTransport.close()
+                            AdbFailurePolicy.staged(AdbFailurePolicy.Stage.HANDSHAKE) {
+                                AdbTransport.connectLocalTls(context, port).getOrThrow()
+                            }
+                            verifyShellUid()
+                        } else 2000
                     }
                 }
             }
