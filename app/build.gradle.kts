@@ -1,6 +1,6 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.plugin.compose") version "2.3.10"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.21"
 }
 
 // Release builds get their version from CI (-PappVersion=1.x). Local builds default to 0.1,
@@ -70,7 +70,7 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2025.04.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
     implementation("androidx.activity:activity-compose:1.9.2")
@@ -78,16 +78,16 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     // Match n2k02theme and n2k02updater's Material 3 ABI. A stale 1.3.0 runtime
     // crashes when users open ModalBottomSheet with NoSuchMethodError.
-    implementation("androidx.compose.material3:material3:1.5.0-beta01")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.work:work-runtime-ktx:2.10.5") // persistent periodic ADB watchdog
+    implementation("androidx.compose.material3:material3:1.5.0-beta02")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("androidx.work:work-runtime-ktx:2.12.0") // persistent periodic ADB watchdog
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.compose.material:material-icons-extended")
     // Apache-2.0 alternative of libadb; TLS pairing and X509 identity dependencies.
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.81")
-    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
-    implementation("org.conscrypt:conscrypt-android:2.7.0")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.86")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
+    implementation("org.conscrypt:conscrypt-android:2.8.0")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
