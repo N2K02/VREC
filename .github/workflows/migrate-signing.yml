@@ -18,7 +18,7 @@ jobs:
     env:
       SIGNING_PASSPHRASE: ${{ secrets.SIGNING_PASSPHRASE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: true
       - name: Encrypt and verify existing signing identity
