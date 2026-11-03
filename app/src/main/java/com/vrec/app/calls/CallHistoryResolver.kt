@@ -113,6 +113,34 @@ internal object CellularCallLogDirectionPolicy {
 }
 
 internal object CallHistoryResolver {
+    /** Third-party history is optional. Never query or infer an app's private database. */
+    fun recoverVoipNumbers(context: Context, recording: Recording): List<String> {
+        if (recording.direction != CallDirection.VOIP || recording.sourcePackage.isNullOrBlank() ||
+            context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) return emptyList()
+        return runCatching {
+            val columns = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION,
+                CallLog.Calls.TYPE, CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME, CallLog.Calls.PHONE_ACCOUNT_ID)
+            val uri = if (android.os.Build.VERSION.SDK_INT >= 37) CallLog.Calls.CONTENT_URI_WITH_VOIP_CALLS
+                else CallLog.Calls.CONTENT_URI
+            val entries = mutableListOf<VoipCallLogEntry>()
+            context.contentResolver.query(uri, columns,
+                "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.DATE} <= ?",
+                arrayOf((recording.startedAt - 180_000L).toString(), (recording.startedAt + 15_000L).toString()),
+                "${CallLog.Calls.DATE} DESC")?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    // An incomplete result could conceal another plausible call.
+                    if (entries.size >= 100) return emptyList()
+                    val pkg = cursor.getString(4)?.let { android.content.ComponentName.unflattenFromString(it)?.packageName }
+                    entries += VoipCallLogEntry(pkg, cursor.getString(5), cursor.getString(0),
+                        cursor.getLong(1), cursor.getLong(2), cursor.getInt(3))
+                }
+            }
+            VoipCallLogPolicy.numbers(recording.sourcePackage, recording.startedAt,
+                recording.callEndedAt ?: recording.endedAt ?: recording.startedAt + recording.durationMs,
+                recording.durationMs, recording.callFlowDirection, entries)
+        }.getOrDefault(emptyList())
+    }
+
     fun recoverDirection(context: Context, recording: Recording): CallDirection? {
         if (recording.direction != CallDirection.INCOMING &&
             recording.direction != CallDirection.OUTGOING) return null

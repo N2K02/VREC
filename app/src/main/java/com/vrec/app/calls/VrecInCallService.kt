@@ -35,6 +35,7 @@ class VrecInCallService : InCallService() {
         val callback = object : Call.Callback() {
             override fun onStateChanged(call: Call, state: Int) = publish(call)
             override fun onDetailsChanged(call: Call, details: Call.Details) = publish(call)
+            override fun onChildrenChanged(call: Call, children: MutableList<Call>) = publish(call)
         }
         listeners[call] = callback
         call.registerCallback(callback)
@@ -56,12 +57,22 @@ class VrecInCallService : InCallService() {
             else -> CallDirection.UNKNOWN
         }
         val state = details.state
-        val number = details.handle?.takeIf { it.scheme.equals("tel", true) }?.schemeSpecificPart
+        val number = details.handle?.takeIf {
+            it.scheme.equals("tel", true) && details.handlePresentation == TelecomManager.PRESENTATION_ALLOWED
+        }?.schemeSpecificPart
+        val voip = !cellular || selfManaged
+        val appName = if (voip) CallMetadataResolver.cleanAppName(details.callerDisplayName) else null
+        val participantNumbers = if (voip) VoipIdentityPolicy.numbers(
+            listOfNotNull(number) + call.children.mapNotNull { child ->
+                child.details.handle?.takeIf {
+                    it.scheme.equals("tel", true) && child.details.handlePresentation == TelecomManager.PRESENTATION_ALLOWED
+                }?.schemeSpecificPart
+            }) else emptyList()
         val name = CallerPresentationPolicy.resolvedName(
             isCellular = cellular && !selfManaged,
             restrictedPresentation =
                 details.handlePresentation == TelecomManager.PRESENTATION_RESTRICTED,
-            name = CallMetadataResolver.cleanName(details.contactDisplayName)
+            name = appName ?: CallMetadataResolver.cleanName(details.contactDisplayName)
                 ?: CallMetadataResolver.cleanName(details.callerDisplayName)
                 ?: if (CallMetadataResolver.privateCallerLabel(details.contactDisplayName) ||
                     CallMetadataResolver.privateCallerLabel(details.callerDisplayName)) "Private number" else null,
@@ -71,6 +82,7 @@ class VrecInCallService : InCallService() {
             this, id, state, owner, !cellular || selfManaged,
             flow, number, name, account?.id, details.connectTimeMillis.takeIf { it > 0L },
             videoCall = VideoProfile.isVideo(details.videoState),
+            originalCallerName = appName, phoneNumbers = participantNumbers,
         )
     }
 

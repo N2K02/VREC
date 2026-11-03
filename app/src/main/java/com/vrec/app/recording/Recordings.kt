@@ -64,9 +64,12 @@ data class Recording(
     val metadataAvailable: Boolean = true,
     /** CALL media, not video file capture: VIDEO or VOICE when observed. */
     val callMediaType: String? = null,
+    val originalCallerName: String? = null,
+    val phoneNumbers: List<String> = emptyList(),
 ) {
     val sizeBytes: Long get() = file.length()
-    val displayName: String get() = contactName?.takeIf { it.isNotBlank() }
+    val displayName: String get() = originalCallerName?.takeIf { it.isNotBlank() }
+        ?: contactName?.takeIf { it.isNotBlank() }
         ?: peer?.takeIf { it.isNotBlank() }
         ?: phoneNumber?.takeIf { it.isNotBlank() }
         ?: file.nameWithoutExtension
@@ -128,6 +131,8 @@ object RecordingStore {
         endedAtOverride: Long? = null,
         audioHealth: String? = null,
         callMediaType: String? = null,
+        originalCallerName: String? = null,
+        phoneNumbers: List<String> = emptyList(),
     ): Boolean {
         val started = startedAtOverride ?: runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
@@ -145,6 +150,8 @@ object RecordingStore {
             .put("peer", peer ?: JSONObject.NULL)
             .put("phoneNumber", phoneNumber ?: JSONObject.NULL)
             .put("contactName", contactName ?: JSONObject.NULL)
+            .put("originalCallerName", originalCallerName ?: JSONObject.NULL)
+            .put("phoneNumbers", JSONArray(com.vrec.app.calls.VoipIdentityPolicy.numbers(phoneNumbers, listOfNotNull(phoneNumber))))
             .put("countryCode", inferCountryCode(phoneNumber) ?: JSONObject.NULL)
             .put("simLabel", simLabel ?: JSONObject.NULL)
             .put("simSlot", simSlot ?: JSONObject.NULL)
@@ -203,6 +210,18 @@ object RecordingStore {
                 "UNKNOWN" -> "UNKNOWN"
                 else -> JSONObject.NULL
             })
+        writeJsonAtomic(recording.file, json)
+    }
+
+    fun addPhoneNumbers(recording: Recording, numbers: List<String>): Boolean = synchronized(metadataLock) {
+        val json = readJson(recording.file) ?: return@synchronized false
+        val old = json.optJSONArray("phoneNumbers")?.let { a ->
+            (0 until a.length()).map { a.optString(it) }
+        }.orEmpty()
+        val combined = com.vrec.app.calls.VoipIdentityPolicy.numbers(old, numbers,
+            listOfNotNull(json.optString("phoneNumber").takeIf { it != "null" }))
+        if (combined == old) return@synchronized true
+        json.put("phoneNumbers", JSONArray(combined))
         writeJsonAtomic(recording.file, json)
     }
 
@@ -335,6 +354,11 @@ object RecordingStore {
             callConnectedAt = meta?.optLong("callConnectedAt")?.takeIf { it > 0 },
             callEndedAt = meta?.optLong("callEndedAt")?.takeIf { it > 0 },
             metadataAvailable = meta != null,
+            originalCallerName = meta?.optString("originalCallerName")?.takeIf { it.isNotBlank() && it != "null" },
+            phoneNumbers = com.vrec.app.calls.VoipIdentityPolicy.numbers(
+                meta?.optJSONArray("phoneNumbers")?.let { a ->
+                    (0 until a.length()).map { a.optString(it) }
+                }.orEmpty(), listOfNotNull(phone)),
             callMediaType = meta?.optString("callMediaType")
                 ?.takeIf { it == "VIDEO" || it == "VOICE" },
         )
