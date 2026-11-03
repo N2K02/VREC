@@ -177,6 +177,12 @@ fun RecordingsList() {
                             context, "Recording metadata could not be saved. Check free storage.")
                     }
                 }
+                recordings.filter { it.direction == CallDirection.VOIP }.forEach { rec ->
+                    val numbers = CallHistoryResolver.recoverVoipNumbers(context.applicationContext, rec)
+                    if (numbers.any { number -> rec.phoneNumbers.none {
+                            it.filter(Char::isDigit) == number.filter(Char::isDigit)
+                        } } && RecordingStore.addPhoneNumbers(rec, numbers)) updates++
+                }
                 updates
             }
             if (changed > 0) refresh++
@@ -236,7 +242,8 @@ fun RecordingsList() {
     val visibleRecordings = recordings.filter { rec ->
         val q = search.trim()
         val textMatch = q.isEmpty() || listOfNotNull(
-            rec.peer, rec.phoneNumber, rec.contactName, rec.countryCode, rec.simLabel, rec.carrier,
+            rec.peer, rec.phoneNumber, rec.contactName, rec.originalCallerName,
+            rec.phoneNumbers.joinToString(" "), rec.countryCode, rec.simLabel, rec.carrier,
             rec.notes, rec.sourceLabel,
             RecordingListLabels.direction(rec.direction, rec.callFlowDirection), rec.file.name,
             dateFmt.format(Date(rec.startedAt))
@@ -538,7 +545,7 @@ fun RecordingsList() {
                 Text("Recording actions", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
                 Text(RecordingListLabels.contact(
-                    rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    rec.originalCallerName ?: rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
                     direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
                     source = rec.sourcePackage?.let { resolveCallAppName(context, it) }
                         ?: if (rec.direction == CallDirection.VOIP) "VoIP" else "SIM",
@@ -671,7 +678,7 @@ private fun RecordingRow(
         initialValue = null, rec.phoneNumber, rec.contactName,
     ) {
         val number = rec.phoneNumber
-        if (rec.contactName.isNullOrBlank() && !number.isNullOrBlank()) {
+        if (rec.originalCallerName.isNullOrBlank() && rec.contactName.isNullOrBlank() && !number.isNullOrBlank()) {
             value = withContext(Dispatchers.IO) {
                 com.vrec.app.calls.CallInfo.describe(context.applicationContext, number)
             }
@@ -684,7 +691,7 @@ private fun RecordingRow(
         callApp, rec.simSlot, rec.simLabel, rec.carrier,
     )
     val displayedContact = RecordingListLabels.contact(
-        rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
+        rec.originalCallerName ?: rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
         direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
         source = callSource,
         mediaType = if (sourceKind == RecordingListLabels.SourceKind.APP)
@@ -818,7 +825,7 @@ private fun RecordingDetailsDialog(
     val callApp = remember(rec.sourcePackage) {
         resolveCallAppName(context, rec.sourcePackage)
     }
-    val number = rec.phoneNumber?.takeIf { it.isNotBlank() }
+    val number = rec.phoneNumbers.singleOrNull() ?: rec.phoneNumber?.takeIf { it.isNotBlank() }
         ?: rec.peer?.takeIf { com.vrec.app.calls.CallMetadataResolver.directNumber(it) != null }
     val totalDurationMs = when {
         active && playbackDurationMs > 0L -> playbackDurationMs
@@ -862,7 +869,7 @@ private fun RecordingDetailsDialog(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(RecordingListLabels.contact(
-                    rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    rec.originalCallerName ?: rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
                     direction = resolvedFlow,
                     source = when {
                         rec.sourcePackage != null -> callApp
@@ -981,7 +988,10 @@ private fun RecordingDetailsDialog(
                         rec.direction, rec.callFlowDirection).takeIf {
                             it == "Incoming" || it == "Outgoing"
                         })
-                    DetailLine("Phone number", number)
+                    DetailLine("Original call name", rec.originalCallerName)
+                    if (rec.phoneNumbers.size > 1) {
+                        DetailLine("Phone numbers", rec.phoneNumbers.joinToString("\n"))
+                    } else DetailLine("Phone number", number)
                     DetailLine("Contact", rec.contactName)
                     DetailLine("Country", rec.countryCode)
                     DetailLine("SIM", rec.simLabel)

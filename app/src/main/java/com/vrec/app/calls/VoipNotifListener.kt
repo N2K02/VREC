@@ -69,7 +69,7 @@ class VoipNotifListener : NotificationListenerService() {
                 .mapNotNull { sbn ->
                     val n = sbn.notification ?: return@mapNotNull null
                     val state = stateOf(n) ?: return@mapNotNull null
-                    sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n),
+                    sbn.key to Signal(state, CallMetadataResolver.fromNotification(this, n, thirdParty = sbn.packageName in VOIP_PACKAGES),
                         directionOf(n, state), mediaTypeOf(n))
                 }
                 .toMap()
@@ -138,7 +138,7 @@ class VoipNotifListener : NotificationListenerService() {
         }
         expiry.remove(pkg)?.let(handler::removeCallbacks)
         val map = signals.getOrPut(pkg) { mutableMapOf() }
-        map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n),
+        map[sbn.key] = Signal(state, CallMetadataResolver.fromNotification(this, n, thirdParty = sbn.packageName in VOIP_PACKAGES),
             directionOf(n, state), mediaTypeOf(n))
         publish(pkg, phone)
         if (!phone) scheduleWatchdog()
@@ -163,9 +163,9 @@ class VoipNotifListener : NotificationListenerService() {
             values.any { it.status == "RINGING" } -> "RINGING"
             else -> "UNKNOWN"
         }
-        val metadata = values.firstNotNullOfOrNull { it.metadata?.takeIf { m ->
-            m.number != null || m.name != null
-        } }
+        // Separate call notification keys can represent call waiting. Never merge their participants.
+        val metadata = values.filter { it.status == status }.mapNotNull { it.metadata }
+            .distinct().singleOrNull()
         val known = values.map { it.direction }
             .filter { it == CallDirection.INCOMING || it == CallDirection.OUTGOING }
             .distinct()

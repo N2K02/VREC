@@ -47,6 +47,9 @@ object CallMonitor {
         var flowDirection: CallDirection = CallDirection.UNKNOWN,
         var number: String? = null,
         var name: String? = null,
+        var originalCallerName: String? = null,
+        var originalNameSource: String? = null,
+        var phoneNumbers: List<String> = emptyList(),
         var numberSource: String = "unknown",
         var nameSource: String = "unknown",
         var accountId: String? = null,
@@ -85,7 +88,7 @@ object CallMonitor {
         }
         if (candidates.size != 1) return null
         val session = candidates.single()
-        return LiveCaller(session.name, session.number, session.packageName)
+        return LiveCaller(session.originalCallerName ?: session.name, session.number, session.packageName)
     }
     private val handler = Handler(Looper.getMainLooper())
     private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -140,6 +143,8 @@ object CallMonitor {
         accountId: String?,
         connectedAt: Long?,
         videoCall: Boolean? = null,
+        originalCallerName: String? = null,
+        phoneNumbers: List<String> = emptyList(),
     ) {
         if (!Prefs.experimentalCallDetection(context) || !Prefs.recordingEnabled(context)) return
         if ((state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) && id !in sessions) {
@@ -153,6 +158,10 @@ object CallMonitor {
             session.flowDirection = flow
         } else if (voip && packageName != null) {
             applyPendingVoipDirection(session)
+        }
+        if (voip) {
+            applyOriginalName(session, originalCallerName, "telecom")
+            session.phoneNumbers = VoipIdentityPolicy.numbers(session.phoneNumbers, phoneNumbers, listOfNotNull(number))
         }
         session.accountId = accountId ?: session.accountId
         if (videoCall == true) session.mediaType = "VIDEO"
@@ -170,7 +179,7 @@ object CallMonitor {
         if (!name.isNullOrBlank() && !withheld) {
             session.name = name
             session.nameSource = "telecom"
-        } else if (session.name == null && !session.number.isNullOrBlank()) {
+        } else if (!voip && session.name == null && !session.number.isNullOrBlank()) {
             val contact = CallInfo.describe(context, session.number)
                 ?.takeIf { it != session.number }
             if (contact != null) {
@@ -209,6 +218,8 @@ object CallMonitor {
             if (session.mediaType == null || session.mediaType == "VOICE") {
                 if (legacy.mediaType == "VIDEO") session.mediaType = "VIDEO"
             }
+            applyOriginalName(session, legacy.originalCallerName, legacy.originalNameSource ?: "unknown")
+            session.phoneNumbers = VoipIdentityPolicy.numbers(session.phoneNumbers, legacy.phoneNumbers)
             if (session.number == null) { session.number = legacy.number; session.numberSource = legacy.numberSource }
             if (session.name == null) { session.name = legacy.name; session.nameSource = legacy.nameSource }
             if (session.flowDirection == CallDirection.UNKNOWN &&
@@ -513,7 +524,7 @@ object CallMonitor {
         val candidates = sessions.values.filter {
             it.active && (it.packageName == packageName || (phoneDialer && !it.isVoip))
         }
-        return candidates.size == 1 && (candidates.single().name == null || candidates.single().number == null)
+        return candidates.size == 1 && (candidates.single().isVoip || candidates.single().name == null || candidates.single().number == null)
     }
 
     @Synchronized
@@ -529,8 +540,20 @@ object CallMonitor {
         else rememberShellIdentity(context, session)
     }
 
+    private fun applyOriginalName(session: Session, name: String?, source: String) {
+        if (VoipIdentityPolicy.prefersCandidate(session.originalCallerName, session.originalNameSource, name, source)) {
+            session.originalCallerName = name
+            session.originalNameSource = source
+        }
+    }
+
     private fun applyMetadata(session: Session, candidate: CallerMetadata?) {
         if (candidate == null) return
+        if (session.isVoip) {
+            applyOriginalName(session, candidate.originalCallerName, candidate.source)
+            if (!candidate.inferredNumber) session.phoneNumbers = VoipIdentityPolicy.numbers(
+                session.phoneNumbers, candidate.phoneNumbers, listOfNotNull(candidate.number))
+        }
         // Never replace a direct Telecom identity with a weaker inferred value.
         if (session.name == null && candidate.name != null) {
             session.name = candidate.name
@@ -622,13 +645,14 @@ object CallMonitor {
         ShellCallMetadataJournal.remember(context.applicationContext,
             session.id + ":" + started, started,
             kind, session.packageName, session.name, session.number,
-            session.numberSource, session.flowDirection, session.mediaType)
+            session.numberSource, session.flowDirection, session.mediaType,
+            originalCallerName = session.originalCallerName, phoneNumbers = session.phoneNumbers)
     }
 
     private fun updateRecording(context: Context, session: Session) {
         rememberShellIdentity(context, session)
         RecordingService.updateMetadata(context.applicationContext,
-            session.direction, session.name ?: session.number, session.number,
+            session.direction, session.originalCallerName ?: session.name ?: session.number, session.number,
             session.packageName, session.accountId, session.numberSource,
             session.flowDirection.name)
     }

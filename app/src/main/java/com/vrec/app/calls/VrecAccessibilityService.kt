@@ -181,7 +181,7 @@ class VrecAccessibilityService : AccessibilityService() {
             }
         }
         if (!needsMetadata) return
-        val metadata = CallMetadataResolver.fromVisibleLabels(this, labels) ?: return
+        val metadata = CallMetadataResolver.fromVisibleLabels(this, labels, thirdParty = !isDialer) ?: return
         CallMonitor.onAccessibilityMetadata(this, pkg, metadata, isDialer)
     }
 

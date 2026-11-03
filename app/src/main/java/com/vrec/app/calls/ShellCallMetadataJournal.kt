@@ -21,6 +21,8 @@ object ShellCallMetadataJournal {
         val mediaType: String?,
         val direction: CallDirection,
         val key: String? = null,
+        val originalCallerName: String? = null,
+        val phoneNumbers: List<String> = emptyList(),
     )
     private fun file(context: Context) = File(context.filesDir, "shell_call_metadata.json")
     internal const val WINDOW_MS = 90_000L
@@ -115,6 +117,10 @@ object ShellCallMetadataJournal {
         runCatching { CallDirection.valueOf(optString("direction")) }
             .getOrDefault(CallDirection.UNKNOWN),
         optString("key").ifBlank { null },
+        optString("originalCallerName").ifBlank { null },
+        optJSONArray("phoneNumbers")?.let { a ->
+            VoipIdentityPolicy.numbers((0 until a.length()).map { a.optString(it) })
+        }.orEmpty(),
     )
 
     /** Called only for a generic shell filename; legacy journal entries are
@@ -141,7 +147,9 @@ object ShellCallMetadataJournal {
                                direction: CallDirection, appPackage: String?,
                                name: String?, number: String?, numberSource: String?,
                                flowDirection: CallDirection = CallDirection.UNKNOWN,
-                               mediaType: String? = null) {
+                               mediaType: String? = null,
+                               originalCallerName: String? = null,
+                               phoneNumbers: List<String> = emptyList()) {
         if (direction !in setOf(CallDirection.VOIP, CallDirection.INCOMING,
                 CallDirection.OUTGOING) || startedAt <= 0L) return
         val entries = load(context)
@@ -157,6 +165,11 @@ object ShellCallMetadataJournal {
             .put("startedAt", startedAt).put("direction", direction.name)
             .put("appPackage", preferred(appPackage, existing?.optString("appPackage")))
             .put("name", preferred(name, existing?.optString("name")))
+            .put("originalCallerName", preferred(originalCallerName, existing?.optString("originalCallerName")))
+            .put("phoneNumbers", JSONArray(VoipIdentityPolicy.numbers(phoneNumbers,
+                existing?.optJSONArray("phoneNumbers")?.let { a ->
+                    (0 until a.length()).map { a.optString(it) }
+                }.orEmpty())))
             .put("number", preferred(number, existing?.optString("number")))
             .put("numberSource", preferred(numberSource, existing?.optString("numberSource")))
             .put("flowDirection", preferred(

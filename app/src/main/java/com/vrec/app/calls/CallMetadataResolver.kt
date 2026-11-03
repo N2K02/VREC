@@ -16,6 +16,8 @@ data class CallerMetadata(
     val number: String? = null,
     val source: String = "unknown",
     val inferredNumber: Boolean = false,
+    val originalCallerName: String? = null,
+    val phoneNumbers: List<String> = emptyList(),
 )
 
 object CallMetadataResolver {
@@ -51,6 +53,11 @@ object CallMetadataResolver {
         return value
     }
 
+    /** App call titles can be nicknames or group names, including punctuation. */
+    fun cleanAppName(text: String?): String? = cleanLabel(text)?.take(256)?.takeIf {
+        it.isNotBlank() && normalize(it) !in placeholders && directNumber(it) == null
+    }
+
     fun directNumber(text: String?): String? {
         val raw = cleanLabel(text)?.removePrefix("tel:")?.take(80) ?: return null
         if (!Regex("^\\+?[0-9() .-]+$").matches(raw)) return null
@@ -58,7 +65,7 @@ object CallMetadataResolver {
         return raw.takeIf { digits in 5..18 }
     }
 
-    fun fromNotification(context: Context, notification: Notification): CallerMetadata? {
+    fun fromNotification(context: Context, notification: Notification, thirdParty: Boolean = false): CallerMetadata? {
         val extras = notification.extras ?: return null
         val person: Person? = runCatching {
             if (Build.VERSION.SDK_INT >= 33)
@@ -88,22 +95,32 @@ object CallMetadataResolver {
         val names = listOf(person?.name?.toString(), compat?.getCharSequence("name")?.toString()) +
             people.map { it.name?.toString() } + listOf(title, text, bigText)
         val numbers = listOf(uriNumber, person?.name?.toString(),
+            compat?.getString("uri")?.takeIf { it.startsWith("tel:", true) },
             compat?.getCharSequence("name")?.toString()) +
             people.flatMap { listOf(it.uri?.removePrefix("tel:"), it.name?.toString()) } +
             listOf(title, text, bigText)
-        val number = numbers.firstNotNullOfOrNull(::directNumber)
-        val name = names.firstNotNullOfOrNull(::cleanName)
+        val directNumbers = VoipIdentityPolicy.numbers(numbers.filterNotNull())
+        val number = if (thirdParty) directNumbers.singleOrNull() else directNumbers.firstOrNull()
+        val appNames = listOf(title, person?.name?.toString(), compat?.getCharSequence("name")?.toString()) +
+            people.map { it.name?.toString() }
+        val name = (if (thirdParty) appNames.firstNotNullOfOrNull(::cleanAppName)
+            else names.firstNotNullOfOrNull(::cleanName))
             ?: if (number == null && names.any(::privateCallerLabel)) "Private number" else null
-        if (number == null && name == null) return null
-        return resolve(context, CallerMetadata(name, number, "notification"))
+        if (directNumbers.isEmpty() && name == null) return null
+        val metadata = CallerMetadata(name, number, "notification",
+            originalCallerName = name.takeIf { thirdParty }, phoneNumbers = directNumbers)
+        return if (thirdParty) metadata else resolve(context, metadata)
     }
 
-    /** In-app Accessibility labels are accepted only if an exact unique contact or explicit number matches. */
-    fun fromVisibleLabels(context: Context, labels: Collection<String>): CallerMetadata? {
-        // Ambiguous windows are ignored. An active call does not make arbitrary chat
-        // participants or visible numbers safe to attach to its identity.
+    /** The caller gates labels to an active call screen; third-party names are never contact-matched. */
+    fun fromVisibleLabels(context: Context, labels: Collection<String>, thirdParty: Boolean = false): CallerMetadata? {
+        // Cellular identity remains conservative. A verified third-party call screen
+        // can expose several explicit participant numbers, never inferred nicknames.
         val numbers = labels.mapNotNull(::directNumber)
             .distinctBy { it.filter(Char::isDigit) }
+        if (thirdParty) return numbers.takeIf { it.isNotEmpty() }?.let {
+            CallerMetadata(number = it.singleOrNull(), source = "accessibility", phoneNumbers = it)
+        }
         if (numbers.size == 1) {
             return resolve(context, CallerMetadata(number = numbers.single(), source = "accessibility"))
         }

@@ -697,8 +697,9 @@ object ExperimentalCaptureDaemon {
                     // when available, without ever guessing a caller by app
                     // name or nearby notification. Private callers have no
                     // number to look up.
-                    val contactName = caller?.name?.takeIf { it.isNotBlank() }
-                        ?: caller?.number?.let { number ->
+                    val contactName = caller?.originalCallerName?.takeIf { it.isNotBlank() }
+                        ?: caller?.name?.takeIf { it.isNotBlank() }
+                        ?: caller?.number?.takeUnless { voip }?.let { number ->
                             com.vrec.app.calls.CallInfo.describe(context, number)
                                 ?.takeIf { it != number }
                         }
@@ -709,7 +710,9 @@ object ExperimentalCaptureDaemon {
                             health?.contains("NO_AUDIO") == true,
                         durationMs = durationMs,
                         appPackage = caller?.packageName ?: identity.appPackage,
-                        phoneNumber = caller?.number,
+                        phoneNumber = if (caller?.phoneNumbers.orEmpty().size > 1) null else caller?.number,
+                        originalCallerName = caller?.originalCallerName,
+                        phoneNumbers = caller?.phoneNumbers.orEmpty(),
                         contactName = contactName,
                         numberSource = caller?.numberSource,
                         callFlowDirection = caller?.flowDirection

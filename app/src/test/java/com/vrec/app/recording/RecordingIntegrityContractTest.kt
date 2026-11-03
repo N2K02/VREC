@@ -58,7 +58,8 @@ class RecordingIntegrityContractTest {
         assertTrue(daemon.contains("journal.findForCellularTaggedVoip(context, started, identity.direction)"))
         assertTrue(daemon.contains("callMediaType = caller?.mediaType"))
         assertTrue(daemon.contains("contactName = contactName"))
-        assertTrue(daemon.contains("caller?.number?.let { number ->"))
+        // Address-book fallback is cellular-only; third-party titles must remain intact.
+        assertTrue(daemon.contains("caller?.number?.takeUnless { voip }?.let { number ->"))
         assertTrue(journal.contains("selectCellularTaggedVoip("))
         assertTrue(journal.contains("return nearby.singleOrNull()"))
         assertTrue(journal.contains("selectCellularTaggedSim("))
