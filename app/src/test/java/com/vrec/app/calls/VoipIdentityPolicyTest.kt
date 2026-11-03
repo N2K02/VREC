@@ -27,7 +27,7 @@ class VoipIdentityPolicyTest {
 
     @Test fun numbersKeepAllExplicitParticipantsAndDeduplicateFormatting() {
         assertEquals(listOf("+230 5123 4567", "59876543"), VoipIdentityPolicy.numbers(
-            listOf("tel:+230 5123 4567", "59876543"), listOf("+23051234567", "5987 6543")))
+            listOf("tel:\u202A+230\u00A05123 4567\u202C", "59876543"), listOf("+23051234567", "5987 6543")))
     }
 
     @Test fun namesDescriptionsDurationsAndCombinedStringsAreNotNumbers() {

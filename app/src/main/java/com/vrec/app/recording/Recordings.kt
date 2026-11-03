@@ -364,11 +364,9 @@ object RecordingStore {
         )
     }
 
-    private fun extractPhone(value: String?): String? {
-        val candidate = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val cleaned = candidate.filter { it.isDigit() || it == '+' || it == '*' || it == '#' }
-        return cleaned.takeIf { it.count(Char::isDigit) >= 5 }
-    }
+    // Group titles may contain several numbers; never concatenate their digits.
+    private fun extractPhone(value: String?): String? =
+        com.vrec.app.calls.CallMetadataResolver.directNumber(value)
 
     /** Only infer a country calling code from an explicit international number, never device location. */
     private fun inferCountryCode(number: String?): String? {

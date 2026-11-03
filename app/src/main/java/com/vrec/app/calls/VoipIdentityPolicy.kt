@@ -19,7 +19,8 @@ internal object VoipIdentityPolicy {
     /** Accept explicit numbers only; never split names or infer participants from contacts. */
     fun numbers(vararg groups: Collection<String>): List<String> = groups.flatMap { it }
         .mapNotNull { raw ->
-            val value = raw.trim().let { if (it.startsWith("tel:", true)) it.substring(4) else it }
+            val value = raw.filterNot { Character.getType(it) == Character.FORMAT.toInt() }
+                .replace(Regex("[\\s\\p{Zs}]+"), " ").trim().let { if (it.startsWith("tel:", true)) it.substring(4) else it }
             value.takeIf { Regex("^\\+?[0-9() .-]+$").matches(it) && it.count(Char::isDigit) in 5..18 }
         }.distinctBy { it.filter(Char::isDigit) }
 }
