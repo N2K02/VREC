@@ -427,6 +427,7 @@ object CallMonitor {
         if (target != null) {
             applyMetadata(target, metadata)
             if (mediaType == "VIDEO") target.mediaType = "VIDEO"
+            else if (mediaType == "VOICE" && target.mediaType == null) target.mediaType = "VOICE"
             // Telecom remains authoritative; notification evidence may fill a gap.
             if (target.isVoip && target.flowDirection == CallDirection.UNKNOWN &&
                 notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
@@ -467,6 +468,7 @@ object CallMonitor {
         }
         applyMetadata(session, metadata)
         if (mediaType == "VIDEO") session.mediaType = "VIDEO"
+        else if (mediaType == "VOICE" && session.mediaType == null) session.mediaType = "VOICE"
         if (session.flowDirection == CallDirection.UNKNOWN &&
             notificationFlow in setOf(CallDirection.INCOMING, CallDirection.OUTGOING)) {
             session.flowDirection = notificationFlow

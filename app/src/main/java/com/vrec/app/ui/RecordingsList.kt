@@ -178,6 +178,10 @@ fun RecordingsList() {
                     }
                 }
                 recordings.filter { it.direction == CallDirection.VOIP }.forEach { rec ->
+                    val recoveredFlow = CallHistoryResolver.recoverVoipDirection(context.applicationContext, rec)
+                    if (recoveredFlow != null && RecordingStore.updateDetails(
+                            rec, rec.notes, rec.favorite, callFlowDirection = recoveredFlow.name
+                        )) updates++
                     val numbers = CallHistoryResolver.recoverVoipNumbers(context.applicationContext, rec)
                     if (numbers.any { number -> rec.phoneNumbers.none {
                             it.filter(Char::isDigit) == number.filter(Char::isDigit)

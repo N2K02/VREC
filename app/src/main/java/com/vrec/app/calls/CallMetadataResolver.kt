@@ -29,6 +29,15 @@ object CallMetadataResolver {
         "signal", "messenger", "viber", "end call", "answer", "decline",
     )
 
+    /** Call-state text is not a contact, even when it appears in EXTRA_TITLE. */
+    private val genericVoipNarrative = Regex(
+        "^(?:(?:whatsapp(?: business)?|telegram|signal|messenger|viber)\\s+)?(?:(?:incoming|outgoing|ongoing|missed)\\s+)?(?:(?:voice|video|audio)\\s+)?(?:call|calling|ringing)(?:\\s+(?:in progress|ongoing))?$"
+    )
+    private val genericDirectionNarrative = Regex(
+        "^(?:incoming|outgoing|ongoing|missed)(?:\\s+(?:voice|video|audio))?\\s+call(?:\\s+(?:from|to|with)\\s+.+)?$"
+    )
+    private val genericCallAction = Regex("^(?:calling|dialing|ringing)(?:[\\s…:.]+.*)?$")
+
     private val privateLabels = setOf(
         "private number", "private caller", "no caller id", "withheld",
         "restricted", "anonymous", "unknown caller id", "private", "number withheld",
@@ -55,7 +64,12 @@ object CallMetadataResolver {
 
     /** App call titles can be nicknames or group names, including punctuation. */
     fun cleanAppName(text: String?): String? = cleanLabel(text)?.take(256)?.takeIf {
-        it.isNotBlank() && normalize(it) !in placeholders && directNumber(it) == null
+        val normalized = normalize(it)
+        it.isNotBlank() && normalized !in placeholders &&
+            !genericVoipNarrative.matches(normalized) &&
+            !genericDirectionNarrative.matches(normalized) &&
+            !genericCallAction.matches(normalized) &&
+            directNumber(it) == null
     }
 
     fun directNumber(text: String?): String? {
@@ -118,8 +132,11 @@ object CallMetadataResolver {
         // can expose several explicit participant numbers, never inferred nicknames.
         val numbers = labels.mapNotNull(::directNumber)
             .distinctBy { it.filter(Char::isDigit) }
-        if (thirdParty) return numbers.takeIf { it.isNotEmpty() }?.let {
-            CallerMetadata(number = it.singleOrNull(), source = "accessibility", phoneNumbers = it)
+        if (thirdParty) {
+            val name = VoipAccessibilityCallerPolicy.uniqueCallerName(labels)
+            if (name == null && numbers.isEmpty()) return null
+            return CallerMetadata(name = name, number = numbers.singleOrNull(),
+                source = "accessibility", originalCallerName = name, phoneNumbers = numbers)
         }
         if (numbers.size == 1) {
             return resolve(context, CallerMetadata(number = numbers.single(), source = "accessibility"))

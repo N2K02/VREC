@@ -12,6 +12,15 @@ class VoipIdentityPolicyTest {
         assertEquals(title, VoipIdentityPolicy.name(title, "notification", null, "notification"))
     }
 
+    @Test fun genericNotificationCannotOverrideTelecomOrEarlierCaller() {
+        assertFalse(VoipIdentityPolicy.prefersCandidate(
+            "Chachi Renou", "telecom", "WhatsApp call", "notification"))
+        assertEquals("Chachi Renou", VoipIdentityPolicy.name(
+            "Chachi Renou", "telecom", "WhatsApp call", "notification"))
+        assertFalse(VoipIdentityPolicy.prefersCandidate(
+            null, null, "Outgoing call", "notification"))
+    }
+
     @Test fun updatedAppTitleCanAddParticipants() {
         assertEquals("Shrey et titi", VoipIdentityPolicy.name("Shrey", "notification", "Shrey et titi", "notification"))
     }

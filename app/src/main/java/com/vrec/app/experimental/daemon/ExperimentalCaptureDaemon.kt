@@ -634,6 +634,12 @@ object ExperimentalCaptureDaemon {
                     } else null
                 val direction = if (caller?.direction == CallDirection.VOIP)
                     CallDirection.VOIP else identity.direction
+                // Diagnostics contain presence flags only, never personal names or numbers.
+                com.vrec.app.Log.i("Capture diagnostic: metadata match=" + (caller != null) +
+                    " sourceVerified=" + (identity.appPackage != null) +
+                    " namePresent=" + (!caller?.name.isNullOrBlank() || !caller?.originalCallerName.isNullOrBlank()) +
+                    " flowPresent=" + (!caller?.flowDirection.isNullOrBlank()) +
+                    " mediaPresent=" + (!caller?.mediaType.isNullOrBlank()))
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
                 if (dest.exists() && dest.length() > 100L &&
                     RecordingStore.hasValidMetadata(dest)) {

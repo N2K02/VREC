@@ -7,7 +7,8 @@ internal object VoipIdentityPolicy {
     }
 
     fun prefersCandidate(current: String?, currentSource: String?, candidate: String?, source: String): Boolean {
-        if (candidate.isNullOrBlank()) return false
+        // A generic status title must never displace a verified caller name.
+        if (CallMetadataResolver.cleanAppName(candidate) == null) return false
         fun rank(value: String?) = when (value) {
             "notification" -> 3 // App's call title may contain a whole group.
             "telecom" -> 2

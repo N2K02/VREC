@@ -17,6 +17,31 @@ class ShellCallMetadataJournalTest {
         assertFalse(ShellCallMetadataJournal.matches(200_000L, 100_000L, "com.whatsapp", "com.whatsapp"))
     }
 
+    @Test fun matchingUsesClosestVerifiedSessionWithoutBorrowingFromOldCall() {
+        val candidates = listOf(
+            ShellCallMetadataJournal.Candidate("old", 60_000L, CallDirection.VOIP,
+                "com.whatsapp", CallDirection.OUTGOING, "Earlier caller", null, "VOICE"),
+            ShellCallMetadataJournal.Candidate("current", 101_000L, CallDirection.VOIP,
+                "com.whatsapp", CallDirection.OUTGOING, "Chachi Renou", null, "VOICE"),
+        )
+        assertEquals("current", ShellCallMetadataJournal.selectForPackage(
+            100_000L, "com.whatsapp", candidates)?.key)
+        assertNull(ShellCallMetadataJournal.selectForPackage(
+            150_000L, "com.whatsapp", candidates))
+        assertNull(ShellCallMetadataJournal.selectForPackage(
+            100_000L, "org.telegram.messenger", candidates))
+    }
+
+    @Test fun competingWhatsappSessionsRemainUnknown() {
+        val first = ShellCallMetadataJournal.Candidate("a", 100_000L,
+            CallDirection.VOIP, "com.whatsapp", CallDirection.OUTGOING, "Chachi Renou", null, null)
+        val competing = first.copy(key = "b", startedAt = 103_000L, name = "Someone else")
+        assertNull(ShellCallMetadataJournal.selectForPackage(
+            101_000L, "com.whatsapp", listOf(first, competing)))
+        assertEquals("a", ShellCallMetadataJournal.selectForPackage(
+            100_000L, "com.whatsapp", listOf(first, competing.copy(startedAt = 125_000L)))?.key)
+    }
+
     @Test fun rejectsDifferentVoipApp() {
         assertFalse(ShellCallMetadataJournal.matches(
             100_000L, 108_000L, "com.whatsapp", "org.telegram.messenger"))
