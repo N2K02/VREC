@@ -11,10 +11,16 @@ class VoipNotificationMediaTest {
         assertEquals("VIDEO", VoipNotificationMedia.type(null, "Video chat with Nina"))
     }
 
+    @Test fun explicitlyLabeledVoiceAndAudioAreVoice() {
+        assertEquals("VOICE", VoipNotificationMedia.type("Outgoing voice call", "Chachi Renou"))
+        assertEquals("VOICE", VoipNotificationMedia.type("Chachi Renou", "Audio call"))
+        assertEquals("VIDEO", VoipNotificationMedia.type("Video call", "Voice call"))
+    }
+
     @Test fun ordinaryAndUnknownCallsNeverInventVideo() {
-        assertNull(VoipNotificationMedia.type("Ongoing voice call", "Nina"))
+        assertEquals("VOICE", VoipNotificationMedia.type("Ongoing voice call", "Nina"))
         assertNull(VoipNotificationMedia.type("WhatsApp", "Nina"))
         assertNull(VoipNotificationMedia.type(null, null))
-        assertNull(VoipNotificationMedia.type("Calling", "Audio call"))
+        assertEquals("VOICE", VoipNotificationMedia.type("Calling", "Audio call"))
     }
 }

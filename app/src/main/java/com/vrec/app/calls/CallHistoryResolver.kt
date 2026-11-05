@@ -113,10 +113,27 @@ internal object CellularCallLogDirectionPolicy {
 }
 
 internal object CallHistoryResolver {
-    /** Third-party history is optional. Never query or infer an app's private database. */
+    /** Android VoIP call history is optional; never read an app's private database. */
     fun recoverVoipNumbers(context: Context, recording: Recording): List<String> {
+        val entries = readVoipEntries(context, recording) ?: return emptyList()
+        return VoipCallLogPolicy.numbers(recording.sourcePackage.orEmpty(), recording.startedAt,
+            recording.callEndedAt ?: recording.endedAt ?: recording.startedAt + recording.durationMs,
+            recording.durationMs, recording.callFlowDirection, entries)
+    }
+
+    /** Recover direction only when a single completed app-specific session matches. */
+    fun recoverVoipDirection(context: Context, recording: Recording): CallDirection? {
+        if (recording.callFlowDirection == "INCOMING" ||
+            recording.callFlowDirection == "OUTGOING") return null
+        val entries = readVoipEntries(context, recording) ?: return null
+        return VoipCallLogPolicy.direction(recording.sourcePackage.orEmpty(), recording.startedAt,
+            recording.callEndedAt ?: recording.endedAt ?: recording.startedAt + recording.durationMs,
+            recording.durationMs, entries)
+    }
+
+    private fun readVoipEntries(context: Context, recording: Recording): List<VoipCallLogEntry>? {
         if (recording.direction != CallDirection.VOIP || recording.sourcePackage.isNullOrBlank() ||
-            context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) return emptyList()
+            context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) return null
         return runCatching {
             val columns = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION,
                 CallLog.Calls.TYPE, CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME, CallLog.Calls.PHONE_ACCOUNT_ID)
@@ -128,17 +145,15 @@ internal object CallHistoryResolver {
                 arrayOf((recording.startedAt - 180_000L).toString(), (recording.startedAt + 15_000L).toString()),
                 "${CallLog.Calls.DATE} DESC")?.use { cursor ->
                 while (cursor.moveToNext()) {
-                    // An incomplete result could conceal another plausible call.
-                    if (entries.size >= 100) return emptyList()
+                    // Incomplete query results might conceal a competing call.
+                    if (entries.size >= 100) return null
                     val pkg = cursor.getString(4)?.let { android.content.ComponentName.unflattenFromString(it)?.packageName }
                     entries += VoipCallLogEntry(pkg, cursor.getString(5), cursor.getString(0),
                         cursor.getLong(1), cursor.getLong(2), cursor.getInt(3))
                 }
             }
-            VoipCallLogPolicy.numbers(recording.sourcePackage, recording.startedAt,
-                recording.callEndedAt ?: recording.endedAt ?: recording.startedAt + recording.durationMs,
-                recording.durationMs, recording.callFlowDirection, entries)
-        }.getOrDefault(emptyList())
+            entries
+        }.getOrNull()
     }
 
     fun recoverDirection(context: Context, recording: Recording): CallDirection? {

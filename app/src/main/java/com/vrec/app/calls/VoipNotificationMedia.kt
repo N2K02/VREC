@@ -7,7 +7,12 @@ internal object VoipNotificationMedia {
     fun type(title: String?, text: String?): String? {
         val words = listOfNotNull(title, text)
             .map { it.trim().lowercase(Locale.ROOT) }
-        return if (words.any { it.contains("video call") || it.contains("video calling") ||
-                it.contains("video chat") }) "VIDEO" else null
+        return when {
+            words.any { it.contains("video call") || it.contains("video calling") ||
+                it.contains("video chat") } -> "VIDEO"
+            words.any { it.contains("voice call") || it.contains("audio call") ||
+                it.contains("voice calling") } -> "VOICE"
+            else -> null
+        }
     }
 }

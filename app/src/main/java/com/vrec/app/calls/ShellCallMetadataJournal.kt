@@ -23,9 +23,13 @@ object ShellCallMetadataJournal {
         val key: String? = null,
         val originalCallerName: String? = null,
         val phoneNumbers: List<String> = emptyList(),
+        val callNameHistory: List<String> = emptyList(),
     )
     private fun file(context: Context) = File(context.filesDir, "shell_call_metadata.json")
     internal const val WINDOW_MS = 90_000L
+    // A shell file and connected session normally start within seconds.
+    internal const val VERIFIED_MATCH_WINDOW_MS = 30_000L
+    internal const val COMPETING_MATCH_MARGIN_MS = 15_000L
     internal fun matches(startedAt: Long, observedAt: Long, recordedPackage: String?, candidatePackage: String?): Boolean =
         kotlin.math.abs(observedAt - startedAt) <= WINDOW_MS &&
             // Never attach another application's caller identity when the
@@ -121,6 +125,11 @@ object ShellCallMetadataJournal {
         optJSONArray("phoneNumbers")?.let { a ->
             VoipIdentityPolicy.numbers((0 until a.length()).map { a.optString(it) })
         }.orEmpty(),
+        optJSONArray("callNameHistory")?.let { names ->
+            (0 until names.length()).fold(emptyList<String>()) { history, index ->
+                VoipIdentityPolicy.updatedNameHistory(history, names.optString(index))
+            }
+        }.orEmpty(),
     )
 
     /** Called only for a generic shell filename; legacy journal entries are
@@ -149,7 +158,8 @@ object ShellCallMetadataJournal {
                                flowDirection: CallDirection = CallDirection.UNKNOWN,
                                mediaType: String? = null,
                                originalCallerName: String? = null,
-                               phoneNumbers: List<String> = emptyList()) {
+                               phoneNumbers: List<String> = emptyList(),
+                               callNameHistory: List<String> = emptyList()) {
         if (direction !in setOf(CallDirection.VOIP, CallDirection.INCOMING,
                 CallDirection.OUTGOING) || startedAt <= 0L) return
         val entries = load(context)
@@ -166,6 +176,17 @@ object ShellCallMetadataJournal {
             .put("appPackage", preferred(appPackage, existing?.optString("appPackage")))
             .put("name", preferred(name, existing?.optString("name")))
             .put("originalCallerName", preferred(originalCallerName, existing?.optString("originalCallerName")))
+            .put("callNameHistory", JSONArray(
+                (callNameHistory.ifEmpty {
+                    listOfNotNull(originalCallerName)
+                }).fold(
+                    existing?.optJSONArray("callNameHistory")?.let { names ->
+                        (0 until names.length()).fold(emptyList<String>()) { acc, index ->
+                            VoipIdentityPolicy.updatedNameHistory(acc, names.optString(index))
+                        }
+                    }.orEmpty(),
+                ) { acc, name -> VoipIdentityPolicy.updatedNameHistory(acc, name) }
+            ))
             .put("phoneNumbers", JSONArray(VoipIdentityPolicy.numbers(phoneNumbers,
                 existing?.optJSONArray("phoneNumbers")?.let { a ->
                     (0 until a.length()).map { a.optString(it) }
@@ -180,12 +201,29 @@ object ShellCallMetadataJournal {
         save(context, result)
     }
 
+    /** Match verified package and close starts; reject ambiguous parallel calls. */
+    internal fun selectForPackage(
+        startedAt: Long, appPackage: String?, candidates: List<Candidate>,
+    ): Candidate? {
+        if (startedAt <= 0L || appPackage.isNullOrBlank()) return null
+        val sorted = candidates.filter {
+            it.packageName == appPackage && it.startedAt > 0L &&
+                kotlin.math.abs(it.startedAt - startedAt) <= VERIFIED_MATCH_WINDOW_MS
+        }.sortedBy { kotlin.math.abs(it.startedAt - startedAt) }
+        val first = sorted.firstOrNull() ?: return null
+        val firstOffset = kotlin.math.abs(first.startedAt - startedAt)
+        val second = sorted.getOrNull(1)
+        if (second != null &&
+            kotlin.math.abs(second.startedAt - startedAt) - firstOffset <= COMPETING_MATCH_MARGIN_MS
+        ) return null
+        return first
+    }
+
     @Synchronized fun find(context: Context, startedAt: Long, appPackage: String?): Match? {
-        val matches = entries(context).filter {
-            matches(startedAt, it.optLong("startedAt"), appPackage, it.optString("appPackage"))
-        }
-        if (matches.size != 1) return null
-        return matches.single().asMatch()
+        val all = entries(context)
+        val selected = selectForPackage(startedAt, appPackage, all.map { it.asCandidate() })
+            ?: return null
+        return all.firstOrNull { it.optString("key") == selected.key }?.asMatch()
     }
 
     /** Remove only the precise imported call, never another nearby recording. */

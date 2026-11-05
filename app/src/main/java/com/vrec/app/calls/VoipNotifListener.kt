@@ -169,9 +169,14 @@ class VoipNotifListener : NotificationListenerService() {
         val known = values.map { it.direction }
             .filter { it == CallDirection.INCOMING || it == CallDirection.OUTGOING }
             .distinct()
-        CallMonitor.onNotification(this, pkg, phone, status, metadata,
-            if (known.size == 1) known.single() else CallDirection.UNKNOWN,
-            values.firstNotNullOfOrNull { it.mediaType })
+        val flow = if (known.size == 1) known.single() else CallDirection.UNKNOWN
+        // An explicit VIDEO indication wins over a simultaneous voice label.
+        val media = if (values.any { it.mediaType == "VIDEO" }) "VIDEO"
+            else values.firstNotNullOfOrNull { it.mediaType }
+        Log.i("VoIP notification app=" + pkg + " status=" + status +
+            " callerPresent=" + (metadata?.name != null) + " flow=" + flow +
+            " media=" + (media ?: "UNKNOWN"))
+        CallMonitor.onNotification(this, pkg, phone, status, metadata, flow, media)
     }
 
     private fun mediaTypeOf(n: Notification): String? = VoipNotificationMedia.type(

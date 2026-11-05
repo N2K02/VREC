@@ -66,9 +66,12 @@ data class Recording(
     val callMediaType: String? = null,
     val originalCallerName: String? = null,
     val phoneNumbers: List<String> = emptyList(),
+    /** Observed call title changes, not a guessed contact/participant list. */
+    val callNameHistory: List<String> = emptyList(),
 ) {
+    val latestCallName: String? get() = callNameHistory.lastOrNull() ?: originalCallerName
     val sizeBytes: Long get() = file.length()
-    val displayName: String get() = originalCallerName?.takeIf { it.isNotBlank() }
+    val displayName: String get() = latestCallName?.takeIf { it.isNotBlank() }
         ?: contactName?.takeIf { it.isNotBlank() }
         ?: peer?.takeIf { it.isNotBlank() }
         ?: phoneNumber?.takeIf { it.isNotBlank() }
@@ -133,6 +136,7 @@ object RecordingStore {
         callMediaType: String? = null,
         originalCallerName: String? = null,
         phoneNumbers: List<String> = emptyList(),
+        callNameHistory: List<String> = emptyList(),
     ): Boolean {
         val started = startedAtOverride ?: runCatching { stamp.parse(file.name.take(15))?.time }.getOrNull()
             ?: file.lastModified().takeIf { it > 0 }
@@ -151,6 +155,7 @@ object RecordingStore {
             .put("phoneNumber", phoneNumber ?: JSONObject.NULL)
             .put("contactName", contactName ?: JSONObject.NULL)
             .put("originalCallerName", originalCallerName ?: JSONObject.NULL)
+            .put("callNameHistory", JSONArray(callNameHistory))
             .put("phoneNumbers", JSONArray(com.vrec.app.calls.VoipIdentityPolicy.numbers(phoneNumbers, listOfNotNull(phoneNumber))))
             .put("countryCode", inferCountryCode(phoneNumber) ?: JSONObject.NULL)
             .put("simLabel", simLabel ?: JSONObject.NULL)
@@ -355,6 +360,12 @@ object RecordingStore {
             callEndedAt = meta?.optLong("callEndedAt")?.takeIf { it > 0 },
             metadataAvailable = meta != null,
             originalCallerName = meta?.optString("originalCallerName")?.takeIf { it.isNotBlank() && it != "null" },
+            callNameHistory = meta?.optJSONArray("callNameHistory")?.let { names ->
+                (0 until names.length()).fold(emptyList<String>()) { history, index ->
+                    com.vrec.app.calls.VoipIdentityPolicy.updatedNameHistory(
+                        history, names.optString(index))
+                }
+            }.orEmpty(),
             phoneNumbers = com.vrec.app.calls.VoipIdentityPolicy.numbers(
                 meta?.optJSONArray("phoneNumbers")?.let { a ->
                     (0 until a.length()).map { a.optString(it) }
