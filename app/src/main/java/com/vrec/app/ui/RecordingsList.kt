@@ -246,8 +246,8 @@ fun RecordingsList() {
     val visibleRecordings = recordings.filter { rec ->
         val q = search.trim()
         val textMatch = q.isEmpty() || listOfNotNull(
-            rec.peer, rec.phoneNumber, rec.contactName, rec.originalCallerName,
-            rec.phoneNumbers.joinToString(" "), rec.countryCode, rec.simLabel, rec.carrier,
+            rec.peer, rec.phoneNumber, rec.contactName, rec.latestCallName,
+            rec.callNameHistory.joinToString(" "), rec.phoneNumbers.joinToString(" "), rec.countryCode, rec.simLabel, rec.carrier,
             rec.notes, rec.sourceLabel,
             RecordingListLabels.direction(rec.direction, rec.callFlowDirection), rec.file.name,
             dateFmt.format(Date(rec.startedAt))
@@ -549,7 +549,7 @@ fun RecordingsList() {
                 Text("Recording actions", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
                 Text(RecordingListLabels.contact(
-                    rec.originalCallerName ?: rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    rec.latestCallName ?: rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
                     direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
                     source = rec.sourcePackage?.let { resolveCallAppName(context, it) }
                         ?: if (rec.direction == CallDirection.VOIP) "VoIP" else "SIM",
@@ -695,7 +695,7 @@ private fun RecordingRow(
         callApp, rec.simSlot, rec.simLabel, rec.carrier,
     )
     val displayedContact = RecordingListLabels.contact(
-        rec.originalCallerName ?: rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
+        rec.latestCallName ?: rec.contactName, contactFromPhone, rec.peer, rec.phoneNumber, rec.file.name,
         direction = RecordingListLabels.flowDirection(rec.direction, rec.callFlowDirection),
         source = callSource,
         mediaType = if (sourceKind == RecordingListLabels.SourceKind.APP)
@@ -873,7 +873,7 @@ private fun RecordingDetailsDialog(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(RecordingListLabels.contact(
-                    rec.originalCallerName ?: rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
+                    rec.latestCallName ?: rec.contactName, null, rec.peer, rec.phoneNumber, rec.file.name,
                     direction = resolvedFlow,
                     source = when {
                         rec.sourcePackage != null -> callApp
@@ -992,7 +992,10 @@ private fun RecordingDetailsDialog(
                         rec.direction, rec.callFlowDirection).takeIf {
                             it == "Incoming" || it == "Outgoing"
                         })
-                    DetailLine("Original call name", rec.originalCallerName)
+                    DetailLine("Call name (latest)", rec.latestCallName)
+                    if (rec.callNameHistory.size > 1) {
+                        DetailLine("Call name changes", rec.callNameHistory.joinToString("\n→ "))
+                    }
                     if (rec.phoneNumbers.size > 1) {
                         DetailLine("Phone numbers", rec.phoneNumbers.joinToString("\n"))
                     } else DetailLine("Phone number", number)

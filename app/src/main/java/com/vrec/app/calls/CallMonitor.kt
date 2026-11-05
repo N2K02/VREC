@@ -49,6 +49,7 @@ object CallMonitor {
         var name: String? = null,
         var originalCallerName: String? = null,
         var originalNameSource: String? = null,
+        var callNameHistory: List<String> = emptyList(),
         var phoneNumbers: List<String> = emptyList(),
         var numberSource: String = "unknown",
         var nameSource: String = "unknown",
@@ -217,6 +218,10 @@ object CallMonitor {
             }
             if (session.mediaType == null || session.mediaType == "VOICE") {
                 if (legacy.mediaType == "VIDEO") session.mediaType = "VIDEO"
+            }
+            // Retain the notification-owned title changes when Telecom adopts the call.
+            if (legacy.callNameHistory.isNotEmpty()) {
+                session.callNameHistory = legacy.callNameHistory
             }
             applyOriginalName(session, legacy.originalCallerName, legacy.originalNameSource ?: "unknown")
             session.phoneNumbers = VoipIdentityPolicy.numbers(session.phoneNumbers, legacy.phoneNumbers)
@@ -544,8 +549,11 @@ object CallMonitor {
 
     private fun applyOriginalName(session: Session, name: String?, source: String) {
         if (VoipIdentityPolicy.prefersCandidate(session.originalCallerName, session.originalNameSource, name, source)) {
-            session.originalCallerName = name
+            val verified = CallMetadataResolver.cleanAppName(name) ?: return
+            session.originalCallerName = verified
             session.originalNameSource = source
+            session.callNameHistory = VoipIdentityPolicy.updatedNameHistory(
+                session.callNameHistory, verified)
         }
     }
 
@@ -648,7 +656,8 @@ object CallMonitor {
             session.id + ":" + started, started,
             kind, session.packageName, session.name, session.number,
             session.numberSource, session.flowDirection, session.mediaType,
-            originalCallerName = session.originalCallerName, phoneNumbers = session.phoneNumbers)
+            originalCallerName = session.originalCallerName, phoneNumbers = session.phoneNumbers,
+            callNameHistory = session.callNameHistory)
     }
 
     private fun updateRecording(context: Context, session: Session) {

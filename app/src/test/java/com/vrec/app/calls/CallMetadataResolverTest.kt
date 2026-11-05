@@ -15,7 +15,8 @@ class CallMetadataResolverTest {
         listOf("WhatsApp call", "WhatsApp voice call", "WhatsApp video call",
             "WhatsApp Business call", "Incoming call from Chachi Renou",
             "Outgoing voice call", "Calling Chachi Renou", "Dialing…",
-            "Video call", "Audio call", "Call in progress").forEach {
+            "Video call", "Audio call", "Call in progress", "Group call",
+            "WhatsApp group call", "Conference call").forEach {
             assertNull("Unexpected identity from: $it", CallMetadataResolver.cleanAppName(it))
         }
         assertEquals("Chachi Renou", CallMetadataResolver.cleanAppName("Chachi Renou"))
@@ -32,6 +33,29 @@ class CallMetadataResolverTest {
             listOf("Chachi Renou", "Another caller", "End call")))
         assertNull(VoipAccessibilityCallerPolicy.uniqueCallerName(
             listOf("WhatsApp call", "Mute", "Speaker", "Calling…", "End call")))
+    }
+
+    @Test fun recognizesGroupTitleAlongsideExplicitParticipantLabels() {
+        assertEquals("Chachi Renou & Mom Orange",
+            VoipAccessibilityCallerPolicy.uniqueCallerName(listOf(
+                "Mute", "End call", "Add people", "Participants",
+                "Chachi Renou & Mom Orange",
+                "Chachi Renou", "Mom Orange", "00:12")))
+        assertEquals("Vicky Petit Sable Orange & Mom",
+            VoipAccessibilityCallerPolicy.uniqueCallerName(listOf(
+                "Vicky Petit Sable Orange & Mom", "Vicky Petit Sable Orange", "Mom", "End call")))
+        assertEquals("Mom et Vicky",
+            VoipAccessibilityCallerPolicy.uniqueCallerName(listOf(
+                "Mom et Vicky", "Mom", "Vicky", "End call")))
+    }
+
+    @Test fun rejectsAmbiguousGroupsAndParallelCallIdentities() {
+        assertNull(VoipAccessibilityCallerPolicy.uniqueCallerName(listOf(
+            "Chachi Renou & Mom Orange", "Chachi Renou", "Mom Orange", "Other caller")))
+        assertNull(VoipAccessibilityCallerPolicy.uniqueCallerName(listOf(
+            "Chachi Renou", "Mom Orange", "End call")))
+        assertNull(VoipAccessibilityCallerPolicy.uniqueCallerName(listOf(
+            "Mom & Vicky", "Mom & Chachi", "End call")))
     }
 
     @Test fun acceptsActualNamesWithoutTreatingThemAsPhoneNumbers() {

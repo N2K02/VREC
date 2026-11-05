@@ -31,7 +31,7 @@ object CallMetadataResolver {
 
     /** Call-state text is not a contact, even when it appears in EXTRA_TITLE. */
     private val genericVoipNarrative = Regex(
-        "^(?:(?:whatsapp(?: business)?|telegram|signal|messenger|viber)\\s+)?(?:(?:incoming|outgoing|ongoing|missed)\\s+)?(?:(?:voice|video|audio)\\s+)?(?:call|calling|ringing)(?:\\s+(?:in progress|ongoing))?$"
+        "^(?:(?:whatsapp(?: business)?|telegram|signal|messenger|viber)\\s+)?(?:(?:incoming|outgoing|ongoing|missed)\\s+)?(?:(?:group|conference)\\s+)?(?:(?:voice|video|audio)\\s+)?(?:call|calling|ringing)(?:\\s+(?:in progress|ongoing))?$"
     )
     private val genericDirectionNarrative = Regex(
         "^(?:incoming|outgoing|ongoing|missed)(?:\\s+(?:voice|video|audio))?\\s+call(?:\\s+(?:from|to|with)\\s+.+)?$"

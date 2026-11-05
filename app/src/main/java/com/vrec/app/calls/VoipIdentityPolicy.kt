@@ -10,11 +10,21 @@ internal object VoipIdentityPolicy {
         // A generic status title must never displace a verified caller name.
         if (CallMetadataResolver.cleanAppName(candidate) == null) return false
         fun rank(value: String?) = when (value) {
-            "notification" -> 3 // App's call title may contain a whole group.
+            "notification", "accessibility" -> 3 // Verified active-call titles can change.
             "telecom" -> 2
             else -> 0
         }
         return current.isNullOrBlank() || rank(source) >= rank(currentSource)
+    }
+
+    /** Observed call titles, including group expansion and participants leaving.
+     * Ignore placeholders, repetitions and casing-only changes; bound stored history.
+     */
+    fun updatedNameHistory(history: List<String>, candidate: String?): List<String> {
+        val name = CallMetadataResolver.cleanAppName(candidate) ?: return history
+        if (history.lastOrNull()?.equals(name, ignoreCase = true) == true) return history
+        return if (history.size < 20) history + name
+            else listOf(history.first()) + history.drop(2).takeLast(18) + name
     }
 
     /** Accept explicit numbers only; never split names or infer participants from contacts. */

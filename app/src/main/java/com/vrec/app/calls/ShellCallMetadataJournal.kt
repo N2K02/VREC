@@ -23,6 +23,7 @@ object ShellCallMetadataJournal {
         val key: String? = null,
         val originalCallerName: String? = null,
         val phoneNumbers: List<String> = emptyList(),
+        val callNameHistory: List<String> = emptyList(),
     )
     private fun file(context: Context) = File(context.filesDir, "shell_call_metadata.json")
     internal const val WINDOW_MS = 90_000L
@@ -124,6 +125,11 @@ object ShellCallMetadataJournal {
         optJSONArray("phoneNumbers")?.let { a ->
             VoipIdentityPolicy.numbers((0 until a.length()).map { a.optString(it) })
         }.orEmpty(),
+        optJSONArray("callNameHistory")?.let { names ->
+            (0 until names.length()).fold(emptyList<String>()) { history, index ->
+                VoipIdentityPolicy.updatedNameHistory(history, names.optString(index))
+            }
+        }.orEmpty(),
     )
 
     /** Called only for a generic shell filename; legacy journal entries are
@@ -152,7 +158,8 @@ object ShellCallMetadataJournal {
                                flowDirection: CallDirection = CallDirection.UNKNOWN,
                                mediaType: String? = null,
                                originalCallerName: String? = null,
-                               phoneNumbers: List<String> = emptyList()) {
+                               phoneNumbers: List<String> = emptyList(),
+                               callNameHistory: List<String> = emptyList()) {
         if (direction !in setOf(CallDirection.VOIP, CallDirection.INCOMING,
                 CallDirection.OUTGOING) || startedAt <= 0L) return
         val entries = load(context)
@@ -169,6 +176,17 @@ object ShellCallMetadataJournal {
             .put("appPackage", preferred(appPackage, existing?.optString("appPackage")))
             .put("name", preferred(name, existing?.optString("name")))
             .put("originalCallerName", preferred(originalCallerName, existing?.optString("originalCallerName")))
+            .put("callNameHistory", JSONArray(
+                (callNameHistory.ifEmpty {
+                    listOfNotNull(originalCallerName)
+                }).fold(
+                    existing?.optJSONArray("callNameHistory")?.let { names ->
+                        (0 until names.length()).fold(emptyList<String>()) { acc, index ->
+                            VoipIdentityPolicy.updatedNameHistory(acc, names.optString(index))
+                        }
+                    }.orEmpty(),
+                ) { acc, name -> VoipIdentityPolicy.updatedNameHistory(acc, name) }
+            ))
             .put("phoneNumbers", JSONArray(VoipIdentityPolicy.numbers(phoneNumbers,
                 existing?.optJSONArray("phoneNumbers")?.let { a ->
                     (0 until a.length()).map { a.optString(it) }
