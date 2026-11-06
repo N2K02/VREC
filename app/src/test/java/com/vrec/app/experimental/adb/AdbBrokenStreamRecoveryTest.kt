@@ -48,4 +48,11 @@ class AdbBrokenStreamRecoveryTest {
         assertTrue(!watchdog.contains("if (manager === mgr) manager = null"))
     }
 
+
+    @Test fun verifiedSharedLibraryUpgradeKeepsAdbRecoveryBuildable() {
+        val build = listOf(File("app/build.gradle.kts"), File("../app/build.gradle.kts"))
+            .first { it.isFile }.readText()
+        assertTrue("Expected approved shared theme", build.contains("dev.n2k02:theme:0.1.5"))
+        assertTrue("Expected approved shared updater", build.contains("dev.n2k02:updater:0.1.20"))
+    }
 }
