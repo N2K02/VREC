@@ -116,13 +116,13 @@ val bundleVrecShellDaemon = tasks.register<Copy>("bundleVrecShellDaemon") {
     into(layout.projectDirectory.dir("src/main/assets"))
 }
 // Both classpaths must package the Material 3 ABI used by n2k02theme/updater.
-// Compilation alone is not enough: a mismatched runtime causes NoSuchMethodError
+// Compilation alone is not enough: a mismatched runtime can cause NoSuchMethodError
 // only when the recording overflow's ModalBottomSheet is first shown.
 val verifyComposeMaterial3RuntimeAbi = tasks.register("verifyComposeMaterial3RuntimeAbi") {
     group = "verification"
     description = "Fail the build if Material 3's compile and runtime versions diverge"
     doLast {
-        val expected = "1.5.0-beta01"
+        val expected = "1.5.0-beta02"
         listOf("debugCompileClasspath", "debugRuntimeClasspath").forEach { configurationName ->
             val selectedVersions = configurations.getByName(configurationName)
                 .incoming.resolutionResult.allComponents
