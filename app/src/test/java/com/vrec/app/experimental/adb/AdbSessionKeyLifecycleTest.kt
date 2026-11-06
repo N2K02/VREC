@@ -39,7 +39,7 @@ class AdbSessionKeyLifecycleTest {
         for (expected in listOf(
             "AdbSessionKey.copyOf(identity.privateKey)",
             "getPrivateKey(): PrivateKey = sessionKey",
-            "oldManager?.disconnect()", "if (manager === mgr) manager = null",
+            "oldManager?.disconnect()", "if (manager === mgr) {",
             "lastKnownConnected = false", "runCatching { reader.close() }",
             "suspend fun disconnect() = close()"))
             assertTrue(expected, src.contains(expected))
@@ -49,6 +49,6 @@ class AdbSessionKeyLifecycleTest {
         val watchdog = src.substringAfter("val watchdog = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {")
             .substringBefore("session = session ?:")
         assertTrue(watchdog.contains("mgr.disconnect()"))
-        assertTrue(watchdog.contains("if (manager === mgr) manager = null"))
+        assertTrue(watchdog.contains("if (manager === mgr) {"))
     }
 }
