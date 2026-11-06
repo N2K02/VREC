@@ -46,7 +46,7 @@ class AdbSessionKeyLifecycleTest {
         assertFalse(src.contains("mgr.close()"))
         assertFalse(src.contains("manager?.close()"))
         assertFalse(src.contains("getPrivateKey(): PrivateKey = identity.privateKey"))
-        val watchdog = src.substringAfter("val watchdog = launch {")
+        val watchdog = src.substringAfter("val watchdog = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {")
             .substringBefore("session = session ?:")
         assertTrue(watchdog.contains("mgr.disconnect()"))
         assertTrue(watchdog.contains("if (manager === mgr) manager = null"))
