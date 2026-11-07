@@ -96,6 +96,7 @@ dependencies {
 dependencies {
     implementation("dev.n2k02:theme:0.1.5")
         implementation("dev.n2k02:updater:0.1.20")
+    implementation("dev.n2k02:adb-core:0.1.1")
 }
 
 
