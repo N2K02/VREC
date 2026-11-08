@@ -125,7 +125,7 @@ fun SettingsScreen(
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
                 Triple("Audio source", "Enhanced SIM capture source and diagnostics", Icons.Rounded.Tune),
                 Triple("ADB connection", "Automatic pairing, reboot recovery and network access", Icons.Rounded.Settings),
-                Triple("ADB diagnostics", "Live shell UID, transport and reconnect status", Icons.Rounded.BugReport),
+                Triple("ADB diagnostics", "Live shell UID, transport and reconnect status", Icons.Rounded.Info),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
