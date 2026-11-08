@@ -54,7 +54,7 @@ class HomeDashboardVisualContractTest {
         val setup = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(main.contains("RecordingMasterCard("))
         assertTrue(main.contains("ManualRecordingCard("))
-        assertTrue(main.contains("onEnabledChange = onEnabledChange"))
+        assertTrue(main.contains("onEnabledChange = { enabled ->"))
         assertTrue(adb.contains("Text(\"Start\")"))
         assertTrue(adb.contains("Text(\"Stop\")"))
         assertTrue(adb.contains("Text(\"Restart\")"))
