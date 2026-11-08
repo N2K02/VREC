@@ -82,7 +82,7 @@ class AdbRecoveryPreferencesContractTest {
         val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
         assertTrue(settings.contains("if (section == \"ADB connection\")"))
         assertTrue(settings.contains("dev.n2k02.adb.core.AdbConnectionSettingsPage("))
-        assertTrue(settings.contains("dev.n2k02.adb.core.AdbDiagnosticsPage(shared)"))
+        assertFalse(settings.contains("dev.n2k02.adb.core.AdbDiagnosticsPage(shared)"))
         assertTrue(adapter.contains("AdbOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)"))
         assertTrue(adapter.contains("AdbOption.START_ON_BOOT -> {"))
         assertTrue(adapter.contains("AdbUserChoices.setStartOnBoot(app, enabled)"))
