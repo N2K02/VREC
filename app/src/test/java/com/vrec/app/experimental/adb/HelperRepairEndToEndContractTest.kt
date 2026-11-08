@@ -98,12 +98,13 @@ class HelperRepairEndToEndContractTest {
         assertTrue(warnings.contains("RecordingWarningPolicy.clearAfterHelperRecovered(warning.value)"))
         assertTrue(policy.contains("currentWarning == HELPER_START_FAILURE"))
         assertTrue(policy.contains("currentWarning != null && !persistent"))
-        assertFalse(warnings.contains("fun clearAfterHelperRecovered(context: Context) {
-        dismiss(context)"))
+        assertFalse(warnings.contains("fun clearAfterHelperRecovered(context: Context) {\n        dismiss(context)"))
     }
 
     @Test fun consentedTcpModeAndRecoveryMustReverifyLiveShellUid() {
         val transport = code("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
         assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
@@ -119,8 +120,7 @@ class HelperRepairEndToEndContractTest {
         assertTrue(lifecycle.contains("LocalWirelessAdb.shutdown(app)"))
         assertTrue(lifecycle.contains("AdbForegroundSetup.shutdown()"))
         assertTrue(foreground.contains("scope.coroutineContext.cancelChildren()"))
-        assertFalse(home.contains("LaunchedEffect(Unit) {
-        LocalAdbMiddleware.setup("))
+        assertFalse(home.contains("LaunchedEffect(Unit) {\n        LocalAdbMiddleware.setup("))
         assertTrue(home.contains("finishAndRemoveTask()"))
     }
 }

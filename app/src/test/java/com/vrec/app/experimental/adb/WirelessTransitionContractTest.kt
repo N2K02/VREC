@@ -3,6 +3,7 @@ package com.vrec.app.experimental.adb
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** One wireless transition at a time; stale discovery callbacks can't act. */
