@@ -83,15 +83,15 @@ fun AdbDashboard(
     val allReady = healthy && recordingOn && !busy
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(18.dp),
             color = HomePanelStyle.color(highlight = allReady),
             border = HomePanelStyle.border(highlight = allReady),
             shadowElevation = 2.dp,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -100,7 +100,7 @@ fun AdbDashboard(
                     Surface(
                         shape = RoundedCornerShape(15.dp),
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        modifier = Modifier.size(46.dp),
+                        modifier = Modifier.size(34.dp),
                     ) {
                         androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                             Icon(if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
@@ -108,12 +108,12 @@ fun AdbDashboard(
                                 tint = if (allReady) {
                                     if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
                                 } else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp))
+                                modifier = Modifier.size(20.dp))
                         }
                     }
                     Column(modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("System Status", style = MaterialTheme.typography.titleMedium,
+                        Text("System Status", style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold)
                         Text(
                             when {
@@ -163,7 +163,7 @@ fun AdbDashboard(
                     onStart()
                 },
                 enabled = !busy && !recordingActive && !healthy,
-                modifier = Modifier.weight(1f).height(44.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Start") }
             Button(
                 onClick = {
@@ -178,7 +178,7 @@ fun AdbDashboard(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 ),
-                modifier = Modifier.weight(1f).height(44.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Stop") }
             Button(
                 onClick = {
@@ -206,7 +206,7 @@ fun AdbDashboard(
                     }
                 },
                 enabled = !busy && !recordingActive && healthy && canReconnect,
-                modifier = Modifier.weight(1f).height(44.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
             ) { Text("Restart") }
         }
         if (recordingActive) Text("Helper controls are temporarily disabled during an active recording.",
@@ -253,9 +253,9 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
         border = BorderStroke(0.75.dp, accent.copy(alpha = 0.28f)),
     ) {
         Column(
-            Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
+            Modifier.padding(horizontal = 3.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Icon(
                 imageVector = when (label) {
@@ -266,7 +266,7 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
                 },
                 tint = accent,
                 contentDescription = null,
-                modifier = Modifier.size(17.dp),
+                modifier = Modifier.size(15.dp),
             )
             Text(
                 label,
