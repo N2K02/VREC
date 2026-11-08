@@ -39,6 +39,6 @@ class AdbBrokenStreamRecoveryTest {
             .first { it.isFile }.readText()
         assertTrue(build.contains("dev.n2k02:theme:0.1.5"))
         assertTrue(build.contains("dev.n2k02:updater:0.1.20"))
-        assertTrue(build.contains("dev.n2k02:adb-core:0.1.6"))
+        assertTrue(build.contains("dev.n2k02:adb-core:0.1.7"))
     }
 }

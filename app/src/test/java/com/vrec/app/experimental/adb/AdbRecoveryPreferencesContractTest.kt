@@ -77,15 +77,18 @@ class AdbRecoveryPreferencesContractTest {
         assertTrue(home.indexOf("ADB connection ports") < home.indexOf("if (healthy) {"))
     }
 
-    @Test fun switchesAreUnderTheExistingSettingsConnectionSubmenu() {
+    @Test fun switchesAreDelegatedToTheSharedAdbSettingsPage() {
         val settings = source("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
         assertTrue(settings.contains("if (section == \"ADB connection\")"))
-        assertTrue(settings.contains("\"Connection watchdog\""))
-        assertTrue(settings.contains("\"Start on boot\""))
-        assertTrue(settings.contains("AdbLifecycle.configureWatchdog(context, enabled)"))
-        assertTrue(settings.contains("AdbUserChoices.setStartOnBoot(context, enabled)"))
-        assertTrue(settings.contains("AdbSecurityChoices()"))
-        assertTrue(settings.contains("AdbPairingRecoveryChoices()"))
+        assertTrue(settings.contains("dev.n2k02.adb.core.AdbConnectionSettingsPage("))
+        assertTrue(settings.contains("dev.n2k02.adb.core.AdbDiagnosticsPage(shared)"))
+        assertTrue(adapter.contains("AdbOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)"))
+        assertTrue(adapter.contains("AdbOption.START_ON_BOOT -> {"))
+        assertTrue(adapter.contains("AdbUserChoices.setStartOnBoot(app, enabled)"))
+        assertTrue(adapter.contains("onRestoreAfterRestartChanged(enabled: Boolean)"))
+        assertFalse(settings.contains("AdbSecurityChoices()"))
+        assertFalse(settings.contains("AdbPairingRecoveryChoices()"))
         assertFalse(settings.contains("AdbSetupProgressCard("))
     }
 }

@@ -9,7 +9,7 @@ import kotlinx.coroutines.CancellationException
 /**
  * Compatibility API for VRec's capture helper. All ADB sockets, pairing,
  * shell streams, UID verification, deadlines and TCP transitions are owned by
- * n2k02AdbCoreLibrary. Never create a second AbsAdbConnectionManager here.
+ * n2k02AdbCoreLibrary. Never create a second native libadb manager in this app.
  */
 object AdbTransport {
     const val LOOPBACK = "127.0.0.1"
