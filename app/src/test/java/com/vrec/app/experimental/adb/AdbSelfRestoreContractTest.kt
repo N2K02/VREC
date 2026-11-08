@@ -41,14 +41,16 @@ class AdbSelfRestoreContractTest {
         assertFalse(restore.contains("\"adb_enabled\""))
     }
 
-    @Test fun tcpSwitchFollowsUserPreferenceAndReadyNeedsHelper() {\n        val bridge = read("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+    @Test fun tcpSwitchFollowsUserPreferenceAndReadyNeedsHelper() {
+        val bridge = read("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         val facade = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(bridge.contains("adb.setOption(AdbOption.TCP_5555, true)"))
         assertTrue(bridge.contains("adb.retry(auto = true)"))
         assertTrue(bridge.contains("AdbTransportMode.LOCAL_TCP_5555"))
         assertTrue(facade.contains("AdbLifecycle.requestRecovery(app"))
         assertTrue(read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
-            .contains("startHelperTyped(context, manualRepair = !automatic)"))\n    }
+            .contains("startHelperTyped(context, manualRepair = !automatic)"))
+    }
 
     @Test fun recoveryUsesTypedFailuresAndNeverClearsTheManualRetryLatch() {
         assertFalse(recovery.contains("allowManualRetry"))

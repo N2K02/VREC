@@ -12,26 +12,26 @@ class WirelessTransitionContractTest {
         .first { it.isFile }.readText()
 
     @Test fun everyConnectGoesThroughTheSingleFlightLock() {
-        // connectWireless is only called from connectAndSwitch...
-        assertEquals(1, Regex("ExperimentalRecording\\.connectWireless\\(").findAll(src).count())
-        // ...which runs under the transition lock from discovery, pairing and Retry.
-        assertTrue(src.contains("if (!transition.tryLock()) return@launch"))
-        assertTrue(src.contains("scope.launch { transition.withLock {"))
-        assertTrue(src.contains("AdbLifecycle.coordinateSetup {"))
-        assertTrue(src.contains("transition.withLock {\n                AdbLifecycle.coordinateSetup {"))
-        // Cached-port reconnect and fresh-port fallback also run under the single-flight lock.
-        assertEquals(5, Regex("connectAndSwitch\\((app|context)[,.]").findAll(src).count())
+        assertTrue(src.contains("val adb = SharedAdbHostAdapter.core(app)"))
+        assertTrue(src.contains("if (!owning)"))
+        assertTrue(src.contains("adb.acquireService()"))
+        assertTrue(src.contains("adb.state.collect"))
+        assertFalse(src.contains("ExperimentalRecording.connectWireless("))
+        assertFalse(src.contains("NsdManager"))
     }
 
     @Test fun staleCallbacksAreRejectedAfterStop() {
-        assertTrue(src.contains("fun stale() = session != searchSession || !attached"))
-        assertEquals(4, Regex("if \\(stale\\(\\)\\) return\\n").findAll(src).count())
-        assertTrue(src.substringAfter("fun stop(").contains("searchSession++"))
+        assertTrue(src.contains("observing?.cancel()"))
+        assertTrue(src.contains("observedCore?.releaseService()"))
+        assertTrue(src.contains("observedCore = null"))
+        assertTrue(src.contains("if (AdbLifecycle.quitting || AdbUserChoices.manuallyStopped(app)) return"))
     }
 
     @Test fun failuresEndInRecoveryRequiredWhichBlocksAutoConnect() {
-        assertTrue(src.contains("enum class Phase { IDLE, SEARCHING, PAIRING, CONNECTING, SWITCHING, VERIFYING_TCP, READY, RECOVERY_REQUIRED }"))
-        assertTrue(src.contains("status.value.phase != Phase.RECOVERY_REQUIRED"))
-        assertTrue(src.contains("phase = Phase.READY, message"))
+        assertTrue(src.contains("RECOVERY_REQUIRED"))
+        assertTrue(src.contains("AdbPhase.NEEDS_SETUP -> Phase.RECOVERY_REQUIRED"))
+        assertTrue(src.contains("s.phase == AdbPhase.PAIRING"))
+        assertTrue(src.contains("s.connected"))
+        assertFalse(src.contains("private val transition = Mutex()"))
     }
 }

@@ -98,16 +98,19 @@ class HelperRepairEndToEndContractTest {
         assertTrue(warnings.contains("RecordingWarningPolicy.clearAfterHelperRecovered(warning.value)"))
         assertTrue(policy.contains("currentWarning == HELPER_START_FAILURE"))
         assertTrue(policy.contains("currentWarning != null && !persistent"))
-        assertFalse(warnings.contains("fun clearAfterHelperRecovered(context: Context) {\n        dismiss(context)"))
+        assertFalse(warnings.contains("fun clearAfterHelperRecovered(context: Context) {
+        dismiss(context)"))
     }
 
-    @Test fun consentedTcpModeAndRecoveryMustReverifyLiveShellUid() {\n        val transport = code("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+    @Test fun consentedTcpModeAndRecoveryMustReverifyLiveShellUid() {
+        val transport = code("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
         assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
         assertTrue(link.contains("verifyShellUid()"))
         assertTrue(recovery.contains("reconnectTcp(app, automatic = true)"))
-        assertTrue(recovery.contains("if (ExperimentalRecording.awaitingManualRetry)"))\n    }
+        assertTrue(recovery.contains("if (ExperimentalRecording.awaitingManualRetry)"))
+    }
 
     @Test fun quitAndNavigationCannotLeaveCompetingBackgroundPairingJobs() {
         val lifecycle = code("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
@@ -116,7 +119,8 @@ class HelperRepairEndToEndContractTest {
         assertTrue(lifecycle.contains("LocalWirelessAdb.shutdown(app)"))
         assertTrue(lifecycle.contains("AdbForegroundSetup.shutdown()"))
         assertTrue(foreground.contains("scope.coroutineContext.cancelChildren()"))
-        assertFalse(home.contains("LaunchedEffect(Unit) {\n        LocalAdbMiddleware.setup("))
+        assertFalse(home.contains("LaunchedEffect(Unit) {
+        LocalAdbMiddleware.setup("))
         assertTrue(home.contains("finishAndRemoveTask()"))
     }
 }

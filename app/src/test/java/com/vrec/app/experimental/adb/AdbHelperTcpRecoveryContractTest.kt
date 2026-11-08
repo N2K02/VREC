@@ -9,13 +9,15 @@ class AdbHelperTcpRecoveryContractTest {
     private fun source(path: String): String =
         listOf(File(path), File("../$path")).first { it.isFile }.readText()
 
-    @Test fun wirelessTcpPromotesTransportBeforeAnyHelperStartup() {\n        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+    @Test fun wirelessTcpPromotesTransportBeforeAnyHelperStartup() {
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         val recorder = source("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         assertTrue(adapter.contains("adb.setOption(AdbOption.TCP_5555, true)"))
         assertTrue(adapter.contains("adb.retry(auto = true)"))
         assertTrue(adapter.contains("AdbTransportMode.LOCAL_TCP_5555"))
         assertTrue(recorder.contains("deferHelperUntilTcp"))
-        assertTrue(adapter.contains("execVerified(command, timeoutMs)"))\n    }
+        assertTrue(adapter.contains("execVerified(command, timeoutMs)"))
+    }
 
     @Test fun startButtonDoesNotTrustAnOldUidBadge() {
         val dashboard = source("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")

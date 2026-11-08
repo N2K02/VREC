@@ -34,7 +34,8 @@ class AdbSessionKeyLifecycleTest {
         assertTrue(src.contains("previous.activePort == port"))
     }
 
-    @Test fun timeoutAndShutdownRetireManagersWithoutDestroyingCachedKey() {\n        val transport = code()
+    @Test fun timeoutAndShutdownRetireManagersWithoutDestroyingCachedKey() {
+        val transport = code()
         val adapter = listOf(File("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt"),
             File("../app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt"))
             .first { it.isFile }.readText()
@@ -44,5 +45,6 @@ class AdbSessionKeyLifecycleTest {
         assertTrue(adapter.contains("CoreIdentity(existing.privateKey, existing.certificate)"))
         assertTrue(adapter.contains("LibAdbWire(app, identity"))
         assertFalse(transport.contains("AbsAdbConnectionManager"))
-        assertFalse(transport.contains("manager?.close()"))\n    }
+        assertFalse(transport.contains("manager?.close()"))
+    }
 }

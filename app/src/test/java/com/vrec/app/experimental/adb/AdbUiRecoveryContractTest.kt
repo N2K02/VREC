@@ -23,7 +23,8 @@ class AdbUiRecoveryContractTest {
         assertTrue(foreground.contains("AdbLifecycle.coordinateSetup {"))
     }
 
-    @Test fun foregroundAndBackgroundRecoveryShareCoordinator() {\n        val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
+    @Test fun foregroundAndBackgroundRecoveryShareCoordinator() {
+        val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(lifecycle.contains("transportMutex.withLock { block() }"))
@@ -31,9 +32,11 @@ class AdbUiRecoveryContractTest {
         assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
         assertTrue(wireless.contains("adb.state.collect"))
         assertTrue(transport.contains("SharedAdbHostAdapter.current()"))
-        assertFalse(wireless.contains("NsdManager"))\n    }
+        assertFalse(wireless.contains("NsdManager"))
+    }
 
-    @Test fun tcpSwitchIsDefaultWithUserOptOutAndNetworkWarning() {\n        val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
+    @Test fun tcpSwitchIsDefaultWithUserOptOutAndNetworkWarning() {
+        val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
         val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
@@ -41,7 +44,8 @@ class AdbUiRecoveryContractTest {
         assertTrue(adapter.contains("AdbOption.TCP_5555 -> AdbUserChoices.tcpMode(app)"))
         assertTrue(ui.contains("AdbHomeSetupPage("))
         assertTrue(wireless.contains("CallMonitor.hasLiveCall()"))
-        assertFalse(ui.contains("Enter pairing code"))\n    }
+        assertFalse(ui.contains("Enter pairing code"))
+    }
 
     @Test fun detachedHelperDoesNotFalselyShowVerifiedShellUid() {
         val dashboard = source("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")

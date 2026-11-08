@@ -56,13 +56,15 @@ class AdbStartupCancellationRegressionTest {
         assertTrue(daemon.contains("if (it is CancellationException) throw it"))
     }
 
-    @Test fun queuedWirelessRepairCannotAcceptDuplicateStart() {\n        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+    @Test fun queuedWirelessRepairCannotAcceptDuplicateStart() {
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val foreground = source("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
         assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
         assertTrue(wireless.contains("if (!owning)"))
         assertTrue(wireless.contains("adb.acquireService()"))
         assertTrue(wireless.contains("sharedCore") || wireless.contains("adb.retry(auto = false)"))
-        assertTrue(foreground.contains("starting.compareAndSet(false, true)"))\n    }
+        assertTrue(foreground.contains("starting.compareAndSet(false, true)"))
+    }
 
     @Test fun stagedJarChecksShellReadabilityAndCleansTemporaryDownload() {
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")

@@ -44,7 +44,8 @@ class AdbRecoveryExtensionsTest {
             43210, 65536, setOf(43210), AdbFailure.CONNECTION_LOST))
     }
 
-    @Test fun discoveryKeepsWatchingUntilAuthorizedTransportSucceeds() {\n        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+    @Test fun discoveryKeepsWatchingUntilAuthorizedTransportSucceeds() {
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
@@ -52,14 +53,17 @@ class AdbRecoveryExtensionsTest {
         assertTrue(wireless.contains("adb.state.collect"))
         assertTrue(adapter.contains("LocalAdbDiscovery(app)"))
         assertTrue(transport.contains("adb.connectTls(port)"))
-        assertFalse(wireless.contains("NsdManager"))\n    }
+        assertFalse(wireless.contains("NsdManager"))
+    }
 
-    @Test fun tcpSwitchTreatsStreamResetAsUncertainUntilNewUidIsVerified() {\n        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+    @Test fun tcpSwitchTreatsStreamResetAsUncertainUntilNewUidIsVerified() {
+        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
         assertTrue(transport.contains("adb.retry(auto = true)"))
         assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
-        assertFalse(transport.contains("mgr.openStream("))\n    }
+        assertFalse(transport.contains("mgr.openStream("))
+    }
 
     @Test fun watchdogAndBootRecoveryHonorQuitAndShareSingleFlight() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
@@ -83,7 +87,8 @@ class AdbRecoveryExtensionsTest {
         assertTrue(activity.contains("AdbUserChoices.setManuallyStopped(applicationContext, false)"))
     }
 
-    @Test fun automaticPairingDefaultsOnButStillRequiresEnabledSettingsAccessibility() {\n        val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
+    @Test fun automaticPairingDefaultsOnButStillRequiresEnabledSettingsAccessibility() {
+        val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
         val service = source("app/src/main/java/com/vrec/app/calls/VrecAccessibilityService.kt")
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
@@ -94,5 +99,6 @@ class AdbRecoveryExtensionsTest {
         assertTrue(wireless.contains("adb.pair(port, code)"))
         assertTrue(ui.contains("AdbHomeSetupPage("))
         assertFalse(ui.contains("OutlinedTextField"))
-        assertFalse(wireless.contains("RemoteInput"))\n    }
+        assertFalse(wireless.contains("RemoteInput"))
+    }
 }

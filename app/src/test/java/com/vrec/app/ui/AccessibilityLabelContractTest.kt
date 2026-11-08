@@ -16,10 +16,12 @@ class AccessibilityLabelContractTest {
         assertTrue(manifest.contains("android:label=\"@string/accessibility_label\""))
     }
 
-    @Test fun wifiPairingPermissionsAreNotDeclared() {\n        val manifest = read("app/src/main/AndroidManifest.xml")
+    @Test fun wifiPairingPermissionsAreNotDeclared() {
+        val manifest = read("app/src/main/AndroidManifest.xml")
         val activity = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         assertTrue(manifest.contains("android.permission.ACCESS_LOCAL_NETWORK"))
         assertTrue(activity.contains("AdbNetworkAccess.requiresPermission(this)"))
         assertTrue(activity.contains("AdbNetworkAccess.granted(this)"))
-        assertTrue(!manifest.contains("android.permission.NEARBY_WIFI_DEVICES"))\n    }
+        assertTrue(!manifest.contains("android.permission.NEARBY_WIFI_DEVICES"))
+    }
 }

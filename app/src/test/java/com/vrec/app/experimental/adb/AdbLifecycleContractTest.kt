@@ -10,7 +10,8 @@ class AdbLifecycleContractTest {
     private fun read(path: String) = listOf(File(path), File("../$path"))
         .firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
 
-    @Test fun quitStopsRecoveryListenersDiscoveryAndSession() {\n        val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
+    @Test fun quitStopsRecoveryListenersDiscoveryAndSession() {
+        val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val lifecycle = read("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
         val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(main.contains("AdbLifecycle.quit(app)"))
@@ -23,7 +24,8 @@ class AdbLifecycleContractTest {
         assertTrue(lifecycle.contains("SharedAdbHostAdapter.shutdown()"))
         assertTrue(lifecycle.contains("withContext(NonCancellable + Dispatchers.IO)"))
         assertTrue(wireless.contains("observing?.cancel()"))
-        assertTrue(wireless.contains("observedCore?.releaseService()"))\n    }
+        assertTrue(wireless.contains("observedCore?.releaseService()"))
+    }
 
     @Test fun setupPropagatesCancellationInsteadOfReportingFailure() {
         val mw = read("app/src/main/java/com/vrec/app/experimental/adb/LocalAdbMiddleware.kt")
