@@ -125,7 +125,6 @@ fun SettingsScreen(
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
                 Triple("Audio source", "Enhanced SIM capture source and diagnostics", Icons.Rounded.Tune),
                 Triple("ADB connection", "Automatic pairing, reboot recovery and network access", Icons.Rounded.Settings),
-                Triple("ADB diagnostics", "Live shell UID, transport and reconnect status", Icons.Rounded.Article),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -179,13 +178,12 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "ADB connection" || section == "ADB diagnostics") {
+        if (section == "ADB connection") {
             val shared = remember(context.applicationContext) {
                 com.vrec.app.experimental.adb.SharedAdbHostAdapter.core(context)
             }
             dev.n2k02.adb.core.AdbPageLifecycle(shared)
-            if (section == "ADB connection") {
-                dev.n2k02.adb.core.AdbConnectionSettingsPage(
+            dev.n2k02.adb.core.AdbConnectionSettingsPage(
                     adb = shared,
                     accessibilityEnabled = remember(resumeTick) {
                         VrecAccessibilityService.isEnabled(context)
@@ -197,9 +195,6 @@ fun SettingsScreen(
                         )
                     },
                 )
-            } else {
-                dev.n2k02.adb.core.AdbDiagnosticsPage(shared)
-            }
         }
 
         if (section == "Audio source") {
