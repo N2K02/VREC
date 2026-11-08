@@ -15,6 +15,12 @@ class AdbStartupCancellationRegressionTest {
         listOf(File(path), File("../$path")).firstOrNull { it.isFile }?.readText()
             ?: error("Missing source: $path")
 
+    @Test fun activityRecreationCannotReverseExplicitAdbStop() {
+        val activity = source("app/src/main/java/com/vrec/app/MainActivity.kt")
+        assertTrue(activity.contains("if (savedInstanceState == null) {"))
+        assertTrue(activity.contains("AdbUserChoices.setManuallyStopped(applicationContext, false)"))
+    }
+
     @Test fun homeAndPermissionCardShareAppOwnedStart() {
         val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         val permissions = source("app/src/main/java/com/vrec/app/ui/PermissionDashboardCard.kt")
