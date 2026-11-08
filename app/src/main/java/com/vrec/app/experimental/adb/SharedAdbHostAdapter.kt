@@ -3,6 +3,7 @@ package com.vrec.app.experimental.adb
 import android.content.Context
 import dev.n2k02.adb.core.AdbCore
 import dev.n2k02.adb.core.AdbCoreRegistry
+import dev.n2k02.adb.core.AdbHostHooks
 import dev.n2k02.adb.core.AdbIdentity as CoreIdentity
 import dev.n2k02.adb.core.AdbIdentitySource
 import dev.n2k02.adb.core.AdbOption
@@ -38,7 +39,15 @@ internal object SharedAdbHostAdapter {
             val existing = AdbIdentity.getOrCreate(ctx)
             CoreIdentity(existing.privateKey, existing.certificate)
         }
-        return AdbCore(LibAdbWire(app, identity, "VREC"), Choices(app), LocalAdbDiscovery(app))
+        return AdbCore(
+            LibAdbWire(app, identity, "VREC"), Choices(app), LocalAdbDiscovery(app),
+            object : AdbHostHooks {
+                override suspend fun onRestoreAfterRestartChanged(enabled: Boolean) {
+                    if (enabled) AdbSelfRecovery.grantSecureSettings(app)
+                    else AdbSelfRecovery.revokeSecureSettings(app)
+                }
+            },
+        )
     }
 
     private class Choices(private val app: Context) : AdbPreferenceStore {
@@ -53,8 +62,11 @@ internal object SharedAdbHostAdapter {
         override fun setEnabled(option: AdbOption, enabled: Boolean) {
             when (option) {
                 AdbOption.AUTO_PAIR -> AdbUserChoices.setAutoPairCode(app, enabled)
-                AdbOption.WATCHDOG -> AdbUserChoices.setConnectionWatchdog(app, enabled)
-                AdbOption.START_ON_BOOT -> AdbUserChoices.setStartOnBoot(app, enabled)
+                AdbOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)
+                AdbOption.START_ON_BOOT -> {
+                    AdbUserChoices.setStartOnBoot(app, enabled)
+                    AdbLifecycle.configureWatchdog(app, AdbUserChoices.connectionWatchdog(app))
+                }
                 AdbOption.RESTORE_AFTER_RESTART -> AdbUserChoices.setRestoreAfterRestart(app, enabled)
                 AdbOption.TCP_5555 -> AdbUserChoices.setTcpMode(app, enabled)
             }
