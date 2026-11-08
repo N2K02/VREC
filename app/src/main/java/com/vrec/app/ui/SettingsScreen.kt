@@ -179,8 +179,22 @@ fun SettingsScreen(
         }
 
         if (section == "ADB connection") {
-            AdbPairingRecoveryChoices()
-            AdbSecurityChoices()
+            val shared = remember(context.applicationContext) {
+                com.vrec.app.experimental.adb.SharedAdbHostAdapter.core(context)
+            }
+            dev.n2k02.adb.core.AdbPageLifecycle(shared)
+            dev.n2k02.adb.core.AdbConnectionSettingsPage(
+                    adb = shared,
+                    accessibilityEnabled = remember(resumeTick) {
+                        VrecAccessibilityService.isEnabled(context)
+                    },
+                    onOpenAccessibility = {
+                        context.startActivity(
+                            Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    },
+                )
         }
 
         if (section == "Audio source") {
@@ -302,156 +316,4 @@ private fun SourceOption(label: String, value: String, selected: String, onSelec
         RadioButton(selected = selected == value, onClick = { onSelect(value) })
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
     }
-}
-
-
-
-/**
- * One dedicated Settings submenu for ADB resilience preferences. The existing
- * Home screen remains the only first-time setup/authorization entry point.
- * Watchdog and stale-port discovery are intentionally automatic, not extra
- * independent switches which could silently disable recording recovery.
- */
-@Composable
-private fun AdbPairingRecoveryChoices() {
-    val context = LocalContext.current
-    val resumeTick = rememberOnResumeTick()
-    val accessibilityEnabled = remember(resumeTick) {
-        VrecAccessibilityService.isEnabled(context)
-    }
-    var autoPair by remember { mutableStateOf(AdbUserChoices.autoPairCode(context)) }
-    var watchdogEnabled by remember { mutableStateOf(AdbUserChoices.connectionWatchdog(context)) }
-    var bootEnabled by remember { mutableStateOf(AdbUserChoices.startOnBoot(context)) }
-
-    SettingCard("Pairing & recovery") {
-        ToggleRow(
-            "Auto-detect pairing code",
-            "Read the Android pairing dialog with Accessibility.",
-            autoPair,
-        ) {
-            autoPair = it
-            AdbUserChoices.setAutoPairCode(context, it)
-        }
-        if (autoPair && !accessibilityEnabled) {
-            Text(
-                "Accessibility is needed for automatic pairing. Manual pairing is on Home.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(onClick = {
-                runCatching {
-                    context.startActivity(
-                        Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }) { Text("Enable Accessibility") }
-        }
-        HorizontalDivider()
-        ToggleRow(
-            "Connection watchdog",
-            "Check connection health and recover automatically when possible.",
-            watchdogEnabled,
-        ) { enabled ->
-            watchdogEnabled = enabled
-            com.vrec.app.experimental.adb.AdbLifecycle.configureWatchdog(context, enabled)
-        }
-        ToggleRow(
-            "Start on boot",
-            "Try to restore the helper after restarting and unlocking.",
-            bootEnabled,
-        ) { enabled ->
-            bootEnabled = enabled
-            AdbUserChoices.setStartOnBoot(context, enabled)
-        }
-    }
-}
-
-/**
- * ADB network transport is automatic after UID 2000 verification.
- * Users may disable TCP mode; reboot-restoration remains opt-in.
- */
-@Composable
-private fun AdbSecurityChoices() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val connection by ExperimentalRecording.status.collectAsState()
-    var restore by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.restoreAfterRestart(context)) }
-    var tcp by remember { mutableStateOf(com.vrec.app.experimental.adb.AdbUserChoices.tcpMode(context)) }
-    var note by remember { mutableStateOf<String?>(null) }
-    val verified = connection.connected && connection.shellUid == 2000
-
-    SettingCard("Connection & security") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Restore after restart", style = MaterialTheme.typography.bodyLarge)
-                Text("Restore Wireless debugging after reboot, using saved pairing. " +
-                    "Requires Android permission; never overrides a manual off setting.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = restore, onCheckedChange = { on ->
-                restore = on
-                com.vrec.app.experimental.adb.AdbUserChoices.setRestoreAfterRestart(context, on)
-                scope.launch {
-                    note = when {
-                        on && verified ->
-                            if (com.vrec.app.experimental.adb.AdbSelfRecovery.grantSecureSettings(context))
-                                "Restore after restart is on."
-                            else "Android refused the permission; restore can't run on this phone."
-                        on -> "Restore turns on the next time ADB is verified."
-                        verified -> {
-                            com.vrec.app.experimental.adb.AdbSelfRecovery.revokeSecureSettings(context)
-                            "Restore after restart is off."
-                        }
-                        else -> "Restore after restart is off. VRec won't change Wireless debugging."
-                    }
-                }
-            })
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Keep ADB without Wi-Fi (TCP/5555)", style = MaterialTheme.typography.bodyLarge)
-                Text("Keeps ADB available without Wi-Fi. TCP/5555 may be " +
-                    "reachable by devices on your network.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = tcp, onCheckedChange = { on ->
-                tcp = on
-                com.vrec.app.experimental.adb.AdbUserChoices.setTcpMode(context, on)
-                if (on) {
-                    note = "Automatic TCP/5555 enabled. It applies on the next verified wireless connection."
-                } else if (connection.tcpPortOpen && verified) {
-                    scope.launch {
-                        note = com.vrec.app.experimental.adb.AdbLifecycle.coordinateSetup {
-                            ExperimentalRecording.disableTcp(context)
-                        }.fold(
-                            { "TCP/5555 closed. Automatic TCP switching is off." },
-                            { "Automatic switching is off, but TCP/5555 may still be open: " +
-                                (it.message ?: "check Developer options.") })
-                    }
-                } else {
-                    note = if (connection.tcpPortOpen)
-                        "Automatic switching is off. TCP/5555 is still listening; connect to disable it or turn USB debugging off."
-                    else "Automatic TCP/5555 switching is off."
-                }
-            })
-        }
-        if (connection.tcpPortOpen && verified) {
-            OutlinedButton(onClick = {
-                scope.launch {
-                    note = com.vrec.app.experimental.adb.AdbLifecycle.coordinateSetup {
-                            ExperimentalRecording.disableTcp(context)
-                        }.fold(
-                        { "TCP/5555 is closed." }, { it.message ?: "Couldn't close TCP/5555." })
-                }
-            }, enabled = !connection.busy, modifier = Modifier.fillMaxWidth()) { Text("Disable TCP/5555") }
-        }
-        note?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-
 }

@@ -106,7 +106,9 @@ class VrecAccessibilityService : AccessibilityService() {
             }
         }
         val code = PairingCodeUiPolicy.extractCode(labels) ?: return false
-        if (state.pairingPort == null) {
+        val visiblePort = dev.n2k02.adb.core.AdbPairingCodePolicy.pairingPort(labels)
+        val pairingPort = visiblePort ?: state.pairingPort
+        if (pairingPort == null) {
             // The user may open Android's pairing-code dialog directly from
             // Developer options without first opening VRec. Recognizing this
             // *visible dialog* is enough to begin local mDNS discovery; it is
@@ -118,10 +120,10 @@ class VrecAccessibilityService : AccessibilityService() {
             }
             return false // Re-read the live dialog when the local port resolves.
         }
-        val signature = (state.pairingPort.toString() + ":" + root.windowId + ":" + code).hashCode()
+        val signature = (pairingPort.toString() + ":" + root.windowId + ":" + code).hashCode()
         if (signature == lastAttemptSignature) return true
         lastAttemptSignature = signature
-        LocalWirelessAdb.pair(applicationContext, code)
+        LocalWirelessAdb.pair(applicationContext, code, pairingPort)
         // No code is written to preferences, diagnostics, or activity logs.
         return true
     }

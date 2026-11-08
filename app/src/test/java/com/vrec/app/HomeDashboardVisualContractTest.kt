@@ -48,6 +48,22 @@ class HomeDashboardVisualContractTest {
         assertTrue(adb.contains("Stat(\"Shell UID\""))
     }
 
+    @Test fun compactHomeKeepsActionsAndMakesPortDetailsExpandable() {
+        val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
+        val adb = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
+        val setup = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        assertTrue(main.contains("RecordingMasterCard("))
+        assertTrue(main.contains("ManualRecordingCard("))
+        assertTrue(main.contains("onEnabledChange = { enabled ->"))
+        assertTrue(adb.contains("Text(\"Start\")"))
+        assertTrue(adb.contains("Text(\"Stop\")"))
+        assertTrue(adb.contains("Text(\"Restart\")"))
+        assertTrue(adb.contains("Stat(\"Shell UID\""))
+        assertTrue(setup.contains("var portsExpanded by remember { mutableStateOf(false) }"))
+        assertTrue(setup.contains("if (portsExpanded) Text("))
+        assertTrue(setup.contains("if (portsExpanded && wireless.pairingPort != null)"))
+    }
+
     @Test fun manualCaptureAndADBOnlyLiveTransportRemainVisible() {
         val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val transport = read("app/src/main/java/com/vrec/app/LiveRecordingTransport.kt")

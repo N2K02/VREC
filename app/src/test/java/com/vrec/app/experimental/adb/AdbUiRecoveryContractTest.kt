@@ -25,25 +25,26 @@ class AdbUiRecoveryContractTest {
 
     @Test fun foregroundAndBackgroundRecoveryShareCoordinator() {
         val lifecycle = source("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(lifecycle.contains("transportMutex.withLock { block() }"))
         assertTrue(lifecycle.contains("recoveryMutex.withLock {"))
-        assertTrue(lifecycle.contains("wifiRecoveryJobs.forEach { it.cancel() }"))
-        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        assertTrue(wireless.contains("AdbLifecycle.coordinateSetup {"))
+        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(wireless.contains("adb.state.collect"))
+        assertTrue(transport.contains("SharedAdbHostAdapter.current()"))
+        assertFalse(wireless.contains("NsdManager"))
     }
 
     @Test fun tcpSwitchIsDefaultWithUserOptOutAndNetworkWarning() {
-        val onboarding = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
+        val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
-        assertTrue(choices.contains("getBoolean(TCP_MODE, true)"))
-        assertTrue(onboarding.contains("AdbUserChoices.setTcpMode(context, enabled)"))
-        assertTrue(onboarding.contains("Other devices on the network may reach TCP/5555"))
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        assertTrue(wireless.contains("val switchToTcp = AdbUserChoices.tcpMode(app)"))
-        assertTrue(wireless.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
-        assertTrue(wireless.contains("lastTcpPromotionAtMs != 0L"))
+        assertTrue(choices.contains("getBoolean(TCP_MODE, true)"))
+        assertTrue(adapter.contains("AdbOption.TCP_5555 -> AdbUserChoices.tcpMode(app)"))
+        assertTrue(ui.contains("AdbHomeSetupPage("))
         assertTrue(wireless.contains("CallMonitor.hasLiveCall()"))
-        assertTrue(wireless.contains("AdbLifecycle.coordinateSetup {"))
+        assertFalse(ui.contains("Enter pairing code"))
     }
 
     @Test fun detachedHelperDoesNotFalselyShowVerifiedShellUid() {

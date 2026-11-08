@@ -60,9 +60,12 @@ class BackgroundRecoveryContractTest {
 
     @Test fun automaticDiscoveryIsBoundedAndPausesAfterRepeatedEmptySearches() {
         val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        assertTrue(wireless.contains("emptySearches >= MAX_EMPTY_SEARCHES || now < nextAutoSearchAt"))
-        assertTrue(wireless.contains("private const val AUTO_SEARCH_MS = 60_000L"))
-        assertTrue(wireless.contains("repeat(20) { if (!listening)"))
-        assertTrue(wireless.contains(".reconnectTcpWithinSetup(context, automatic = automatic) == null"))
+        val adapter = read("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        assertTrue(wireless.contains("adb.acquireService()"))
+        assertTrue(wireless.contains("observedCore?.releaseService()"))
+        assertTrue(adapter.contains("LocalAdbDiscovery(app)"))
+        assertFalse(wireless.contains("emptySearches"))
+        assertFalse(wireless.contains("MAX_EMPTY_SEARCHES"))
+        assertFalse(wireless.contains("NsdManager"))
     }
 }

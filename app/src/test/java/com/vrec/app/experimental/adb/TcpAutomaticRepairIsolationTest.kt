@@ -17,30 +17,29 @@ class TcpAutomaticRepairIsolationTest {
 
     @Test fun automaticDiscoveryRetainsAutomaticIntentThroughTcpReconnect() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val connect = wireless.substringAfter("private suspend fun connectAndSwitch(")
-            .substringBefore("fun shutdown(")
-        val switch = wireless.substringAfter("private suspend fun switchToLocalTcp(")
-            .substringBefore("fun promoteVerifiedShellToTcp(")
-        assertTrue(connect.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
-        assertTrue(switch.contains("reconnectTcpWithinSetup(context, automatic = automatic)"))
-        assertFalse(switch.contains("reconnectTcp(context, automatic = false)"))
+        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(transport.contains("adb.retry(auto = true)"))
+        assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertFalse(wireless.contains("reconnectTcp(context, automatic = false)"))
     }
 
     @Test fun opportunisticTcpPromotionUsesAutomaticNotManualRepair() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val promote = wireless.substringAfter("fun promoteVerifiedShellToTcp(")
-            .substringBefore("fun retry(context: Context)")
-        assertTrue(promote.contains("switchToLocalTcp(app, automatic = true)"))
-        assertTrue(promote.contains("AdbLifecycle.coordinateSetup {"))
+            .substringBefore("fun openSettings(context: Context)")
+        assertTrue(promote.contains("retry(auto = true)"))
         assertTrue(promote.contains("CallMonitor.hasLiveCall()"))
+        assertFalse(promote.contains("retry(auto = false)"))
     }
 
     @Test fun explicitRetryRetainsManualIntentButStillSerializesTransport() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val retry = wireless.substringAfter("fun retry(context: Context)")
-            .substringBefore("fun openSettings(context: Context)")
-        assertTrue(retry.contains("connectAndSwitch(context.applicationContext, port, automatic = false)"))
-        assertTrue(retry.contains("AdbLifecycle.coordinateSetup {"))
+            .substringBefore("fun promoteVerifiedShellToTcp(")
+        assertTrue(retry.contains("start(context, userInitiated = true)"))
+        assertTrue(wireless.contains("if (!owning)"))
+        assertTrue(wireless.contains("adb.acquireService()"))
     }
 
     @Test fun coordinatorDoesNotReacquireNonReentrantLockDuringTcpTransition() {

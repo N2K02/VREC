@@ -131,10 +131,18 @@ class MainActivity : ComponentActivity() {
         LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
+        // Android 17 gates this-phone localhost discovery for target API 37.
+        // Android grants this only through its permission dialog.
+        if (dev.n2k02.adb.core.AdbNetworkAccess.requiresPermission(this) &&
+            !dev.n2k02.adb.core.AdbNetworkAccess.granted(this)) {
+            requestPermissions(arrayOf(dev.n2k02.adb.core.AdbNetworkAccess.PERMISSION), 3701)
+        }
         openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
         // Opening VRec after Quit resumes background ADB recovery.
-        com.vrec.app.experimental.adb.AdbUserChoices.setManuallyStopped(applicationContext, false)
-        com.vrec.app.experimental.adb.AdbUserChoices.markUserOpenedThisBoot(applicationContext)
+        if (savedInstanceState == null) {
+            com.vrec.app.experimental.adb.AdbUserChoices.setManuallyStopped(applicationContext, false)
+            com.vrec.app.experimental.adb.AdbUserChoices.markUserOpenedThisBoot(applicationContext)
+        }
         com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
@@ -485,20 +493,17 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Recording dashboard", style = MaterialTheme.typography.headlineSmall,
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Recording dashboard", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold, maxLines = 2)
-                Text("Capture and connection health",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FilledTonalButton(onClick = onOpenRecordings) {
                 Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -630,12 +635,12 @@ private fun RecordingMasterCard(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(HomeDashboardPresentation.title(dashboardState),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold)
                 Text(HomeDashboardPresentation.detail(dashboardState, autoRecord),
                     style = MaterialTheme.typography.bodySmall,
@@ -651,20 +656,17 @@ private fun RecordingMasterCard(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(38.dp),
                 ) {
                     Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
                         Icon(Icons.Rounded.Mic, contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp))
+                            modifier = Modifier.size(21.dp))
                     }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Recording", style = MaterialTheme.typography.titleMedium,
+                    Text("Recording", style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold)
-                    Text(if (enabled) "Recording enabled" else "Recording disabled",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(
                     checked = enabled,
@@ -682,7 +684,7 @@ private fun RecordingMasterCard(
                     color = animatedBadgeColor.copy(alpha = 0.14f),
                     border = BorderStroke(0.75.dp, animatedBadgeColor.copy(alpha = 0.34f)),
                 ) {
-                    Text(badge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    Text(badge, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = animatedBadgeColor,
                         fontWeight = FontWeight.SemiBold)
@@ -733,8 +735,8 @@ private fun ManualRecordingCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -743,7 +745,7 @@ private fun ManualRecordingCard(
                 Icon(Icons.Rounded.Mic, contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp))
-                Text("Record manually", style = MaterialTheme.typography.titleMedium,
+                Text("Record manually", style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold)
             }
             Text(

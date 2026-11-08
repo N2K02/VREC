@@ -146,6 +146,7 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
     // Shown even while the detached recording helper is healthy. An open TCP
     // port and an old cached TLS port are NOT evidence of an authorized ADB
     // session; only a live UID-2000-verified endpoint is marked Active.
+    var portsExpanded by remember { mutableStateOf(false) }
     val cachedTlsPort = AdbUserChoices.lastVerifiedPort(context)
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -153,10 +154,19 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color()),
         border = HomePanelStyle.border(),
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("ADB connection ports", style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { portsExpanded = !portsExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("ADB connection ports", modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold)
+                Text(if (portsExpanded) "▲" else "▼",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text(
                 when {
                     verified && adbState.activePort != null && adbState.activeTransport != null ->
@@ -168,14 +178,14 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
-            Text(
+            if (portsExpanded) Text(
                 "Wireless TLS discovered: " + (wireless.connectPort?.toString() ?: "none") +
                     " · Last verified TLS: " + (cachedTlsPort?.toString() ?: "none") +
                     " (this boot)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (wireless.pairingPort != null) {
+            if (portsExpanded && wireless.pairingPort != null) {
                 Text("Pairing port: " + wireless.pairingPort +
                     " · temporary Android pairing listener",
                     style = MaterialTheme.typography.bodySmall,

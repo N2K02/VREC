@@ -102,11 +102,12 @@ class HelperRepairEndToEndContractTest {
     }
 
     @Test fun consentedTcpModeAndRecoveryMustReverifyLiveShellUid() {
-        val wireless = code("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        val transport = code("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(wireless.contains("AdbUserChoices.tcpMode("))
-        assertTrue(wireless.contains("switchToLocalTcp("))
+        assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
+        assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertTrue(transport.contains("execVerified(command, timeoutMs)"))
         assertTrue(link.contains("verifyShellUid()"))
         assertTrue(recovery.contains("reconnectTcp(app, automatic = true)"))
         assertTrue(recovery.contains("if (ExperimentalRecording.awaitingManualRetry)"))

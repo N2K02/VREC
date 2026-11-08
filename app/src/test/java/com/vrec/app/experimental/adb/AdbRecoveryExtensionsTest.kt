@@ -46,27 +46,23 @@ class AdbRecoveryExtensionsTest {
 
     @Test fun discoveryKeepsWatchingUntilAuthorizedTransportSucceeds() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val controller = source("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
-        assertTrue(wireless.contains("AdbUserChoices.lastVerifiedPort(app)"))
-        assertTrue(wireless.contains("AdbUserChoices.clearVerifiedPort(app, port)"))
-        assertTrue(wireless.contains("WirelessPortRetryPolicy.freshPort("))
-        assertTrue(wireless.contains("session == searchSession && attached"))
-        assertTrue(wireless.contains("if (!belongsToThisPhone(host)"))
-        assertTrue(controller.contains("AdbUserChoices.rememberVerifiedPort(context, port)"))
-        assertTrue(controller.indexOf("verifyShellUid()") <
-            controller.indexOf("AdbUserChoices.rememberVerifiedPort(context, port)"))
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(wireless.contains("adb.acquireService()"))
+        assertTrue(wireless.contains("adb.state.collect"))
+        assertTrue(adapter.contains("LocalAdbDiscovery(app)"))
+        assertTrue(transport.contains("adb.connectTls(port)"))
+        assertFalse(wireless.contains("NsdManager"))
     }
 
     @Test fun tcpSwitchTreatsStreamResetAsUncertainUntilNewUidIsVerified() {
-        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val body = wireless.substringAfter("private suspend fun switchToLocalTcp(")
-            .substringBefore("fun promoteVerifiedShellToTcp(")
-        assertTrue(body.contains("val switched = AdbTransport.switchToTcpip(5555)"))
-        assertTrue(body.contains("if (switched.isFailure)"))
-        assertTrue(body.contains("listening = ExperimentalRecording.tcpPortListening()"))
-        assertTrue(body.contains("reconnectTcpWithinSetup(context, automatic = automatic)"))
-        assertTrue(body.indexOf("if (switched.isFailure)") <
-            body.indexOf("if (!listening)"))
+        val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
+        assertTrue(transport.contains("adb.retry(auto = true)"))
+        assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertTrue(transport.contains("execVerified(command, timeoutMs)"))
+        assertFalse(transport.contains("mgr.openStream("))
     }
 
     @Test fun watchdogAndBootRecoveryHonorQuitAndShareSingleFlight() {
@@ -94,26 +90,15 @@ class AdbRecoveryExtensionsTest {
     @Test fun automaticPairingDefaultsOnButStillRequiresEnabledSettingsAccessibility() {
         val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
         val service = source("app/src/main/java/com/vrec/app/calls/VrecAccessibilityService.kt")
+        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         assertTrue(choices.contains("prefs(context).getBoolean(AUTO_PAIR, true)"))
-        assertTrue(service.contains("AdbUserChoices.autoPairCode(this)"))
         assertTrue(service.contains("PairingCodeUiPolicy.isSettingsPackage("))
-        assertTrue(service.contains("if (state.pairingPort == null) {"))
-        assertTrue(service.contains("LocalWirelessAdb.start(applicationContext, userInitiated = true)"))
-        assertTrue(service.contains("lastDiscoveryRequestMs"))
-        assertTrue(source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-            .contains("AdbUserChoices.manuallyStopped(app)"))
-        assertTrue(service.contains("LocalWirelessAdb.pair(applicationContext, code)"))
-        assertTrue(service.contains("pairingHandler.postDelayed(this, 400L)"))
-        assertTrue(service.contains("pairingHandler.removeCallbacks(pairingWindowRead)"))
-        assertTrue(source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-            .contains("VrecAccessibilityService.onPairingPortDiscovered()"))
-        assertFalse(service.contains("Log.i(\"pairing code"))
-        assertTrue(ui.contains("AdbUserChoices.setAutoPairCode(context, enabled)"))
-        assertTrue(ui.contains("Turn this off to use manual pairing only."))
-        val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        assertTrue(wireless.contains("VrecAccessibilityService.running"))
-        assertTrue(wireless.contains("kotlinx.coroutines.delay(7_000L)"))
-        assertTrue(wireless.contains("!pairedInThisSession"))
+        assertTrue(service.contains("AdbPairingCodePolicy.pairingPort(labels)"))
+        assertTrue(service.contains("LocalWirelessAdb.pair(applicationContext, code, pairingPort)"))
+        assertTrue(wireless.contains("adb.pair(port, code)"))
+        assertTrue(ui.contains("AdbHomeSetupPage("))
+        assertFalse(ui.contains("OutlinedTextField"))
+        assertFalse(wireless.contains("RemoteInput"))
     }
 }

@@ -34,6 +34,7 @@
 
     <!-- In-app updater (same pipeline as the other apps) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Internet is used for updates; ADB only connects to localhost TCP/5555. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -75,7 +76,6 @@
         </activity>
 
         <!-- Shizuku-style notification pairing code, handled only by this app. -->
-        <receiver android:name=".experimental.adb.VrecPairingReceiver" android:exported="false" />
 
         <!-- Holds the mic and writes the file while a call is active. -->
         <service

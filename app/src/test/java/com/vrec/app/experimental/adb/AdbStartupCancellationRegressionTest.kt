@@ -15,6 +15,12 @@ class AdbStartupCancellationRegressionTest {
         listOf(File(path), File("../$path")).firstOrNull { it.isFile }?.readText()
             ?: error("Missing source: $path")
 
+    @Test fun activityRecreationCannotReverseExplicitAdbStop() {
+        val activity = source("app/src/main/java/com/vrec/app/MainActivity.kt")
+        assertTrue(activity.contains("if (savedInstanceState == null) {"))
+        assertTrue(activity.contains("AdbUserChoices.setManuallyStopped(applicationContext, false)"))
+    }
+
     @Test fun homeAndPermissionCardShareAppOwnedStart() {
         val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         val permissions = source("app/src/main/java/com/vrec/app/ui/PermissionDashboardCard.kt")
@@ -58,12 +64,12 @@ class AdbStartupCancellationRegressionTest {
 
     @Test fun queuedWirelessRepairCannotAcceptDuplicateStart() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val retry = wireless.substringAfter("fun retry(context: Context)")
-            .substringBefore("fun openSettings(context: Context)")
-        assertTrue(retry.contains("phase = Phase.CONNECTING"))
-        assertTrue(retry.contains("AdbLifecycle.coordinateSetup {"))
-        val home = source("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
-        assertTrue(home.contains("enabled = !foregroundBusy && !busy && !adbState.busy && !wirelessWorking"))
+        val foreground = source("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
+        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(wireless.contains("if (!owning)"))
+        assertTrue(wireless.contains("adb.acquireService()"))
+        assertTrue(wireless.contains("sharedCore") || wireless.contains("adb.retry(auto = false)"))
+        assertTrue(foreground.contains("starting.compareAndSet(false, true)"))
     }
 
     @Test fun stagedJarChecksShellReadabilityAndCleansTemporaryDownload() {
