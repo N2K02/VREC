@@ -2,6 +2,7 @@ package com.vrec.app.experimental.adb
 
 import android.content.Context
 import dev.n2k02.adb.core.AdbCore
+import dev.n2k02.adb.core.AdbCoreRegistry
 import dev.n2k02.adb.core.AdbIdentity as CoreIdentity
 import dev.n2k02.adb.core.AdbIdentitySource
 import dev.n2k02.adb.core.AdbOption
@@ -15,6 +16,22 @@ import dev.n2k02.adb.core.LocalAdbDiscovery
  * The calling service must retire legacy transport before adopting this instance.
  */
 internal object SharedAdbHostAdapter {
+    @Volatile private var active: AdbCore? = null
+
+    fun core(context: Context): AdbCore = active ?: synchronized(this) {
+        active ?: create(context.applicationContext).also {
+            active = it
+            AdbCoreRegistry.install(it)
+        }
+    }
+
+    fun current(): AdbCore? = active
+
+    suspend fun shutdown() {
+        val old = synchronized(this) { active.also { active = null } }
+        old?.let { AdbCoreRegistry.uninstall(it); it.quit() }
+    }
+
     fun create(context: Context): AdbCore {
         val app = context.applicationContext
         val identity = AdbIdentitySource { ctx ->

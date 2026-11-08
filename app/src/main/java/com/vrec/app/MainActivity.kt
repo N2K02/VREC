@@ -131,6 +131,12 @@ class MainActivity : ComponentActivity() {
         LiveUpdater.init(this)
         // Draw behind system bars; Scaffold/Material components apply safe system-bar insets.
         enableEdgeToEdge()
+        // Android 17 gates this-phone localhost discovery for target API 37.
+        // Android grants this only through its permission dialog.
+        if (dev.n2k02.adb.core.AdbNetworkAccess.requiresPermission(this) &&
+            !dev.n2k02.adb.core.AdbNetworkAccess.granted(this)) {
+            requestPermissions(arrayOf(dev.n2k02.adb.core.AdbNetworkAccess.PERMISSION), 3701)
+        }
         openAdbSetup = intent?.action == ACTION_OPEN_ADB_SETUP
         // Opening VRec after Quit resumes background ADB recovery.
         com.vrec.app.experimental.adb.AdbUserChoices.setManuallyStopped(applicationContext, false)

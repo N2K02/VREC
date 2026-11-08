@@ -240,6 +240,7 @@ object AdbLifecycle {
         // NonCancellable block guarantees cleanup even if UI scope is cancelled.
         withContext(NonCancellable + Dispatchers.IO) {
             transportMutex.withLock { AdbTransport.close() }
+            SharedAdbHostAdapter.shutdown()
             ExperimentalRecording.refreshConnectionStatus()
         }
         Log.i("Quit: background ADB recovery, discovery and listeners stopped")
