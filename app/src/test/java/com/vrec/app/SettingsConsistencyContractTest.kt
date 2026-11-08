@@ -24,14 +24,14 @@ class SettingsConsistencyContractTest {
         assertTrue("Divider must separate settings and updates", divider >= 0 && update > divider)
         assertTrue("ADB connection belongs before the update footer",
             menu.indexOf("Triple(\"ADB connection\"") in 0 until divider)
-        assertTrue("Shared ADB diagnostics submenu is missing",
-            menu.contains("Triple(\"ADB diagnostics\", \"Live shell UID, transport and reconnect status\""))
+        assertTrue("Redundant ADB diagnostics submenu must stay removed",
+            !menu.contains("Triple(\"ADB diagnostics\""))
+        assertTrue("ADB diagnostics page must not be duplicated in Settings",
+            !source.contains("AdbDiagnosticsPage(shared)"))
         assertTrue("ADB preferences must be under their own submenu",
             source.contains("if (section == \"ADB connection\") {"))
         assertTrue("ADB Settings must use the shared core",
             source.contains("dev.n2k02.adb.core.AdbConnectionSettingsPage("))
-        assertTrue("ADB diagnostics must use the shared core",
-            source.contains("dev.n2k02.adb.core.AdbDiagnosticsPage(shared)"))
         assertTrue("Old ADB setting cards must be removed",
             !source.contains("private fun AdbPairingRecoveryChoices()") &&
             !source.contains("private fun AdbSecurityChoices()"))
