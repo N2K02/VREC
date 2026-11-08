@@ -76,7 +76,6 @@
         </activity>
 
         <!-- Shizuku-style notification pairing code, handled only by this app. -->
-        <receiver android:name=".experimental.adb.VrecPairingReceiver" android:exported="false" />
 
         <!-- Holds the mic and writes the file while a call is active. -->
         <service

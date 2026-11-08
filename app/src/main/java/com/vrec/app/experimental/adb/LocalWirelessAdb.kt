@@ -1,8 +1,6 @@
 package com.vrec.app.experimental.adb
 
 import android.content.Context
-import android.content.BroadcastReceiver
-import android.content.Intent
 import android.os.Build
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import dev.n2k02.adb.core.AdbCore
@@ -98,10 +96,10 @@ object LocalWirelessAdb {
     }
 
     /** Codes may come only from the user-enabled VRec Settings accessibility reader. */
-    fun pair(context: Context, code: String) {
+    fun pair(context: Context, code: String, pairingPort: Int? = null) {
         start(context)
         val adb = observedCore ?: return
-        val port = adb.state.value.pairingPort ?: return
+        val port = pairingPort?.takeIf { it in 1..65535 } ?: adb.state.value.pairingPort ?: return
         scope.launch {
             if (adb.pair(port, code)) {
                 status.value = snapshot(adb.state.value)
@@ -141,7 +139,3 @@ object LocalWirelessAdb {
     fun shutdown(context: Context) = stop(context)
 }
 
-/** Obsolete notification receiver retained for upgrade compatibility; no manual code entry. */
-class VrecPairingReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = Unit
-}

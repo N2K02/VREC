@@ -34,21 +34,15 @@ class AdbSessionKeyLifecycleTest {
         assertTrue(src.contains("previous.activePort == port"))
     }
 
-    @Test fun timeoutAndShutdownRetireManagersWithoutDestroyingCachedKey() {
-        val src = code()
-        for (expected in listOf(
-            "AdbSessionKey.copyOf(identity.privateKey)",
-            "getPrivateKey(): PrivateKey = sessionKey",
-            "oldManager?.disconnect()", "if (manager === mgr) {",
-            "lastKnownConnected = false", "runCatching { reader.close() }",
-            "suspend fun disconnect() = close()"))
-            assertTrue(expected, src.contains(expected))
-        assertFalse(src.contains("mgr.close()"))
-        assertFalse(src.contains("manager?.close()"))
-        assertFalse(src.contains("getPrivateKey(): PrivateKey = identity.privateKey"))
-        val watchdog = src.substringAfter("val watchdog = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {")
-            .substringBefore("session = session ?:")
-        assertTrue(watchdog.contains("mgr.disconnect()"))
-        assertTrue(watchdog.contains("if (manager === mgr) {"))
-    }
+    @Test fun timeoutAndShutdownRetireManagersWithoutDestroyingCachedKey() {\n        val transport = code()
+        val adapter = listOf(File("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt"),
+            File("../app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt"))
+            .first { it.isFile }.readText()
+        assertTrue(transport.contains("SharedAdbHostAdapter.current()?.disconnectIdle()"))
+        assertTrue(transport.contains("execVerified(command, timeoutMs)"))
+        assertTrue(adapter.contains("AdbIdentity.getOrCreate(ctx)"))
+        assertTrue(adapter.contains("CoreIdentity(existing.privateKey, existing.certificate)"))
+        assertTrue(adapter.contains("LibAdbWire(app, identity"))
+        assertFalse(transport.contains("AbsAdbConnectionManager"))
+        assertFalse(transport.contains("manager?.close()"))\n    }
 }

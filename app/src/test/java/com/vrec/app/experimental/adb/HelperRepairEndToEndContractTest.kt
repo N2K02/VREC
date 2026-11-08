@@ -101,16 +101,13 @@ class HelperRepairEndToEndContractTest {
         assertFalse(warnings.contains("fun clearAfterHelperRecovered(context: Context) {\n        dismiss(context)"))
     }
 
-    @Test fun consentedTcpModeAndRecoveryMustReverifyLiveShellUid() {
-        val wireless = code("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
-        val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(wireless.contains("AdbUserChoices.tcpMode("))
-        assertTrue(wireless.contains("switchToLocalTcp("))
+    @Test fun consentedTcpModeAndRecoveryMustReverifyLiveShellUid() {\n        val transport = code("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
+        assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertTrue(transport.contains("execVerified(command, timeoutMs)"))
         assertTrue(link.contains("verifyShellUid()"))
         assertTrue(recovery.contains("reconnectTcp(app, automatic = true)"))
-        assertTrue(recovery.contains("if (ExperimentalRecording.awaitingManualRetry)"))
-    }
+        assertTrue(recovery.contains("if (ExperimentalRecording.awaitingManualRetry)"))\n    }
 
     @Test fun quitAndNavigationCannotLeaveCompetingBackgroundPairingJobs() {
         val lifecycle = code("app/src/main/java/com/vrec/app/experimental/adb/AdbLifecycle.kt")

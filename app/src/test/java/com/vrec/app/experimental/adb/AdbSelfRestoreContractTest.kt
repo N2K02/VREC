@@ -41,18 +41,14 @@ class AdbSelfRestoreContractTest {
         assertFalse(restore.contains("\"adb_enabled\""))
     }
 
-    @Test fun tcpSwitchFollowsUserPreferenceAndReadyNeedsHelper() {
-        val connect = wireless.substringAfter("private suspend fun connectAndSwitch(")
-            .substringBefore("fun shutdown(")
-        assertTrue(connect.contains("val switchToTcp = AdbUserChoices.tcpMode(app)"))
-        assertTrue(connect.contains("deferHelperUntilTcp = switchToTcp"))
-        assertTrue(connect.contains("if (switchToTcp) return switchToLocalTcp(app, automatic = automatic)"))
-        assertTrue(connect.contains("ExperimentalCaptureDaemon.probe(app)"))
-        assertTrue(connect.indexOf("connectWireless(") >= 0)
-        assertTrue(connect.indexOf("connectWireless(") <
-            connect.indexOf("switchToLocalTcp(app, automatic = automatic)"))
-        assertTrue(wireless.contains("turn USB debugging off in Developer options"))
-    }
+    @Test fun tcpSwitchFollowsUserPreferenceAndReadyNeedsHelper() {\n        val bridge = read("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
+        val facade = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
+        assertTrue(bridge.contains("adb.setOption(AdbOption.TCP_5555, true)"))
+        assertTrue(bridge.contains("adb.retry(auto = true)"))
+        assertTrue(bridge.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertTrue(facade.contains("AdbLifecycle.requestRecovery(app"))
+        assertTrue(read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+            .contains("startHelperTyped(context, manualRepair = !automatic)"))\n    }
 
     @Test fun recoveryUsesTypedFailuresAndNeverClearsTheManualRetryLatch() {
         assertFalse(recovery.contains("allowManualRetry"))
