@@ -347,6 +347,7 @@ fun RecordingsList() {
                 if (Build.VERSION.SDK_INT >= 23) player.playbackParams = player.playbackParams.setSpeed(speed)
                 playbackDuration = player.duration.toLong().coerceAtLeast(0L)
                 player.start()
+                com.vrec.app.recording.RecordingPlaybackService.setRecording(rec)
                 com.vrec.app.recording.RecordingPlaybackService.currentPath = rec.file.absolutePath
                 com.vrec.app.recording.RecordingPlaybackService.paused = false
                 check(com.vrec.app.recording.RecordingPlaybackService.send(
