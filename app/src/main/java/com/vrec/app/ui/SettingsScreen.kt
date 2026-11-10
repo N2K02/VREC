@@ -94,8 +94,6 @@ fun SettingsScreen(
         captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
     // Home and Settings share the same persisted recording method.
     // Local mirror of the stored values, so the UI updates immediately.
-    var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
-    var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var simCaptureSource by remember { mutableStateOf(EnhancedCapturePreferences.simSource(context)) }
     val voipArmed by ExperimentalCaptureDaemon.voipArmed.collectAsState()
     val voipMessage by ExperimentalCaptureDaemon.voipMessage.collectAsState()
@@ -201,13 +199,8 @@ fun SettingsScreen(
                 }
             }) { Text("Run cleanup now") }
 
-            ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
-                autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
-                scope.launch {
-                    if (!ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)))
-                        com.vrec.app.Log.w("Recording mode update was not confirmed by shell")
-                }
-            }
+            Text("Automatic recording covers every detected supported call while Recording is on.",
+                style = MaterialTheme.typography.bodySmall)
             ToggleRow(
                 "Discard silent recordings",
                 "If a recording comes out silent (this phone blocked capture), delete it instead of keeping it.",
@@ -277,15 +270,8 @@ fun SettingsScreen(
         }
 
         if (section == "VoIP") SettingCard("VoIP") {
-            ToggleRow(
-                "Record VoIP calls",
-                "Use the independent ADB helper for supported apps on Android 14+ when permitted.",
-                recordVoip,
-            ) {
-                recordVoip = it
-                putBool(Prefs.RECORD_VOIP, it)
-                scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
-            }
+            Text("Supported VoIP calls are included automatically when recording is on. Android 14+ and notification permission may be required.",
+                style = MaterialTheme.typography.bodySmall)
             if (true) {
                 Text(
                     if (Build.VERSION.SDK_INT < 34)
@@ -299,7 +285,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (recordVoip) {
+            if (true) {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
