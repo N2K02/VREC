@@ -3,6 +3,7 @@ package com.vrec.app.recording
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.vrec.app.Prefs
+import com.vrec.app.calls.CallMonitor
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,16 @@ class RecordingQuickTile : TileService() {
         scope.launch {
           toggleMutex.withLock {
             val old = Prefs.recordingEnabled(applicationContext)
+            // Do not change automatic capture mode in the middle of a call.
+            // Shell recording ownership remains authoritative even if Telecom
+            // has not yet delivered the call session to the app process.
+            if (CallMonitor.hasLiveCall() ||
+                AdbFallbackNotice.enhancedActive.value ||
+                AdbFallbackNotice.enhancedPaused.value) {
+                com.vrec.app.Log.i("Quick tile: recording mode locked during an active call")
+                update()
+                return@withLock
+            }
             val target = !old
             val available = !target || ExperimentalCaptureDaemon.probe(applicationContext)
             if (available) Prefs.setRecordingEnabled(applicationContext, target)
