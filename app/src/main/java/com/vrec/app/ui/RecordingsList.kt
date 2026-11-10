@@ -743,8 +743,11 @@ private fun RecordingRow(
     val waveform by produceState<FloatArray?>(
         initialValue = null, rec.file.absolutePath, rec.file.lastModified(), active
     ) {
-        value = if (active) withContext(Dispatchers.IO) {
-            com.vrec.app.recording.RecordingWaveform.calculate(rec.file)
+        value = if (active) {
+            value = floatArrayOf() // Loading; distinguish from an unsupported file.
+            withContext(Dispatchers.IO) {
+                com.vrec.app.recording.RecordingWaveform.calculate(rec.file)
+            }
         } else null
     }
     val callApp = remember(rec.sourcePackage) {
@@ -838,6 +841,10 @@ private fun RecordingRow(
             )
             if (active && !selectionMode) {
                 waveform?.let { peaks ->
+                    if (peaks.isEmpty()) {
+                        Text("Generating waveform…", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
                     val tint = MaterialTheme.colorScheme.primary
                     androidx.compose.foundation.Canvas(
                         modifier = Modifier.fillMaxWidth().height(44.dp)
@@ -854,6 +861,7 @@ private fun RecordingRow(
                                 strokeWidth = (width * 0.72f).coerceAtLeast(1f),
                             )
                         }
+                    }
                     }
                 }
                 // One in-card player: the row's left button handles Play/Pause/Resume,
