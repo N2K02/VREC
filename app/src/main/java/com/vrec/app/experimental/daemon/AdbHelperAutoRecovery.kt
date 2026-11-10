@@ -71,7 +71,7 @@ object AdbHelperAutoRecovery {
             if (!transportHealthy) return@withLock false
             // A healthy socket alone does not mean the daemon still receives calls.
             // A watcher failure must be surfaced, not silently "repaired" during a call.
-            val (watchHealthy, detail) = ExperimentalCaptureDaemon.watchHealth(app)
+            val (watchHealthy, detail) = ExperimentalCaptureDaemon.watchHealth(app, auditCallHistory = false)
             if (!watchHealthy) {
                 record(Outcome.FAILED, "Recorder call monitoring needs attention: $detail")
                 return@withLock false
