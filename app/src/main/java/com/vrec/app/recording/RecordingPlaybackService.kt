@@ -31,8 +31,10 @@ class RecordingPlaybackService : Service() {
 
         fun send(context: Context, action: String) {
             val intent = Intent(context, RecordingPlaybackService::class.java).setAction(action)
-            if (action == ACTION_STOP) context.startService(intent)
-            else context.startForegroundService(intent)
+            runCatching {
+                if (action == ACTION_STOP) context.startService(intent)
+                else context.startForegroundService(intent)
+            }.onFailure { com.vrec.app.Log.w("Unable to open playback controls", it) }
         }
     }
 
@@ -43,6 +45,8 @@ class RecordingPlaybackService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "Recording playback", NotificationManager.IMPORTANCE_LOW)
         )
+        player.setOnCompletionListener { stopPlayback() }
+        player.setOnErrorListener { _, _, _ -> stopPlayback(); true }
         session = MediaSession(this, "VRec playback").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() { resume() }
@@ -59,6 +63,10 @@ class RecordingPlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (currentPath == null && intent?.action != ACTION_STOP) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         when (intent?.action) {
             ACTION_STOP -> { stopPlayback(); return START_NOT_STICKY }
             ACTION_PAUSE -> pause()
@@ -126,6 +134,8 @@ class RecordingPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        player.setOnCompletionListener(null)
+        player.setOnErrorListener(null)
         session?.release()
         session = null
         super.onDestroy()
