@@ -3,10 +3,11 @@ package com.vrec.app.ui
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +54,7 @@ import kotlinx.coroutines.launch
  * Stop is refused by the helper during a call or import. Restart first makes
  * sure a verified ADB session exists, so it never stops a helper it can't start.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdbDashboard(
     healthy: Boolean,
@@ -84,73 +86,51 @@ fun AdbDashboard(
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = HomePanelStyle.color(highlight = allReady),
-            border = HomePanelStyle.border(highlight = allReady),
-            shadowElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth(),
+        // Single compact status header; no nested full-size dashboard tiles.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(15.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        modifier = Modifier.size(34.dp),
-                    ) {
-                        androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-                            Icon(if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
-                                contentDescription = if (allReady) "System ready" else "System needs attention",
-                                tint = if (allReady) {
-                                    if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
-                                } else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    Column(modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("System Status", style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold)
-                        Text(
-                            when {
-                                busy -> "Working · Checking helper connection and readiness"
-                                healthy && verified -> "Connected · Helper active · ADB verified"
-                                healthy -> "Ready · Helper active · ADB session detached"
-                                failed -> "Check ADB setup or diagnostics"
-                                else -> "Start the helper to prepare call capture"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                androidx.compose.material3.HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f))
-                // Exactly one row of four equal-width status tiles on phones.
-                // Labels and values can ellipsize at large font sizes; the
-                // full status is still available to accessibility services.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Stat("Connection", when {
-                        verified -> "Connected"
-                        healthy -> "Detached"
-                        else -> "Offline"
-                    }, Modifier.weight(1f))
-                    Stat("Recording", when {
-                        !recordingOn -> "Off"
-                        !healthy -> "Waiting"
-                        else -> "Armed"
-                    }, Modifier.weight(1f))
-                    Stat("Recovery", restore, Modifier.weight(1f))
-                    Stat("Shell UID", if (verified) "2000" else "Detached", Modifier.weight(1f))
-                }
+            Icon(
+                if (allReady) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                contentDescription = if (allReady) "System ready" else "System needs attention",
+                tint = if (allReady) Color(0xFF43A66A) else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text("System Status", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold)
+                Text(
+                    when {
+                        busy -> "Working · Checking helper connection and readiness"
+                        healthy && verified -> "Connected · Helper active · ADB verified"
+                        healthy -> "Ready · Helper active · ADB session detached"
+                        failed -> "Check ADB setup or diagnostics"
+                        else -> "Start the helper to prepare call capture"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+        }
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Stat("Connection", when {
+                verified -> "Connected"
+                healthy -> "Detached"
+                else -> "Offline"
+            })
+            Stat("Recording", when {
+                !recordingOn -> "Off"
+                !healthy -> "Waiting"
+                else -> "Armed"
+            })
+            Stat("Recovery", restore)
+            Stat("Shell UID", if (verified) "2000" else "Detached")
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
@@ -223,7 +203,7 @@ fun AdbDashboard(
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier) {
+private fun Stat(label: String, value: String) {
     val accent = when (label) {
         "Connection" -> when (value) {
             "Connected" -> Color(0xFF43A66A)
@@ -244,18 +224,17 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
         else -> if (value == "2000") Color(0xFFB27DDA) else Color(0xFFCF5454)
     }
     Surface(
-        modifier = modifier
-            .semantics(mergeDescendants = true) {
-                contentDescription = "$label: $value"
-            },
-        shape = RoundedCornerShape(13.dp),
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label: $value"
+        },
+        shape = RoundedCornerShape(50),
         color = accent.copy(alpha = 0.09f),
-        border = BorderStroke(0.75.dp, accent.copy(alpha = 0.28f)),
+        border = BorderStroke(0.75.dp, accent.copy(alpha = 0.34f)),
     ) {
-        Column(
-            Modifier.padding(horizontal = 3.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Icon(
                 imageVector = when (label) {
@@ -269,24 +248,11 @@ private fun Stat(label: String, value: String, modifier: Modifier) {
                 modifier = Modifier.size(15.dp),
             )
             Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                softWrap = false,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                value,
+                "$label: $value",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = accent,
                 maxLines = 1,
-                softWrap = false,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
             )
         }
     }
