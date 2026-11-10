@@ -571,6 +571,20 @@ object ExperimentalCaptureDaemon {
             }.getOrDefault(false)
         }
 
+    /** An authenticated, read-only recorder health inspection. Never disrupt an ongoing call. */
+    suspend fun watchHealth(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val snapshot = runCatching {
+            open(context, 'W').use { socket ->
+                RecordingWatchHealth.parse(
+                    socket.getInputStream().bufferedReader().readLine().orEmpty()
+                )
+            }
+        }.getOrNull()
+        val mode = requestedMode(context, Prefs.recordingEnabled(context))
+        RecordingWatchHealth.healthy(snapshot, mode) to
+            RecordingWatchHealth.verdict(snapshot, mode)
+    }
+
     /** Confirm an outgoing cellular call really connected, not merely went OFFHOOK. */
     suspend fun confirmOutgoingAnswered(context: Context): Boolean =
         withContext(Dispatchers.IO) {
