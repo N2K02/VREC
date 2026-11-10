@@ -100,6 +100,14 @@ final class Voip {
         return policy != null;
     }
 
+    /** The actual messenger call followed by the shell audio watcher.
+     * Reading this must never infer call identity from a stale notification.
+     */
+    static String followedApp() {
+        Watch w = watch;
+        return w == null ? null : w.active;
+    }
+
     /**
      * Independent evidence that one configured messenger is BOTH playing
      * voice-communication audio and capturing. A Telecom state alone is
@@ -294,7 +302,7 @@ final class Voip {
         private AudioManager.OnModeChangedListener modeChanges;
         /** A tick is posted, so a mode change does not start a second loop. */
         private boolean ticking;
-        private String active;
+        private volatile String active;
         /** The uid of [active]'s app, to ask whether it is still in its call. */
         private int activeUid = -1;
         /** The mode left "communication" while the app still talked; said once. */
@@ -454,6 +462,7 @@ final class Voip {
             if (capture == null || !capture.hasMic()) {
                 return;
             }
+            try {
             for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
                 Integer uid = uidOf(r);
                 if (uid == null || uid == android.os.Process.myUid() || !r.isClientSilenced()) {
@@ -469,6 +478,11 @@ final class Voip {
                         }
                     }
                 }
+            }
+            } catch (Throwable error) {
+                // A failed privacy check must never risk silencing the caller.
+                Ln.w("voip: microphone safety check failed; dropping recorder microphone: " + error);
+                capture.dropMic();
             }
         }
     }
@@ -574,7 +588,10 @@ final class Voip {
                 Ln.w("voip: no microphone, recording the other side only: " + t);
             }
             running = true;
-            startUs = SystemClock.elapsedRealtimeNanos() / 1000;
+            // AudioRecord timestamps use TIMEBASE_MONOTONIC. elapsedRealtime
+            // includes deep sleep and can put Opus packet PTS far ahead after
+            // suspend/resume. Match JemRec's monotonic capture clock.
+            startUs = System.nanoTime() / 1000;
             current = this;
             Ln.i("voip: recording both sides (" + (near != null ? "mic on" : "mic off") + ")");
         }
@@ -622,7 +639,7 @@ final class Voip {
                 // end the whole recording, theirs included.
                 java.util.Arrays.fill(mine, (short) 0);
                 long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
-                long wait = due - SystemClock.elapsedRealtimeNanos() / 1000;
+                long wait = due - System.nanoTime() / 1000;
                 if (wait > 0) {
                     SystemClock.sleep(wait / 1000 + 1);
                 }

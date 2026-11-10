@@ -143,57 +143,6 @@ fun LocalAdbHomeCard(recordingActive: Boolean = false, standardRecording: Boolea
         recordingActive = recordingActive,
     )
 
-    // Shown even while the detached recording helper is healthy. An open TCP
-    // port and an old cached TLS port are NOT evidence of an authorized ADB
-    // session; only a live UID-2000-verified endpoint is marked Active.
-    var portsExpanded by remember { mutableStateOf(false) }
-    val cachedTlsPort = AdbUserChoices.lastVerifiedPort(context)
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = HomePanelStyle.color()),
-        border = HomePanelStyle.border(),
-    ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { portsExpanded = !portsExpanded },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("ADB connection ports", modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold)
-                Text(if (portsExpanded) "▲" else "▼",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(
-                when {
-                    verified && adbState.activePort != null && adbState.activeTransport != null ->
-                        "Active: " + adbState.activeTransport +
-                            " · 127.0.0.1:" + adbState.activePort + " · UID 2000 verified"
-                    adbState.tcpPortOpen ->
-                        "TCP/5555 listening · no verified active ADB session"
-                    else -> "Active ADB session: disconnected"
-                },
-                style = MaterialTheme.typography.bodySmall,
-            )
-            if (portsExpanded) Text(
-                "Wireless TLS discovered: " + (wireless.connectPort?.toString() ?: "none") +
-                    " · Last verified TLS: " + (cachedTlsPort?.toString() ?: "none") +
-                    " (this boot)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (portsExpanded && wireless.pairingPort != null) {
-                Text("Pairing port: " + wireless.pairingPort +
-                    " · temporary Android pairing listener",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-
     if (healthy) {
         if (permissions.finished && permissions.unavailable.isNotEmpty()) {
             Text(

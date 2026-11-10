@@ -32,6 +32,34 @@ class VoipShellOwnershipContractTest {
         assertTrue(shell.contains("if (callActive && (app != null || callVoipApp != null))"))
     }
 
+    @Test fun phoneToVoipHandoffRequiresLiveAudioEvidence() {
+        val shell = source("shellserver/src/com/vrec/app/shell/Main.java")
+        val segment = shell.substringAfter("private static void onCallEnd() {")
+            .substringBefore("private static void onVoipCallEnd()")
+        assertTrue(segment.contains("Voip.followedApp()"))
+        assertTrue(segment.contains("Voip.uniquelyCallingApp(callAudio)"))
+        assertTrue(segment.contains("followed.equals(verified)"))
+        assertTrue(segment.contains("onCallStart(false, followed)"))
+        assertTrue(segment.contains("if (callVoipApp != null)"))
+    }
+
+    @Test fun voipCaptureUsesMonotonicPtsAndProtectsCallMicrophone() {
+        val voip = source("shellserver/src/com/vrec/app/shell/Voip.java")
+        assertTrue(voip.contains("startUs = System.nanoTime() / 1000;"))
+        assertTrue(voip.contains("long wait = due - System.nanoTime() / 1000;"))
+        assertTrue(voip.contains("capture.dropMic();"))
+        assertTrue(voip.contains("microphone safety check failed"))
+    }
+
+    @Test fun telegramViberAndMeetAllRemainArmedWithoutCallerFilters() {
+        val policy = source("app/src/main/java/com/vrec/app/experimental/daemon/EnhancedCapturePreferences.kt")
+        assertTrue(policy.contains("org.telegram.messenger"))
+        assertTrue(policy.contains("com.viber.voip"))
+        assertTrue(policy.contains("com.google.android.apps.tachyon"))
+        assertTrue(policy.contains("sdk >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE"))
+        assertFalse(policy.contains("selectedContacts"))
+    }
+
     @Test fun voipWarningDisplaysStableShellStateInsteadOfObfuscatedClassName() {
         val monitor = source("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
         assertTrue(monitor.contains("RECORDING_OTHER_SOURCE"))

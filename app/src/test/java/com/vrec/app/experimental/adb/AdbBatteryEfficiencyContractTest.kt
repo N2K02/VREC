@@ -253,6 +253,11 @@ class AdbBatteryEfficiencyContractTest {
     @Test fun recoveryIsSerialized() {
         val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
         assertTrue(recovery.contains("private val mutex = Mutex()"))
-        assertTrue(recovery.contains("mutex.withLock { attempt(context.applicationContext) }"))
+        assertTrue(recovery.contains("mutex.withLock {"))
+        assertTrue(recovery.contains("val outcome = attempt(app)"))
+        // Health verification must remain within the same lock, after transport recovery.
+        val locked = recovery.substringAfter("mutex.withLock {").substringBefore("private suspend fun attempt(")
+        assertTrue(locked.contains("ExperimentalCaptureDaemon.watchHealth(app, auditCallHistory = false)"))
+        assertTrue(locked.contains("if (!transportHealthy) return@withLock false"))
     }
 }

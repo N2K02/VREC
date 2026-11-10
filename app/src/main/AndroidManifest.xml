@@ -26,6 +26,7 @@
     <!-- Foreground service that holds the mic while a call is recorded -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- User-enabled floating controls over other apps. -->
@@ -91,6 +92,23 @@
             android:foregroundServiceType="dataSync" />
 
         <receiver android:name=".recording.EnhancedCaptureControlReceiver" android:exported="false" />
+
+        <!-- Manually added Quick Settings tile; does not request ADB authorization. -->
+        <service
+            android:name=".recording.RecordingQuickTile"
+            android:exported="true"
+            android:icon="@drawable/ic_stop"
+            android:label="VRec recording"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".recording.RecordingPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Optional floating Record/Pause/Stop and Close controls. -->
         <service

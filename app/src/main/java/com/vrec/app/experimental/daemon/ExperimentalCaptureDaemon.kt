@@ -229,7 +229,9 @@ object ExperimentalCaptureDaemon {
 
     private fun requestedMode(context: Context, enabled: Boolean): Int =
         CaptureSetupProtocol.selectedMode(
-            enabled && shouldArmForNextCall(context), Prefs.autoRecord(context))
+            enabled && shouldArmForNextCall(context),
+            Prefs.autoRecord(context),
+        )
 
     /** A daemon can answer PONG before its configuration worker has settled.
      * Retry short transient handshakes; never recreate a working helper just
@@ -571,6 +573,34 @@ object ExperimentalCaptureDaemon {
             }.getOrDefault(false)
         }
 
+    /** An authenticated, read-only recorder health inspection. Never disrupt an ongoing call. */
+    suspend fun watchHealth(context: Context, auditCallHistory: Boolean = true): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val snapshot = runCatching {
+            open(context, 'W').use { socket ->
+                RecordingWatchHealth.parse(
+                    socket.getInputStream().bufferedReader().readLine().orEmpty()
+                )
+            }
+        }.getOrNull()
+        val mode = requestedMode(context, Prefs.recordingEnabled(context))
+        val watcherHealthy = RecordingWatchHealth.healthy(snapshot, mode)
+        val missed = if (auditCallHistory && snapshot != null && watcherHealthy && !snapshot.inCall) {
+            val starts = com.vrec.app.calls.MissedCallWatchAudit.recentCellularCalls(
+                context, snapshot.startedAt
+            )
+            starts?.let {
+                com.vrec.app.calls.MissedCallWatchAudit.missedSince(
+                    snapshot.startedAt, snapshot.lastOffHookAt, it
+                )
+            }
+        } else null
+        (watcherHealthy && missed != true) to when (missed) {
+            true -> "The call log contains a recent call not observed by the recorder"
+            false -> RecordingWatchHealth.verdict(snapshot, mode) + "; no missing calls found"
+            null -> RecordingWatchHealth.verdict(snapshot, mode) + "; call log coverage not checked"
+        }
+    }
+
     /** Confirm an outgoing cellular call really connected, not merely went OFFHOOK. */
     suspend fun confirmOutgoingAnswered(context: Context): Boolean =
         withContext(Dispatchers.IO) {
@@ -733,12 +763,25 @@ object ExperimentalCaptureDaemon {
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
+                    // A valid Ogg file is not evidence that both voices were captured.
+                    // Warn on suspicious VoIP channel levels, but never discard
+                    // an otherwise valid call because one participant was quiet.
+                    com.vrec.app.recording.VoipAudioQualityPolicy.warning(voip, health)?.let {
+                        com.vrec.app.recording.RecordingFailureNotice.warn(context, it)
+                    }
                     // Consume by the verified source package, including when
                     // a generic shell filename was reclassified as VoIP.
                     if (caller != null) journal.consumeMatch(context, caller)
                     else journal.consume(context, started, identity.appPackage)
                     delete(context, name)
                     RecordingStore.notifySaved()
+                    // Defer waveform decoding: importing and saving the audio must
+                    // finish promptly even for hour-long calls.
+                    runCatching {
+                        com.vrec.app.recording.RecordingWaveformWorker.schedule(context, dest)
+                    }.onFailure {
+                        com.vrec.app.Log.w("Could not schedule waveform preview", it)
+                    }
                     collected++
                 } catch (t: Throwable) {
                     if (t is CancellationException) throw t

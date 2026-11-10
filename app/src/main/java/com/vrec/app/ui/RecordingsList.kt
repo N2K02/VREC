@@ -32,6 +32,8 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextAlign
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -129,7 +131,23 @@ fun RecordingsList() {
         refresh++
     }
     val storeRevision by RecordingStore.revision.collectAsState()
+    LaunchedEffect(tick) {
+        withContext(Dispatchers.IO) {
+            val cleaned = RecordingStore.cleanOldSaved(context)
+            RecordingStore.purgeTrash(context)
+            if (cleaned > 0) RecordingStore.notifySaved()
+        }
+    }
     val recordings = remember(tick, refresh, storeRevision) { RecordingStore.list(context) }
+    LaunchedEffect(tick, storeRevision) {
+        withContext(Dispatchers.IO) {
+            com.vrec.app.recording.RecordingWaveformWorker.scheduleMissing(
+                context.applicationContext, recordings
+            )
+        }
+    }
+    val trashedRecordings = remember(tick, refresh, storeRevision) { RecordingStore.trashed(context) }
+    var showTrash by rememberSaveable { mutableStateOf(false) }
     // Revisit existing SIM files once the user's call-log grant is available.
     // The Android call log may be populated after an audio recording is finalized.
     LaunchedEffect(tick, refresh, callLogAllowed, contactsAllowed) {
@@ -192,14 +210,19 @@ fun RecordingsList() {
             if (changed > 0) refresh++
         }
     }
-    var playingPath by remember { mutableStateOf<String?>(null) }
-    var playbackPaused by remember { mutableStateOf(false) }
+    var playingPath by remember {
+        mutableStateOf<String?>(com.vrec.app.recording.RecordingPlaybackService.currentPath)
+    }
+    var playbackPaused by remember {
+        mutableStateOf(com.vrec.app.recording.RecordingPlaybackService.paused)
+    }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var playbackPosition by remember { mutableStateOf(0L) }
     var playbackDuration by remember { mutableStateOf(0L) }
-    val player = remember { MediaPlayer() }
+    val player = remember { com.vrec.app.recording.RecordingPlaybackService.player }
     var currentRecording by remember { mutableStateOf<Recording?>(null) }
     var confirmDelete by remember { mutableStateOf<Recording?>(null) }
+    var pendingPermanentDelete by remember { mutableStateOf<Recording?>(null) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var confirmDeleteSelected by remember { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -280,35 +303,33 @@ fun RecordingsList() {
         }
     }
 
-    DisposableEffect(Unit) {
-        player.setOnCompletionListener {
-            playingPath = null
-            playbackPaused = false
-            playbackPosition = 0L
+    // The foreground service owns MediaPlayer listeners even when this page is disposed.
+    // Reconcile external headset/notification controls while the page is visible.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val servicePath = com.vrec.app.recording.RecordingPlaybackService.currentPath
+            if (servicePath != playingPath) playingPath = servicePath
+            playbackPaused = com.vrec.app.recording.RecordingPlaybackService.paused
+            delay(300L)
         }
-        player.setOnErrorListener { _, _, _ ->
-            playingPath = null
-            playbackPaused = false
-            playbackError = "Unable to play the recording. Check the file or format."
-            true
-        }
-        onDispose { runCatching { player.release() } }
     }
 
     fun stopPlayback() {
+        com.vrec.app.recording.RecordingPlaybackService.send(
+            context, com.vrec.app.recording.RecordingPlaybackService.ACTION_STOP)
         runCatching { player.reset() }
+        com.vrec.app.recording.RecordingPlaybackService.currentPath = null
         playingPath = null
         playbackPaused = false
         playbackPosition = 0L
         playbackDuration = 0L
     }
 
-    // Playback controls live only in the active recording card. If the recording
-    // disappears from the filtered library, stop playback rather than leave audio
-    // running with no visible controls.
+    // A changed search/filter must not end background playback. Only actual deletion
+    // or an explicit Stop should stop an existing playback session.
     LaunchedEffect(playingPath, search, filter, refresh, tick) {
         val path = playingPath
-        if (path != null && visibleRecordings.none { it.file.absolutePath == path }) {
+        if (path != null && recordings.none { it.file.absolutePath == path }) {
             stopPlayback()
         }
     }
@@ -320,6 +341,9 @@ fun RecordingsList() {
             runCatching {
                 if (playbackPaused) player.start() else player.pause()
                 playbackPaused = !playbackPaused
+                com.vrec.app.recording.RecordingPlaybackService.paused = playbackPaused
+                com.vrec.app.recording.RecordingPlaybackService.send(
+                    context, com.vrec.app.recording.RecordingPlaybackService.ACTION_REFRESH)
             }.onFailure {
                 stopPlayback()
                 playbackError = "Could not resume playback."
@@ -332,6 +356,13 @@ fun RecordingsList() {
                 if (Build.VERSION.SDK_INT >= 23) player.playbackParams = player.playbackParams.setSpeed(speed)
                 playbackDuration = player.duration.toLong().coerceAtLeast(0L)
                 player.start()
+                com.vrec.app.recording.RecordingPlaybackService.setRecording(rec)
+                com.vrec.app.recording.RecordingPlaybackService.currentPath = rec.file.absolutePath
+                com.vrec.app.recording.RecordingPlaybackService.paused = false
+                check(com.vrec.app.recording.RecordingPlaybackService.send(
+                    context, com.vrec.app.recording.RecordingPlaybackService.ACTION_REFRESH)) {
+                    "Playback notification could not be started."
+                }
                 playingPath = rec.file.absolutePath
                 playbackPaused = false
                 playbackPosition = 0L
@@ -357,25 +388,51 @@ fun RecordingsList() {
     }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Recording library", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary)
-                    Text("Saved recordings", style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold)
-                    Text("${recordings.size} saved · ${formatSize(totalBytes)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                FilledTonalIconButton(onClick = { refresh++ }) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+            androidx.compose.material3.SuggestionChip(
+                onClick = { refresh++ },
+                label = { Text("${recordings.size} saved") },
+                icon = { Icon(Icons.Filled.FolderOpen, contentDescription = null,
+                    modifier = Modifier.size(18.dp)) },
+            )
+            androidx.compose.material3.SuggestionChip(
+                onClick = { refresh++ },
+                label = { Text(formatSize(totalBytes)) },
+            )
+            androidx.compose.material3.SuggestionChip(
+                onClick = { showTrash = !showTrash },
+                label = { Text("Deleted ${trashedRecordings.size}") },
+                icon = {
+                    Icon(Icons.Filled.Delete, contentDescription = null,
+                        modifier = Modifier.size(18.dp))
+                },
+            )
+            IconButton(onClick = { refresh++ }, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+            }
+        }
+        if (showTrash) {
+            Text("Deleted recordings are retained for the configured period before permanent deletion.",
+                style = MaterialTheme.typography.bodySmall)
+            trashedRecordings.forEach { rec ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(rec.displayName, Modifier.weight(1f), maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = {
+                        if (RecordingStore.restore(context, rec)) refresh++
+                        else Toast.makeText(context, "Unable to restore recording", Toast.LENGTH_SHORT).show()
+                    }) { Text("Restore") }
+                    TextButton(onClick = {
+                        pendingPermanentDelete = rec
+                    }) { Text("Delete forever") }
                 }
             }
         }
@@ -633,15 +690,33 @@ fun RecordingsList() {
         )
     }
 
+    pendingPermanentDelete?.let { rec ->
+        AlertDialog(
+            onDismissRequest = { pendingPermanentDelete = null },
+            title = { Text("Delete permanently?") },
+            text = { Text("This recording and its details will be erased immediately. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (RecordingStore.delete(rec)) refresh++
+                    else Toast.makeText(context, "Unable to delete recording", Toast.LENGTH_SHORT).show()
+                    pendingPermanentDelete = null
+                }) { Text("Delete forever", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPermanentDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     if (confirmDeleteAll || confirmDeleteSelected || confirmDelete != null) {
         val deletingAll = confirmDeleteAll
         val deletingSelected = confirmDeleteSelected
         val one = confirmDelete
         AlertDialog(onDismissRequest = { confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null },
             title = { Text(if (deletingAll) "Delete all recordings?" else if (deletingSelected) "Delete selected recordings?" else "Delete recording?") },
-            text = { Text(if (deletingAll) "Permanently delete all ${recordings.size} audio files and their details from this phone? This cannot be undone."
-                else if (deletingSelected) "Permanently delete ${selectedPaths.size} selected recordings? This cannot be undone."
-                else "Permanently remove this recording from your phone?") },
+            text = { Text(if (deletingAll) "Move all ${recordings.size} recordings to Recently Deleted? They can be restored until the retention period expires."
+                else if (deletingSelected) "Move ${selectedPaths.size} selected recordings to Recently Deleted? They can be restored."
+                else "Move this recording to Recently Deleted? You can restore it before the retention period expires.") },
             confirmButton = {
                 TextButton(onClick = {
                     val targets = when {
@@ -652,13 +727,13 @@ fun RecordingsList() {
                     if (targets.any { it.file.absolutePath == playingPath }) {
                         stopPlayback()
                     }
-                    val failures = targets.count { !RecordingStore.delete(it) }
+                    val failures = targets.count { !RecordingStore.moveToTrash(context, it) }
                     if (failures > 0) {
                         Toast.makeText(context, "$failures recording(s) could not be fully deleted.", Toast.LENGTH_LONG).show()
                     }
                     confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null
                     selectedPaths = emptySet(); selectionMode = false; currentRecording = null; refresh++
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Move to trash", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null }) { Text("Cancel") } })
     }
@@ -673,6 +748,19 @@ private fun RecordingRow(
     onSeek: (Float) -> Unit, onStop: () -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Never launch dozens of simultaneous audio decoders while scrolling the list.
+    // Decode only the active player, off the UI thread.
+    val waveform by produceState<FloatArray?>(
+        initialValue = if (active) floatArrayOf() else null,
+        rec.file.absolutePath, rec.file.lastModified(), active
+    ) {
+        value = if (active) {
+            value = floatArrayOf() // Loading; distinguish from an unsupported file.
+            withContext(Dispatchers.IO) {
+                com.vrec.app.recording.RecordingWaveform.prepare(context.applicationContext, rec.file)
+            }
+        } else null
+    }
     val callApp = remember(rec.sourcePackage) {
         resolveCallAppName(context, rec.sourcePackage)
     }
@@ -740,8 +828,27 @@ private fun RecordingRow(
                 }
                 Column(Modifier.weight(1f).clickable { if (selectionMode) onSelect() else onOpen() },
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(dateFmt.format(Date(rec.startedAt)), style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            dateFmt.format(Date(rec.startedAt)),
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (rec.durationMs > 0L) {
+                            Text(
+                                "• " + formatDuration(rec.durationMs),
+                                maxLines = 1,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     Text(displayedContact, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -763,19 +870,55 @@ private fun RecordingRow(
                 callMediaType = rec.callMediaType,
             )
             if (active && !selectionMode) {
-                // One in-card player: the row's left button handles Play/Pause/Resume,
-                // while the expanded controls handle seeking and stopping.
+                // A single compact scrubber: waveform replaces the redundant slider.
+                // Tapping anywhere on the bars seeks to the matching position.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Slider(
-                        value = progress,
-                        onValueChange = onSeek,
-                        modifier = Modifier.weight(1f),
-                        enabled = durationMs > 0L,
-                    )
+                    val peaks = waveform
+                    if (peaks != null && peaks.isNotEmpty()) {
+                        val playedColor = MaterialTheme.colorScheme.primary
+                        val remainingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        androidx.compose.foundation.Canvas(
+                            modifier = Modifier.weight(1f).height(42.dp)
+                                .pointerInput(peaks, durationMs) {
+                                    detectTapGestures { offset ->
+                                        if (durationMs > 0L && size.width > 0)
+                                            onSeek((offset.x / size.width).coerceIn(0f, 1f))
+                                    }
+                                }
+                        ) {
+                            val step = size.width / peaks.size
+                            val center = size.height / 2f
+                            peaks.forEachIndexed { index, raw ->
+                                // Contrast boost is visual only; don't change saved PCM.
+                                val level = kotlin.math.sqrt(raw.coerceIn(0f, 1f))
+                                val barHeight = (size.height * (0.15f + 0.80f * level))
+                                    .coerceIn(3.dp.toPx(), size.height * 0.95f)
+                                val x = (index + 0.5f) * step
+                                drawLine(
+                                    color = if ((index + 0.5f) / peaks.size <= progress)
+                                        playedColor else remainingColor,
+                                    start = androidx.compose.ui.geometry.Offset(x, center - barHeight / 2f),
+                                    end = androidx.compose.ui.geometry.Offset(x, center + barHeight / 2f),
+                                    strokeWidth = (step * 0.62f).coerceIn(2.dp.toPx(), 5.dp.toPx()),
+                                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                )
+                            }
+                        }
+                    } else {
+                        if (peaks?.isEmpty() == true) {
+                            Text("Loading waveform…",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Slider(value = progress, onValueChange = onSeek,
+                                modifier = Modifier.weight(1f), enabled = durationMs > 0L)
+                        }
+                    }
                     IconButton(onClick = onStop) {
                         Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
                     }

@@ -39,7 +39,8 @@ class HomeDashboardVisualContractTest {
         assertTrue(palette.contains("BorderStroke(1.dp, stroke)"))
         assertTrue(main.contains("HomePanelStyle.border(highlight = enabled)") ||
             main.contains("HomePanelStyle.border(highlight = ready && enabled)"))
-        assertTrue(adb.contains("HomePanelStyle.border(highlight = allReady)"))
+        assertTrue(adb.contains("FlowRow("))
+        assertTrue(adb.contains("contentDescription = "))
         assertTrue(access.contains("HomePanelStyle.border()"))
         assertTrue(setup.contains("HomePanelStyle.border()"))
         assertTrue(access.contains("permissions.chunked(2)"))
@@ -54,14 +55,24 @@ class HomeDashboardVisualContractTest {
         val setup = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
         assertTrue(main.contains("RecordingMasterCard("))
         assertTrue(main.contains("ManualRecordingCard("))
+        assertTrue(main.contains("Enable global recording"))
+        assertFalse(main.contains("Text(HomeDashboardPresentation.title(dashboardState)"))
+        val compactManual = main.substringAfter("private fun ManualRecordingCard(")
+            .substringBefore("/** Live capture:")
+        assertTrue(compactManual.contains("modifier = Modifier.weight(1f)"))
+        assertTrue(compactManual.contains("FilledTonalButton("))
+        assertFalse(compactManual.contains("modifier = Modifier.fillMaxWidth(),\\n            ) {"))
+
         assertTrue(main.contains("onEnabledChange = { enabled ->"))
         assertTrue(adb.contains("Text(\"Start\")"))
         assertTrue(adb.contains("Text(\"Stop\")"))
         assertTrue(adb.contains("Text(\"Restart\")"))
         assertTrue(adb.contains("Stat(\"Shell UID\""))
-        assertTrue(setup.contains("var portsExpanded by remember { mutableStateOf(false) }"))
-        assertTrue(setup.contains("if (portsExpanded) Text("))
-        assertTrue(setup.contains("if (portsExpanded && wireless.pairingPort != null)"))
+        // The Home port detail card is intentionally removed; status remains in AdbDashboard.
+        assertFalse(setup.contains("ADB connection ports"))
+        assertFalse(setup.contains("portsExpanded"))
+        assertTrue(adb.contains("Stat(\"Connection\""))
+        assertTrue(adb.contains("Stat(\"Shell UID\""))
     }
 
     @Test fun manualCaptureAndADBOnlyLiveTransportRemainVisible() {

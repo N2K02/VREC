@@ -94,12 +94,14 @@ fun SettingsScreen(
         captureState is com.vrec.app.recording.RecordingService.State.Idle, shellRecording)
     // Home and Settings share the same persisted recording method.
     // Local mirror of the stored values, so the UI updates immediately.
-    var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
-    var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
     var simCaptureSource by remember { mutableStateOf(EnhancedCapturePreferences.simSource(context)) }
     val voipArmed by ExperimentalCaptureDaemon.voipArmed.collectAsState()
     val voipMessage by ExperimentalCaptureDaemon.voipMessage.collectAsState()
     val simSourceMessage by ExperimentalCaptureDaemon.simSourceMessage.collectAsState()
+    var watcherHealthResult by remember { mutableStateOf<String?>(null) }
+    var watcherHealthChecking by remember { mutableStateOf(false) }
+    var trashRetentionDays by remember { mutableStateOf(prefs.getInt("trash_retention_days", 30)) }
+    var savedRetentionDays by remember { mutableStateOf(prefs.getInt("saved_retention_days", 0)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
     val overlayPermissionGranted = remember(resumeTick) {
@@ -147,13 +149,63 @@ fun SettingsScreen(
             )
         } else {
         if (section == "Recording") SettingCard("Recording") {
-            ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
-                autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
-                scope.launch {
-                    if (!ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)))
-                        com.vrec.app.Log.w("Recording mode update was not confirmed by shell")
+            Text("Recorder health", style = MaterialTheme.typography.titleSmall)
+            OutlinedButton(
+                enabled = !watcherHealthChecking,
+                onClick = {
+                    watcherHealthChecking = true
+                    scope.launch {
+                        try {
+                            val (healthy, detail) = ExperimentalCaptureDaemon.watchHealth(context)
+                            watcherHealthResult = (if (healthy) "Healthy: " else "Attention: ") + detail
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            com.vrec.app.Log.w("Call watcher health check failed", error)
+                            watcherHealthResult = "Attention: Could not check the recorder. Retry after reconnecting ADB."
+                        } finally {
+                            watcherHealthChecking = false
+                        }
+                    }
+                },
+            ) { Text(if (watcherHealthChecking) "Checking…" else "Check call watcher") }
+            watcherHealthResult?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Text("Recording retention", style = MaterialTheme.typography.titleSmall)
+            Text("Automatic cleanup moves older recordings to Recently Deleted; favorites are protected. Defaults to off.",
+                style = MaterialTheme.typography.bodySmall)
+            listOf(0 to "Never", 30 to "30 days", 90 to "90 days",
+                180 to "180 days", 365 to "1 year").forEach { (days, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = savedRetentionDays == days, onClick = {
+                        savedRetentionDays = days
+                        prefs.edit().putInt("saved_retention_days", days).apply()
+                    })
+                    Text("Saved: $label", style = MaterialTheme.typography.bodySmall)
                 }
             }
+            Text("Recently Deleted retention", style = MaterialTheme.typography.titleSmall)
+            listOf(7, 30, 90).forEach { days ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = trashRetentionDays == days, onClick = {
+                        trashRetentionDays = days
+                        prefs.edit().putInt("trash_retention_days", days).apply()
+                    })
+                    Text("$days days", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            OutlinedButton(onClick = {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    com.vrec.app.recording.RecordingStore.cleanOldSaved(context)
+                    com.vrec.app.recording.RecordingStore.purgeTrash(context)
+                    com.vrec.app.recording.RecordingStore.notifySaved()
+                }
+            }) { Text("Run cleanup now") }
+
+            Text("Automatic recording covers every detected supported call while Recording is on.",
+                style = MaterialTheme.typography.bodySmall)
             ToggleRow(
                 "Discard silent recordings",
                 "If a recording comes out silent (this phone blocked capture), delete it instead of keeping it.",
@@ -223,15 +275,8 @@ fun SettingsScreen(
         }
 
         if (section == "VoIP") SettingCard("VoIP") {
-            ToggleRow(
-                "Record VoIP calls",
-                "Use the independent ADB helper for supported apps on Android 14+ when permitted.",
-                recordVoip,
-            ) {
-                recordVoip = it
-                putBool(Prefs.RECORD_VOIP, it)
-                scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
-            }
+            Text("Supported VoIP calls are included automatically when recording is on. Android 14+ and notification permission may be required.",
+                style = MaterialTheme.typography.bodySmall)
             if (true) {
                 Text(
                     if (Build.VERSION.SDK_INT < 34)
@@ -245,7 +290,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (recordVoip) {
+            if (true) {
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

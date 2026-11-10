@@ -246,6 +246,67 @@ object RecordingStore {
             ?.sortedByDescending { it.startedAt }
             ?: emptyList()
 
+    /** Deleted files are retained locally for 30 days, including their editable metadata. */
+    /** Settings default to no automatic deletion of saved calls. */
+    private fun trashDays(context: Context): Int =
+        com.vrec.app.Prefs.of(context).getInt("trash_retention_days", 30).coerceIn(1, 90)
+
+    private fun savedDays(context: Context): Int =
+        com.vrec.app.Prefs.of(context).getInt("saved_retention_days", 0)
+            .takeIf { it in setOf(0, 30, 90, 180, 365) } ?: 0
+
+    /** Opt-in cleanup protects favorites and only moves older calls into trash. */
+    fun cleanOldSaved(context: Context, nowMs: Long = System.currentTimeMillis()): Int {
+        val days = savedDays(context)
+        if (days == 0) return 0
+        return list(context).count { item ->
+            RecordingRetentionPolicy.savedEligible(item.startedAt, item.favorite, days, nowMs) &&
+                moveToTrash(context, item)
+        }
+    }
+
+    private fun trashDir(context: Context): File =
+        File(dir(context), ".trash").apply { mkdirs() }
+
+    fun trashed(context: Context): List<Recording> {
+        purgeTrash(context)
+        return trashDir(context).listFiles { f ->
+            f.isFile && (f.name.endsWith(".m4a", true) || f.name.endsWith(".ogg", true))
+        }?.map(::read)?.sortedByDescending { it.file.lastModified() } ?: emptyList()
+    }
+
+    /** Move audio and sidecar together; if sidecar move fails, restore the audio. */
+    fun moveToTrash(context: Context, recording: Recording): Boolean = synchronized(metadataLock) {
+        val source = recording.file
+        if (!source.exists()) return@synchronized false
+        val dest = File(trashDir(context), source.name)
+        if (!runCatching { RecordingTrashFiles.move(source, dest) }.getOrDefault(false))
+            return@synchronized false
+        dest.setLastModified(System.currentTimeMillis())
+        notifySaved()
+        true
+    }
+
+    fun restore(context: Context, recording: Recording): Boolean = synchronized(metadataLock) {
+        val source = recording.file
+        if (source.parentFile?.canonicalFile != trashDir(context).canonicalFile) return@synchronized false
+        val dest = File(dir(context), source.name)
+        if (!runCatching { RecordingTrashFiles.move(source, dest) }.getOrDefault(false))
+            return@synchronized false
+        notifySaved()
+        true
+    }
+
+    fun purgeTrash(context: Context, nowMs: Long = System.currentTimeMillis()) {
+        trashDir(context).listFiles { f ->
+            f.isFile && (f.name.endsWith(".ogg", true) || f.name.endsWith(".m4a", true))
+        }?.forEach { audio ->
+            if (RecordingRetentionPolicy.trashExpired(audio.lastModified(), trashDays(context), nowMs)) {
+                delete(read(audio))
+            }
+        }
+    }
+
     /** Keep the metadata if audio deletion fails; report partial deletion. */
     fun delete(recording: Recording): Boolean {
         val audioDeleted = !recording.file.exists() || recording.file.delete()

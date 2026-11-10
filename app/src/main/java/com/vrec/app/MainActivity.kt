@@ -143,6 +143,7 @@ class MainActivity : ComponentActivity() {
             com.vrec.app.experimental.adb.AdbUserChoices.setManuallyStopped(applicationContext, false)
             com.vrec.app.experimental.adb.AdbUserChoices.markUserOpenedThisBoot(applicationContext)
         }
+        com.vrec.app.recording.RecordingCleanupWorker.schedule(applicationContext)
         com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
@@ -310,6 +311,9 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                                 "Safe shutdown was not confirmed. VRec remains open so recordings can be recovered.")
                                             return@launch
                                         }
+                                        com.vrec.app.recording.RecordingPlaybackService.send(
+                                            app, com.vrec.app.recording.RecordingPlaybackService.ACTION_STOP)
+                                        com.vrec.app.recording.RecordingCleanupWorker.cancel(app)
                                         LiveUpdater.controller.cancel()
                                         RecordingFailureNotice.dismiss(app)
                                         com.vrec.app.experimental.adb.AdbLifecycle.quit(app)
@@ -598,119 +602,35 @@ private fun RecordingMasterCard(
     saving: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
-    val dashboardState = HomeDashboardPresentation.resolve(
-        enabled, ready, active, paused, starting, saving)
-    val autoRecord = Prefs.autoRecord(LocalContext.current)
-    val cardColor by animateColorAsState(
-        targetValue = HomePanelStyle.color(highlight = ready && enabled),
-        label = "Recording master card color",
-    )
-    val adbStatus by ExperimentalRecording.status.collectAsState()
-    val badge = when (dashboardState) {
-        HomeDashboardPresentation.State.RECORDING -> "RECORDING"
-        HomeDashboardPresentation.State.PAUSED -> "PAUSED"
-        HomeDashboardPresentation.State.STARTING -> "STARTING"
-        HomeDashboardPresentation.State.SAVING -> "SAVING"
-        HomeDashboardPresentation.State.OFF -> "OFF"
-        HomeDashboardPresentation.State.READY -> "READY"
-        HomeDashboardPresentation.State.SETUP_NEEDED ->
-            if (adbStatus.busy) "CONNECTING" else "SETUP NEEDED"
-    }
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val badgeColor = when (badge) {
-        "READY" -> if (dark) Color(0xFF91E3AF) else Color(0xFF237642)
-        "CONNECTING" -> if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
-        "RECORDING" -> if (dark) Color(0xFFFFA39D) else Color(0xFFB63832)
-        "PAUSED", "STARTING", "SAVING" ->
-            if (dark) Color(0xFFFFD18A) else Color(0xFF91600D)
-        "OFF" -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> if (dark) Color(0xFFFFC58F) else Color(0xFF99621F)
-    }
-    val animatedBadgeColor by animateColorAsState(badgeColor, label = "Recording status color")
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = cardColor,
+        color = HomePanelStyle.color(highlight = ready && enabled),
         border = HomePanelStyle.border(highlight = enabled),
         shadowElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(HomeDashboardPresentation.title(dashboardState),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold)
-                Text(HomeDashboardPresentation.detail(dashboardState, autoRecord),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f))
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
-                    modifier = Modifier.size(38.dp),
-                ) {
-                    Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
-                        Icon(Icons.Rounded.Mic, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(21.dp))
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Recording", style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold)
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onEnabledChange,
-                    enabled = RecordingTransportPresentation.canChangeMasterToggle(state, shellActive),
-                )
-            }
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = animatedBadgeColor.copy(alpha = 0.14f),
-                    border = BorderStroke(0.75.dp, animatedBadgeColor.copy(alpha = 0.34f)),
-                ) {
-                    Text(badge, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = animatedBadgeColor,
-                        fontWeight = FontWeight.SemiBold)
-                }
-                Text(
-                    when {
-                        active -> "Capture is active."
-                        paused -> "Capture is paused."
-                        starting -> "Waiting for capture confirmation."
-                        saving -> "Finishing recording."
-                        enabled && !ready && adbStatus.busy -> "Checking ADB authorization…"
-                        enabled && !ready -> "Waiting for the shell helper."
-                        enabled -> if (autoRecord) "Automatically record supported calls."
-                            else "Manual mode: start recording from the call card."
-                        else -> "Recording disabled."
-                    },
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (!RecordingTransportPresentation.canChangeMasterToggle(state, shellActive)) {
-                Text("Recording cannot be disabled until the current capture finishes.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Icon(
+                Icons.Rounded.Mic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                "Enable global recording",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                enabled = RecordingTransportPresentation.canChangeMasterToggle(state, shellActive),
+            )
         }
     }
 }
@@ -734,40 +654,40 @@ private fun ManualRecordingCard(
         shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Icon(Icons.Rounded.Mic, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Icon(Icons.Rounded.Mic, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp))
                 Text("Record manually", style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold)
+                Text(
+                    when {
+                        shellActive -> "Recording in progress"
+                        !enabled -> "Enable global recording first"
+                        !ready -> "ADB helper not ready"
+                        !callAvailable -> "Available during a call"
+                        else -> "Record this call"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                when {
-                    shellActive -> "A shell recording is already active. Use its controls above."
-                    !enabled -> "Enable Recording above to allow a manual call segment."
-                    !ready -> "Start the ADB recording helper before recording."
-                    !callAvailable -> "Make or answer a supported call to enable manual recording."
-                    else -> "Start a new recording segment for the connected call."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             FilledTonalButton(
                 onClick = { CallMonitor.manualStart(context) },
                 enabled = canStart,
-                modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Rounded.Mic, contentDescription = null,
-                    modifier = Modifier.size(18.dp))
-                androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
-                Text(if (CallMonitor.canRecordAgain()) "Record again" else "Record now")
+                    modifier = Modifier.size(16.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.size(5.dp))
+                Text(if (CallMonitor.canRecordAgain()) "Again" else "Record")
             }
         }
     }

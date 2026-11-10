@@ -63,8 +63,20 @@ object AdbHelperAutoRecovery {
     }
 
     suspend fun check(context: Context): Boolean = withContext(Dispatchers.IO) {
-        mutex.withLock { attempt(context.applicationContext) }.let {
-            it == Outcome.HELPER_RUNNING || it == Outcome.RESTORED_TCP || it == Outcome.RESTORED_WIRELESS
+        mutex.withLock {
+            val app = context.applicationContext
+            val outcome = attempt(app)
+            val transportHealthy = outcome == Outcome.HELPER_RUNNING ||
+                outcome == Outcome.RESTORED_TCP || outcome == Outcome.RESTORED_WIRELESS
+            if (!transportHealthy) return@withLock false
+            // A healthy socket alone does not mean the daemon still receives calls.
+            // A watcher failure must be surfaced, not silently "repaired" during a call.
+            val (watchHealthy, detail) = ExperimentalCaptureDaemon.watchHealth(app, auditCallHistory = false)
+            if (!watchHealthy) {
+                record(Outcome.FAILED, "Recorder call monitoring needs attention: $detail")
+                return@withLock false
+            }
+            true
         }
     }
 
