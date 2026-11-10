@@ -32,6 +32,8 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextAlign
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -842,48 +844,55 @@ private fun RecordingRow(
                 callMediaType = rec.callMediaType,
             )
             if (active && !selectionMode) {
-                waveform?.let { peaks ->
-                    if (peaks.isEmpty()) {
-                        Text("Generating waveform…", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                    val tint = MaterialTheme.colorScheme.primary
-                    androidx.compose.foundation.Canvas(
-                        modifier = Modifier.fillMaxWidth().height(44.dp)
-                    ) {
-                        val width = size.width / peaks.size
-                        peaks.forEachIndexed { i, amplitude ->
-                            val height = (amplitude * size.height).coerceAtLeast(2f)
-                            drawLine(
-                                color = tint.copy(alpha = if (i.toFloat() / peaks.size <= progress) 1f else 0.38f),
-                                start = androidx.compose.ui.geometry.Offset(width * (i + 0.5f),
-                                    (size.height - height) / 2),
-                                end = androidx.compose.ui.geometry.Offset(width * (i + 0.5f),
-                                    (size.height + height) / 2),
-                                strokeWidth = (width * 0.72f).coerceAtLeast(1f),
-                            )
-                        }
-                    }
-                    }
-                }
-                if (waveform == null) {
-                    Text("Waveform unavailable for this audio format",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // One in-card player: the row's left button handles Play/Pause/Resume,
-                // while the expanded controls handle seeking and stopping.
+                // A single compact scrubber: waveform replaces the redundant slider.
+                // Tapping anywhere on the bars seeks to the matching position.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Slider(
-                        value = progress,
-                        onValueChange = onSeek,
-                        modifier = Modifier.weight(1f),
-                        enabled = durationMs > 0L,
-                    )
+                    val peaks = waveform
+                    if (peaks != null && peaks.isNotEmpty()) {
+                        val playedColor = MaterialTheme.colorScheme.primary
+                        val remainingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        androidx.compose.foundation.Canvas(
+                            modifier = Modifier.weight(1f).height(42.dp)
+                                .pointerInput(peaks, durationMs) {
+                                    detectTapGestures { offset ->
+                                        if (durationMs > 0L && size.width > 0)
+                                            onSeek((offset.x / size.width).coerceIn(0f, 1f))
+                                    }
+                                }
+                        ) {
+                            val step = size.width / peaks.size
+                            val center = size.height / 2f
+                            peaks.forEachIndexed { index, raw ->
+                                // Contrast boost is visual only; don't change saved PCM.
+                                val level = kotlin.math.sqrt(raw.coerceIn(0f, 1f))
+                                val barHeight = (size.height * (0.15f + 0.80f * level))
+                                    .coerceIn(3.dp.toPx(), size.height * 0.95f)
+                                val x = (index + 0.5f) * step
+                                drawLine(
+                                    color = if ((index + 0.5f) / peaks.size <= progress)
+                                        playedColor else remainingColor,
+                                    start = androidx.compose.ui.geometry.Offset(x, center - barHeight / 2f),
+                                    end = androidx.compose.ui.geometry.Offset(x, center + barHeight / 2f),
+                                    strokeWidth = (step * 0.62f).coerceIn(2.dp.toPx(), 5.dp.toPx()),
+                                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                )
+                            }
+                        }
+                    } else {
+                        if (peaks?.isEmpty() == true) {
+                            Text("Loading waveform…",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Slider(value = progress, onValueChange = onSeek,
+                                modifier = Modifier.weight(1f), enabled = durationMs > 0L)
+                        }
+                    }
                     IconButton(onClick = onStop) {
                         Icon(Icons.Filled.Stop, contentDescription = "Stop playback")
                     }
