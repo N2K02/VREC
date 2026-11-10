@@ -25,7 +25,8 @@ class RecordingLibraryUiContractTest {
         assertTrue(decoder.contains("decoder.flush()"))
         assertTrue(decoder.contains("LruCache<String, FloatArray>"))
         assertTrue(decoder.contains("DEADLINE_MS"))
-        assertTrue(row.contains("if (active) withContext(Dispatchers.IO)"))
+        assertTrue(row.contains("withContext(Dispatchers.IO)"))
+        assertTrue(row.contains("Generating waveform…"))
         assertTrue(row.contains("waveform?.let { peaks ->"))
     }
 }
