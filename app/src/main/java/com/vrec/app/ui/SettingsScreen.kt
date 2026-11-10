@@ -158,6 +158,11 @@ fun SettingsScreen(
                         try {
                             val (healthy, detail) = ExperimentalCaptureDaemon.watchHealth(context)
                             watcherHealthResult = (if (healthy) "Healthy: " else "Attention: ") + detail
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            com.vrec.app.Log.w("Call watcher health check failed", error)
+                            watcherHealthResult = "Attention: Could not check the recorder. Retry after reconnecting ADB."
                         } finally {
                             watcherHealthChecking = false
                         }
