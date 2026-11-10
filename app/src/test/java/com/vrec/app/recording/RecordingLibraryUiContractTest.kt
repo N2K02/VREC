@@ -13,7 +13,7 @@ class RecordingLibraryUiContractTest {
     @Test fun libraryUsesCompactSummaryChips() {
         val ui = read("app/src/main/java/com/vrec/app/ui/RecordingsList.kt")
         assertTrue(ui.contains("SuggestionChip("))
-        assertTrue(ui.contains("Deleted ${trashedRecordings.size}"))
+        assertTrue(ui.contains("Deleted \${trashedRecordings.size}"))
         assertTrue(ui.contains("formatSize(totalBytes)"))
         assertFalse(ui.contains("Text(\"Saved recordings\", style = MaterialTheme.typography.titleLarge"))
     }
