@@ -130,6 +130,8 @@ fun RecordingsList() {
     }
     val storeRevision by RecordingStore.revision.collectAsState()
     val recordings = remember(tick, refresh, storeRevision) { RecordingStore.list(context) }
+    val trashedRecordings = remember(tick, refresh, storeRevision) { RecordingStore.trashed(context) }
+    var showTrash by rememberSaveable { mutableStateOf(false) }
     // Revisit existing SIM files once the user's call-log grant is available.
     // The Android call log may be populated after an audio recording is finalized.
     LaunchedEffect(tick, refresh, callLogAllowed, contactsAllowed) {
@@ -376,6 +378,31 @@ fun RecordingsList() {
                 }
                 FilledTonalIconButton(onClick = { refresh++ }) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
+                }
+            }
+        }
+        TextButton(onClick = { showTrash = !showTrash }) {
+            Text(if (showTrash) "Hide recently deleted" else "Recently deleted (${trashedRecordings.size})")
+        }
+        if (showTrash) {
+            Text("Recordings are kept for 30 days before permanent deletion.",
+                style = MaterialTheme.typography.bodySmall)
+            trashedRecordings.forEach { rec ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(rec.displayName, Modifier.weight(1f), maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = {
+                        if (RecordingStore.restore(context, rec)) refresh++
+                        else Toast.makeText(context, "Unable to restore recording", Toast.LENGTH_SHORT).show()
+                    }) { Text("Restore") }
+                    TextButton(onClick = {
+                        if (RecordingStore.delete(rec)) refresh++
+                        else Toast.makeText(context, "Unable to delete recording", Toast.LENGTH_SHORT).show()
+                    }) { Text("Delete") }
                 }
             }
         }
@@ -652,13 +679,13 @@ fun RecordingsList() {
                     if (targets.any { it.file.absolutePath == playingPath }) {
                         stopPlayback()
                     }
-                    val failures = targets.count { !RecordingStore.delete(it) }
+                    val failures = targets.count { !RecordingStore.moveToTrash(context, it) }
                     if (failures > 0) {
                         Toast.makeText(context, "$failures recording(s) could not be fully deleted.", Toast.LENGTH_LONG).show()
                     }
                     confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null
                     selectedPaths = emptySet(); selectionMode = false; currentRecording = null; refresh++
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Move to trash", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null }) { Text("Cancel") } })
     }
