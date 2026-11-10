@@ -581,8 +581,22 @@ object ExperimentalCaptureDaemon {
             }
         }.getOrNull()
         val mode = requestedMode(context, Prefs.recordingEnabled(context))
-        RecordingWatchHealth.healthy(snapshot, mode) to
-            RecordingWatchHealth.verdict(snapshot, mode)
+        val watcherHealthy = RecordingWatchHealth.healthy(snapshot, mode)
+        val missed = if (snapshot != null && watcherHealthy && !snapshot.inCall) {
+            val starts = com.vrec.app.calls.MissedCallWatchAudit.recentCellularCalls(
+                context, snapshot.startedAt
+            )
+            starts?.let {
+                com.vrec.app.calls.MissedCallWatchAudit.missedSince(
+                    snapshot.startedAt, snapshot.lastEventAt, it
+                )
+            }
+        } else null
+        (watcherHealthy && missed != true) to when (missed) {
+            true -> "The call log contains a recent call not observed by the recorder"
+            false -> RecordingWatchHealth.verdict(snapshot, mode) + "; no missing calls found"
+            null -> RecordingWatchHealth.verdict(snapshot, mode) + "; call log coverage not checked"
+        }
     }
 
     /** Confirm an outgoing cellular call really connected, not merely went OFFHOOK. */
