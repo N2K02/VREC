@@ -834,12 +834,16 @@ private fun RecordingRow(
                     ) {
                         Text(
                             dateFmt.format(Date(rec.startedAt)),
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (rec.durationMs > 0L) {
                             Text(
                                 "• " + formatDuration(rec.durationMs),
+                                maxLines = 1,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                             )
