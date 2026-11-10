@@ -8,6 +8,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -39,6 +42,21 @@ class RecordingPlaybackService : Service() {
     }
 
     private var session: MediaSession? = null
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+    private val focusRequest by lazy {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS ||
+                    change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) pause()
+            }
+            .build()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -72,6 +90,8 @@ class RecordingPlaybackService : Service() {
             ACTION_PAUSE -> pause()
             ACTION_PLAY -> resume()
         }
+        if (!paused && audioManager.requestAudioFocus(focusRequest) !=
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED) pause()
         val notice = notification()
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -82,17 +102,21 @@ class RecordingPlaybackService : Service() {
     private fun pause() {
         runCatching { if (player.isPlaying) player.pause() }
         paused = true
+        audioManager.abandonAudioFocusRequest(focusRequest)
         refresh()
     }
 
     private fun resume() {
-        if (currentPath != null) runCatching { player.start() }
-        paused = false
+        if (currentPath == null) return
+        if (audioManager.requestAudioFocus(focusRequest) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            return
+        paused = !runCatching { player.start() }.isSuccess
         refresh()
     }
 
     private fun stopPlayback() {
         runCatching { player.reset() }
+        audioManager.abandonAudioFocusRequest(focusRequest)
         currentPath = null
         paused = false
         stopForeground(STOP_FOREGROUND_REMOVE)
