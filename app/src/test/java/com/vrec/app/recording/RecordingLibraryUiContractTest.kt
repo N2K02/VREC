@@ -18,6 +18,15 @@ class RecordingLibraryUiContractTest {
         assertFalse(ui.contains("Text(\"Saved recordings\", style = MaterialTheme.typography.titleLarge"))
     }
 
+    @Test fun recordingListShowsDurationWithoutExpandingCards() {
+        val ui = read("app/src/main/java/com/vrec/app/ui/RecordingsList.kt")
+        val row = ui.substringAfter("private fun RecordingRow(").substringBefore("private fun ")
+        assertTrue(row.contains("dateFmt.format(Date(rec.startedAt))"))
+        assertTrue(row.contains("if (rec.durationMs > 0L)"))
+        assertTrue(row.contains("formatDuration(rec.durationMs)"))
+        assertTrue(row.contains("Text(displayedContact"))
+    }
+
     @Test fun waveformsSampleLongFilesInsteadOfFullyDecodingThem() {
         val decoder = read("app/src/main/java/com/vrec/app/recording/RecordingWaveform.kt")
         val row = read("app/src/main/java/com/vrec/app/ui/RecordingsList.kt")
