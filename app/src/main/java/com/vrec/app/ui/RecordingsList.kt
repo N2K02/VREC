@@ -293,22 +293,14 @@ fun RecordingsList() {
         }
     }
 
-    DisposableEffect(Unit) {
-        player.setOnCompletionListener {
-            playingPath = null
-            playbackPaused = false
-            playbackPosition = 0L
-        }
-        player.setOnErrorListener { _, _, _ ->
-            playingPath = null
-            playbackPaused = false
-            playbackError = "Unable to play the recording. Check the file or format."
-            true
-        }
-        // Media session service owns playback; leaving this page must not stop audio.
-        onDispose {
-            player.setOnCompletionListener(null)
-            player.setOnErrorListener(null)
+    // The foreground service owns MediaPlayer listeners even when this page is disposed.
+    // Reconcile external headset/notification controls while the page is visible.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val servicePath = com.vrec.app.recording.RecordingPlaybackService.currentPath
+            if (servicePath != playingPath) playingPath = servicePath
+            playbackPaused = com.vrec.app.recording.RecordingPlaybackService.paused
+            delay(300L)
         }
     }
 
