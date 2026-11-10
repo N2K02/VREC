@@ -39,7 +39,8 @@ class HomeDashboardVisualContractTest {
         assertTrue(palette.contains("BorderStroke(1.dp, stroke)"))
         assertTrue(main.contains("HomePanelStyle.border(highlight = enabled)") ||
             main.contains("HomePanelStyle.border(highlight = ready && enabled)"))
-        assertTrue(adb.contains("HomePanelStyle.border(highlight = allReady)"))
+        assertTrue(adb.contains("FlowRow("))
+        assertTrue(adb.contains("contentDescription = "))
         assertTrue(access.contains("HomePanelStyle.border()"))
         assertTrue(setup.contains("HomePanelStyle.border()"))
         assertTrue(access.contains("permissions.chunked(2)"))
