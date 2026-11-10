@@ -28,10 +28,15 @@ class RecordingQuickTile : TileService() {
         val target = !old
         // Do not show "on" until an existing authenticated helper accepts it.
         scope.launch {
-            val ok = if (target && !ExperimentalCaptureDaemon.probe(applicationContext)) false
-                else ExperimentalCaptureDaemon.setMode(applicationContext, target)
-            if (ok) Prefs.setRecordingEnabled(applicationContext, target)
-            else com.vrec.app.Log.w("Quick tile: recorder unavailable or mode change not acknowledged")
+            val available = !target || ExperimentalCaptureDaemon.probe(applicationContext)
+            if (available) Prefs.setRecordingEnabled(applicationContext, target)
+            val ok = available && runCatching {
+                ExperimentalCaptureDaemon.setMode(applicationContext, target)
+            }.getOrDefault(false)
+            if (!ok) {
+                if (available) Prefs.setRecordingEnabled(applicationContext, old)
+                com.vrec.app.Log.w("Quick tile: recorder unavailable or mode change not acknowledged")
+            }
             update()
         }
     }
