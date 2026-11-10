@@ -26,7 +26,9 @@ class RecordingLibraryUiContractTest {
         assertTrue(decoder.contains("LruCache<String, FloatArray>"))
         assertTrue(decoder.contains("DEADLINE_MS"))
         assertTrue(row.contains("withContext(Dispatchers.IO)"))
-        assertTrue(row.contains("Generating waveform…"))
-        assertTrue(row.contains("waveform?.let { peaks ->"))
+        assertTrue(row.contains("Loading waveform…"))
+        assertTrue(row.contains("detectTapGestures { offset ->"))
+        assertTrue(row.contains("StrokeCap.Round"))
+        assertTrue(row.contains("kotlin.math.sqrt(raw.coerceIn(0f, 1f))"))
     }
 }
