@@ -741,7 +741,8 @@ private fun RecordingRow(
     // Never launch dozens of simultaneous audio decoders while scrolling the list.
     // Decode only the active player, off the UI thread.
     val waveform by produceState<FloatArray?>(
-        initialValue = null, rec.file.absolutePath, rec.file.lastModified(), active
+        initialValue = if (active) floatArrayOf() else null,
+        rec.file.absolutePath, rec.file.lastModified(), active
     ) {
         value = if (active) {
             value = floatArrayOf() // Loading; distinguish from an unsupported file.
@@ -863,6 +864,11 @@ private fun RecordingRow(
                         }
                     }
                     }
+                }
+                if (waveform == null) {
+                    Text("Waveform unavailable for this audio format",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 // One in-card player: the row's left button handles Play/Pause/Resume,
                 // while the expanded controls handle seeking and stopping.
