@@ -213,6 +213,7 @@ fun RecordingsList() {
     val player = remember { com.vrec.app.recording.RecordingPlaybackService.player }
     var currentRecording by remember { mutableStateOf<Recording?>(null) }
     var confirmDelete by remember { mutableStateOf<Recording?>(null) }
+    var pendingPermanentDelete by remember { mutableStateOf<Recording?>(null) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var confirmDeleteSelected by remember { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -416,9 +417,8 @@ fun RecordingsList() {
                         else Toast.makeText(context, "Unable to restore recording", Toast.LENGTH_SHORT).show()
                     }) { Text("Restore") }
                     TextButton(onClick = {
-                        if (RecordingStore.delete(rec)) refresh++
-                        else Toast.makeText(context, "Unable to delete recording", Toast.LENGTH_SHORT).show()
-                    }) { Text("Delete") }
+                        pendingPermanentDelete = rec
+                    }) { Text("Delete forever") }
                 }
             }
         }
@@ -676,15 +676,33 @@ fun RecordingsList() {
         )
     }
 
+    pendingPermanentDelete?.let { rec ->
+        AlertDialog(
+            onDismissRequest = { pendingPermanentDelete = null },
+            title = { Text("Delete permanently?") },
+            text = { Text("This recording and its details will be erased immediately. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (RecordingStore.delete(rec)) refresh++
+                    else Toast.makeText(context, "Unable to delete recording", Toast.LENGTH_SHORT).show()
+                    pendingPermanentDelete = null
+                }) { Text("Delete forever", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPermanentDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     if (confirmDeleteAll || confirmDeleteSelected || confirmDelete != null) {
         val deletingAll = confirmDeleteAll
         val deletingSelected = confirmDeleteSelected
         val one = confirmDelete
         AlertDialog(onDismissRequest = { confirmDeleteAll = false; confirmDeleteSelected = false; confirmDelete = null },
             title = { Text(if (deletingAll) "Delete all recordings?" else if (deletingSelected) "Delete selected recordings?" else "Delete recording?") },
-            text = { Text(if (deletingAll) "Permanently delete all ${recordings.size} audio files and their details from this phone? This cannot be undone."
-                else if (deletingSelected) "Permanently delete ${selectedPaths.size} selected recordings? This cannot be undone."
-                else "Permanently remove this recording from your phone?") },
+            text = { Text(if (deletingAll) "Move all ${recordings.size} recordings to Recently Deleted? They can be restored until the retention period expires."
+                else if (deletingSelected) "Move ${selectedPaths.size} selected recordings to Recently Deleted? They can be restored."
+                else "Move this recording to Recently Deleted? You can restore it before the retention period expires.") },
             confirmButton = {
                 TextButton(onClick = {
                     val targets = when {
