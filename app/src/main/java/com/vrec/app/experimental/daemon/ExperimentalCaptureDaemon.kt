@@ -588,7 +588,7 @@ object ExperimentalCaptureDaemon {
             )
             starts?.let {
                 com.vrec.app.calls.MissedCallWatchAudit.missedSince(
-                    snapshot.startedAt, snapshot.lastEventAt, it
+                    snapshot.startedAt, snapshot.lastOffHookAt, it
                 )
             }
         } else null
