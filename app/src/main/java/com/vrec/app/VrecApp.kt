@@ -10,7 +10,9 @@ class VrecApp : Application() {
         Log.initialize(this)
         AppUpdater.init(this, repo = "N2K02/VREC", appName = "VREC")
         // Storage retention is independent of privileged ADB and never starts a recorder.
-        com.vrec.app.recording.RecordingCleanupWorker.schedule(this)
+        if (!com.vrec.app.experimental.adb.AdbUserChoices.manuallyStopped(this)) {
+            com.vrec.app.recording.RecordingCleanupWorker.schedule(this)
+        }
         // Do not start recovery from Application.onCreate: Android creates the
         // process BEFORE delivering BOOT_COMPLETED, so that would ignore the
         // Start on boot switch. Activity, boot receiver, and enabled watchdog
