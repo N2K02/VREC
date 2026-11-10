@@ -100,6 +100,8 @@ fun SettingsScreen(
     val voipArmed by ExperimentalCaptureDaemon.voipArmed.collectAsState()
     val voipMessage by ExperimentalCaptureDaemon.voipMessage.collectAsState()
     val simSourceMessage by ExperimentalCaptureDaemon.simSourceMessage.collectAsState()
+    var watcherHealthResult by remember { mutableStateOf<String?>(null) }
+    var watcherHealthChecking by remember { mutableStateOf(false) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
     val overlayPermissionGranted = remember(resumeTick) {
@@ -147,6 +149,25 @@ fun SettingsScreen(
             )
         } else {
         if (section == "Recording") SettingCard("Recording") {
+            Text("Recorder health", style = MaterialTheme.typography.titleSmall)
+            OutlinedButton(
+                enabled = !watcherHealthChecking,
+                onClick = {
+                    watcherHealthChecking = true
+                    scope.launch {
+                        try {
+                            val (healthy, detail) = ExperimentalCaptureDaemon.watchHealth(context)
+                            watcherHealthResult = (if (healthy) "Healthy: " else "Attention: ") + detail
+                        } finally {
+                            watcherHealthChecking = false
+                        }
+                    }
+                },
+            ) { Text(if (watcherHealthChecking) "Checking…" else "Check call watcher") }
+            watcherHealthResult?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
                 scope.launch {
