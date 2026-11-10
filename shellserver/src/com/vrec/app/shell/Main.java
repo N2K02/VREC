@@ -1664,11 +1664,17 @@ public final class Main {
         // capture, so resume its own call once phone recording has stopped.
         // Require independent active audio evidence to avoid recording a
         // stale notification or an unrelated voice message.
-        String followed = Voip.followedApp();
-        String verified = Voip.uniquelyCallingApp(callAudio);
-        if (followed != null && followed.equals(verified)) {
-            Ln.i("recording: cellular call ended; continuing messenger call in " + followed);
-            onCallStart(false, followed);
+        try {
+            String followed = Voip.followedApp();
+            String verified = Voip.uniquelyCallingApp(callAudio);
+            if (followed != null && followed.equals(verified)) {
+                Ln.i("recording: cellular call ended; continuing messenger call in " + followed);
+                onCallStart(false, followed);
+            }
+        } catch (Throwable problem) {
+            // A restricted audio-service query must never prevent the completed
+            // cellular recording from being finalized or crash the call watcher.
+            Ln.w("recording: could not check messenger handoff after cellular call", problem);
         }
     }
 
