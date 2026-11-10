@@ -121,7 +121,8 @@ class RecordingPlaybackService : Service() {
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("VRec recording playback")
-            .setContentText(currentPath?.substringAfterLast('/') ?: "Saved recording")
+            .setContentText("Saved recording")
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setContentIntent(home)
             .setOngoing(!paused)
             .setStyle(Notification.MediaStyle().setMediaSession(session?.sessionToken))
@@ -134,6 +135,11 @@ class RecordingPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        // If Android tears down the service, never leave audio running without
+        // its foreground controls or an active media session.
+        runCatching { player.reset() }
+        currentPath = null
+        paused = false
         player.setOnCompletionListener(null)
         player.setOnErrorListener(null)
         session?.release()
