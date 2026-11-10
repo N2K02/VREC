@@ -1,5 +1,7 @@
 package com.vrec.app.recording
 
+import android.content.Context
+import android.util.AtomicFile
 import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -7,6 +9,9 @@ import android.media.MediaFormat
 import android.os.SystemClock
 import android.util.LruCache
 import java.io.File
+import java.security.MessageDigest
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.max
@@ -22,6 +27,69 @@ object RecordingWaveform {
     const val BARS = 72
     private const val DEADLINE_MS = 12_000L
     private val cache = LruCache<String, FloatArray>(12)
+    private const val CACHE_VERSION = 2
+    private const val MAGIC = 0x56525746 // VRWF
+
+    private fun identity(file: File): String =
+        file.canonicalPath + ":" + file.length() + ":" + file.lastModified()
+
+    private fun cacheFile(context: Context, file: File): File {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(identity(file).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return File(File(context.filesDir, "waveform_cache"), "$digest.wf")
+    }
+
+    /** Read only the stored peaks; never decodes audio or blocks on a codec. */
+    fun cached(context: Context, file: File): FloatArray? {
+        if (!file.isFile || file.length() <= 0L) return null
+        val key = identity(file)
+        synchronized(cache) { cache.get(key) }?.let { return it.copyOf() }
+        val stored = cacheFile(context, file)
+        if (!stored.isFile) return null
+        val peaks = runCatching {
+            DataInputStream(stored.inputStream().buffered()).use { input ->
+                check(input.readInt() == MAGIC && input.readInt() == CACHE_VERSION)
+                check(input.readInt() == BARS)
+                FloatArray(BARS) { input.readFloat().also { peak ->
+                    check(peak.isFinite() && peak in 0f..1f)
+                } }
+            }
+        }.getOrElse {
+            stored.delete()
+            return null
+        }
+        synchronized(cache) { cache.put(key, peaks.copyOf()) }
+        return peaks
+    }
+
+    /** Decode once and persist compact validated peaks. Saved audio is never modified. */
+    fun prepare(context: Context, file: File): FloatArray? {
+        cached(context, file)?.let { return it }
+        val before = identity(file)
+        val peaks = calculate(file) ?: return null
+        if (!file.isFile || identity(file) != before) return null
+        val target = cacheFile(context, file)
+        if (!target.parentFile.exists() && !target.parentFile.mkdirs()) return peaks
+        val atomic = AtomicFile(target)
+        var output: java.io.FileOutputStream? = null
+        try {
+            output = atomic.startWrite()
+            val stream = DataOutputStream(output)
+            stream.writeInt(MAGIC)
+            stream.writeInt(CACHE_VERSION)
+            stream.writeInt(BARS)
+            peaks.forEach(stream::writeFloat)
+            stream.flush()
+            atomic.finishWrite(output)
+        } catch (_: Exception) {
+            if (output != null) runCatching { atomic.failWrite(output) }
+        }
+        return peaks
+    }
+
+    fun isReady(context: Context, file: File): Boolean = cached(context, file) != null
+
 
     fun calculate(file: File): FloatArray? {
         if (!file.isFile || file.length() == 0L) return null
