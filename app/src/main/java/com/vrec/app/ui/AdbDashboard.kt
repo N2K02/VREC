@@ -116,7 +116,8 @@ fun AdbDashboard(
         }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // Center each wrapped row independently, regardless of badge widths.
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Stat("Connection", when {
