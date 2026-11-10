@@ -12,6 +12,7 @@ class AdbDashboardCompactContractTest {
     @Test fun statusBadgesWrapInsteadOfUsingFourFixedTiles() {
         val src = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
         assertTrue(src.contains("FlowRow("))
+        assertTrue(src.contains("horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)"))
         assertTrue(src.contains("Stat(\"Connection\""))
         assertTrue(src.contains("Stat(\"Recording\""))
         assertTrue(src.contains("Stat(\"Recovery\""))
