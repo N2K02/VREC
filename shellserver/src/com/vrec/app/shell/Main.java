@@ -1659,6 +1659,17 @@ public final class Main {
             return;
         }
         endCall();
+        // The phone call can end while Telegram, Viber or Meet is still
+        // talking. The VoIP watcher deliberately did not interrupt the phone
+        // capture, so resume its own call once phone recording has stopped.
+        // Require independent active audio evidence to avoid recording a
+        // stale notification or an unrelated voice message.
+        String followed = Voip.followedApp();
+        String verified = Voip.uniquelyCallingApp(callAudio);
+        if (followed != null && followed.equals(verified)) {
+            Ln.i("recording: cellular call ended; continuing messenger call in " + followed);
+            onCallStart(false, followed);
+        }
     }
 
     /** A messenger call's end. Only ends a messenger call. */
