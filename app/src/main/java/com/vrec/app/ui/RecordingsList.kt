@@ -139,6 +139,13 @@ fun RecordingsList() {
         }
     }
     val recordings = remember(tick, refresh, storeRevision) { RecordingStore.list(context) }
+    LaunchedEffect(tick, storeRevision) {
+        withContext(Dispatchers.IO) {
+            com.vrec.app.recording.RecordingWaveformWorker.scheduleMissing(
+                context.applicationContext, recordings
+            )
+        }
+    }
     val trashedRecordings = remember(tick, refresh, storeRevision) { RecordingStore.trashed(context) }
     var showTrash by rememberSaveable { mutableStateOf(false) }
     // Revisit existing SIM files once the user's call-log grant is available.
@@ -750,7 +757,7 @@ private fun RecordingRow(
         value = if (active) {
             value = floatArrayOf() // Loading; distinguish from an unsupported file.
             withContext(Dispatchers.IO) {
-                com.vrec.app.recording.RecordingWaveform.calculate(rec.file)
+                com.vrec.app.recording.RecordingWaveform.prepare(context.applicationContext, rec.file)
             }
         } else null
     }
