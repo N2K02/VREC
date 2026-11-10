@@ -32,12 +32,14 @@ class RecordingPlaybackService : Service() {
         @Volatile var currentPath: String? = null
         @Volatile var paused = false
 
-        fun send(context: Context, action: String) {
+        fun send(context: Context, action: String): Boolean {
             val intent = Intent(context, RecordingPlaybackService::class.java).setAction(action)
-            runCatching {
+            return runCatching {
                 if (action == ACTION_STOP) context.startService(intent)
                 else context.startForegroundService(intent)
-            }.onFailure { com.vrec.app.Log.w("Unable to open playback controls", it) }
+            }.onFailure {
+                com.vrec.app.Log.w("Unable to open playback controls", it)
+            }.isSuccess
         }
     }
 
