@@ -22,7 +22,9 @@ class RecordingPlaybackSafetyContractTest {
     @Test fun notificationDoesNotExposeRecordingFilenameOnLockscreen() {
         val playback = read("app/src/main/java/com/vrec/app/recording/RecordingPlaybackService.kt")
         assertTrue(playback.contains(".setVisibility(Notification.VISIBILITY_PRIVATE)"))
-        assertTrue(playback.contains(".setContentText(\"Saved recording\")"))
+        assertTrue(playback.contains(".setPublicVersion(Notification.Builder(this, CHANNEL)"))
+        assertTrue(playback.contains(".setContentText(\"Recording playback\")"))
+        assertTrue(playback.contains(".setContentText(playbackDetails)"))
     }
 
     @Test fun disposingScreenDoesNotReleaseSharedPlayer() {
