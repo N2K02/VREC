@@ -143,6 +143,7 @@ class MainActivity : ComponentActivity() {
             com.vrec.app.experimental.adb.AdbUserChoices.setManuallyStopped(applicationContext, false)
             com.vrec.app.experimental.adb.AdbUserChoices.markUserOpenedThisBoot(applicationContext)
         }
+        com.vrec.app.recording.RecordingCleanupWorker.schedule(applicationContext)
         com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
@@ -310,6 +311,9 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                                 "Safe shutdown was not confirmed. VRec remains open so recordings can be recovered.")
                                             return@launch
                                         }
+                                        com.vrec.app.recording.RecordingPlaybackService.send(
+                                            app, com.vrec.app.recording.RecordingPlaybackService.ACTION_STOP)
+                                        com.vrec.app.recording.RecordingCleanupWorker.cancel(app)
                                         LiveUpdater.controller.cancel()
                                         RecordingFailureNotice.dismiss(app)
                                         com.vrec.app.experimental.adb.AdbLifecycle.quit(app)
