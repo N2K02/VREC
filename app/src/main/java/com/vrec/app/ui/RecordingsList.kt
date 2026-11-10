@@ -378,30 +378,32 @@ fun RecordingsList() {
     }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Recording library", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary)
-                    Text("Saved recordings", style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold)
-                    Text("${recordings.size} saved · ${formatSize(totalBytes)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                FilledTonalIconButton(onClick = { refresh++ }) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
-                }
+            androidx.compose.material3.SuggestionChip(
+                onClick = { refresh++ },
+                label = { Text("${recordings.size} saved") },
+                icon = { Icon(Icons.Filled.FolderOpen, contentDescription = null,
+                    modifier = Modifier.size(18.dp)) },
+            )
+            androidx.compose.material3.SuggestionChip(
+                onClick = { refresh++ },
+                label = { Text(formatSize(totalBytes)) },
+            )
+            androidx.compose.material3.SuggestionChip(
+                onClick = { showTrash = !showTrash },
+                label = { Text("Deleted ${trashedRecordings.size}") },
+                icon = {
+                    Icon(Icons.Filled.Delete, contentDescription = null,
+                        modifier = Modifier.size(18.dp))
+                },
+            )
+            IconButton(onClick = { refresh++ }, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh recordings")
             }
-        }
-        TextButton(onClick = { showTrash = !showTrash }) {
-            Text(if (showTrash) "Hide recently deleted" else "Recently deleted (${trashedRecordings.size})")
         }
         if (showTrash) {
             Text("Deleted recordings are retained for the configured period before permanent deletion.",
