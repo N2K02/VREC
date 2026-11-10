@@ -246,6 +246,59 @@ object RecordingStore {
             ?.sortedByDescending { it.startedAt }
             ?: emptyList()
 
+    /** Deleted files are retained locally for 30 days, including their editable metadata. */
+    private const val TRASH_TTL_MS = 30L * 24 * 60 * 60 * 1000
+
+    private fun trashDir(context: Context): File =
+        File(dir(context), ".trash").apply { mkdirs() }
+
+    fun trashed(context: Context): List<Recording> {
+        purgeTrash(context)
+        return trashDir(context).listFiles { f ->
+            f.isFile && (f.name.endsWith(".m4a", true) || f.name.endsWith(".ogg", true))
+        }?.map(::read)?.sortedByDescending { it.file.lastModified() } ?: emptyList()
+    }
+
+    /** Move audio and sidecar together; if sidecar move fails, restore the audio. */
+    fun moveToTrash(context: Context, recording: Recording): Boolean = synchronized(metadataLock) {
+        val source = recording.file
+        if (!source.exists()) return@synchronized false
+        val dest = File(trashDir(context), source.name)
+        if (dest.exists() || !source.renameTo(dest)) return@synchronized false
+        val meta = sidecar(source)
+        if (meta.exists() && !meta.renameTo(sidecar(dest))) {
+            if (!dest.renameTo(source)) Log.w("Unable to roll back trash move for " + source.name)
+            return@synchronized false
+        }
+        dest.setLastModified(System.currentTimeMillis())
+        notifySaved()
+        true
+    }
+
+    fun restore(context: Context, recording: Recording): Boolean = synchronized(metadataLock) {
+        val source = recording.file
+        if (source.parentFile?.canonicalFile != trashDir(context).canonicalFile) return@synchronized false
+        val dest = File(dir(context), source.name)
+        if (!source.exists() || dest.exists() || !source.renameTo(dest)) return@synchronized false
+        val meta = sidecar(source)
+        if (meta.exists() && !meta.renameTo(sidecar(dest))) {
+            if (!dest.renameTo(source)) Log.w("Unable to roll back trash restore for " + source.name)
+            return@synchronized false
+        }
+        notifySaved()
+        true
+    }
+
+    fun purgeTrash(context: Context, nowMs: Long = System.currentTimeMillis()) {
+        trashDir(context).listFiles { f ->
+            f.isFile && (f.name.endsWith(".ogg", true) || f.name.endsWith(".m4a", true))
+        }?.forEach { audio ->
+            if (audio.lastModified() < nowMs - TRASH_TTL_MS) {
+                delete(read(audio))
+            }
+        }
+    }
+
     /** Keep the metadata if audio deletion fails; report partial deletion. */
     fun delete(recording: Recording): Boolean {
         val audioDeleted = !recording.file.exists() || recording.file.delete()
