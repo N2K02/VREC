@@ -229,7 +229,9 @@ object ExperimentalCaptureDaemon {
 
     private fun requestedMode(context: Context, enabled: Boolean): Int =
         CaptureSetupProtocol.selectedMode(
-            enabled && shouldArmForNextCall(context), Prefs.autoRecord(context))
+            enabled && shouldArmForNextCall(context),
+            Prefs.autoRecord(context) && !com.vrec.app.calls.ContactRecordingRules.enabled(context),
+        )
 
     /** A daemon can answer PONG before its configuration worker has settled.
      * Retry short transient handshakes; never recreate a working helper just
