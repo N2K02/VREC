@@ -129,6 +129,13 @@ fun RecordingsList() {
         refresh++
     }
     val storeRevision by RecordingStore.revision.collectAsState()
+    LaunchedEffect(tick) {
+        withContext(Dispatchers.IO) {
+            val cleaned = RecordingStore.cleanOldSaved(context)
+            RecordingStore.purgeTrash(context)
+            if (cleaned > 0) RecordingStore.notifySaved()
+        }
+    }
     val recordings = remember(tick, refresh, storeRevision) { RecordingStore.list(context) }
     val trashedRecordings = remember(tick, refresh, storeRevision) { RecordingStore.trashed(context) }
     var showTrash by rememberSaveable { mutableStateOf(false) }
@@ -385,7 +392,7 @@ fun RecordingsList() {
             Text(if (showTrash) "Hide recently deleted" else "Recently deleted (${trashedRecordings.size})")
         }
         if (showTrash) {
-            Text("Recordings are kept for 30 days before permanent deletion.",
+            Text("Deleted recordings are retained for the configured period before permanent deletion.",
                 style = MaterialTheme.typography.bodySmall)
             trashedRecordings.forEach { rec ->
                 Row(
