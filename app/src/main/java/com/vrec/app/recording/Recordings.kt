@@ -247,7 +247,24 @@ object RecordingStore {
             ?: emptyList()
 
     /** Deleted files are retained locally for 30 days, including their editable metadata. */
-    private const val TRASH_TTL_MS = 30L * 24 * 60 * 60 * 1000
+    /** Settings default to no automatic deletion of saved calls. */
+    private fun trashDays(context: Context): Int =
+        com.vrec.app.Prefs.of(context).getInt("trash_retention_days", 30).coerceIn(1, 90)
+
+    private fun savedDays(context: Context): Int =
+        com.vrec.app.Prefs.of(context).getInt("saved_retention_days", 0)
+            .takeIf { it in setOf(0, 30, 90, 180, 365) } ?: 0
+
+    /** Opt-in cleanup protects favorites and only moves older calls into trash. */
+    fun cleanOldSaved(context: Context, nowMs: Long = System.currentTimeMillis()): Int {
+        val days = savedDays(context)
+        if (days == 0) return 0
+        val threshold = nowMs - days * 86_400_000L
+        return list(context).count { item ->
+            !item.favorite && item.startedAt > 0 && item.startedAt < threshold &&
+                moveToTrash(context, item)
+        }
+    }
 
     private fun trashDir(context: Context): File =
         File(dir(context), ".trash").apply { mkdirs() }
@@ -285,7 +302,7 @@ object RecordingStore {
         trashDir(context).listFiles { f ->
             f.isFile && (f.name.endsWith(".ogg", true) || f.name.endsWith(".m4a", true))
         }?.forEach { audio ->
-            if (audio.lastModified() < nowMs - TRASH_TTL_MS) {
+            if (audio.lastModified() < nowMs - trashDays(context) * 86_400_000L) {
                 delete(read(audio))
             }
         }
