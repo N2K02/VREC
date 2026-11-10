@@ -257,7 +257,7 @@ class AdbBatteryEfficiencyContractTest {
         assertTrue(recovery.contains("val outcome = attempt(app)"))
         // Health verification must remain within the same lock, after transport recovery.
         val locked = recovery.substringAfter("mutex.withLock {").substringBefore("private suspend fun attempt(")
-        assertTrue(locked.contains("ExperimentalCaptureDaemon.watchHealth(app)"))
+        assertTrue(locked.contains("ExperimentalCaptureDaemon.watchHealth(app, auditCallHistory = false)"))
         assertTrue(locked.contains("if (!transportHealthy) return@withLock false"))
     }
 }
