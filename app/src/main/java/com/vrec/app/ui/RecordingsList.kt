@@ -724,12 +724,14 @@ private fun RecordingRow(
     onSeek: (Float) -> Unit, onStop: () -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Never launch dozens of simultaneous audio decoders while scrolling the list.
+    // Decode only the active player, off the UI thread.
     val waveform by produceState<FloatArray?>(
-        initialValue = null, rec.file.absolutePath, rec.file.lastModified()
+        initialValue = null, rec.file.absolutePath, rec.file.lastModified(), active
     ) {
-        value = withContext(Dispatchers.IO) {
+        value = if (active) withContext(Dispatchers.IO) {
             com.vrec.app.recording.RecordingWaveform.calculate(rec.file)
-        }
+        } else null
     }
     val callApp = remember(rec.sourcePackage) {
         resolveCallAppName(context, rec.sourcePackage)
