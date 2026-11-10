@@ -55,10 +55,10 @@ object Prefs {
         of(c).edit().putBoolean(RECORDING_ENABLED, enabled).apply()
     }
 
-    fun autoRecord(c: Context) = of(c).getBoolean(AUTO_RECORD, true)
+    fun autoRecord(c: Context) = true // Every detected supported call is automatic when master recording is on.
     fun autoSpeaker(c: Context) = of(c).getBoolean(AUTO_SPEAKER, false)
     fun inCommMode(c: Context) = of(c).getBoolean(IN_COMM_MODE, true)
-    fun recordVoip(c: Context) = of(c).getBoolean(RECORD_VOIP, false)
+    fun recordVoip(c: Context) = true // Supported VoIP calls are included; Android permissions still apply.
     fun discardSilent(c: Context) = of(c).getBoolean(DISCARD_SILENT, false)
 
     fun sourceMode(c: Context): String = of(c).getString(SOURCE_MODE, SOURCE_MODE_AUTO) ?: SOURCE_MODE_AUTO
