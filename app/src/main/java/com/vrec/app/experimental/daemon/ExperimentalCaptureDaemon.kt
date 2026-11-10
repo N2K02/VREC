@@ -763,6 +763,12 @@ object ExperimentalCaptureDaemon {
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
+                    // A valid Ogg file is not evidence that both voices were captured.
+                    // Warn on suspicious VoIP channel levels, but never discard
+                    // an otherwise valid call because one participant was quiet.
+                    com.vrec.app.recording.VoipAudioQualityPolicy.warning(voip, health)?.let {
+                        com.vrec.app.recording.RecordingFailureNotice.warn(context, it)
+                    }
                     // Consume by the verified source package, including when
                     // a generic shell filename was reclassified as VoIP.
                     if (caller != null) journal.consumeMatch(context, caller)
