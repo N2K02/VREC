@@ -259,7 +259,6 @@ object CallMonitor {
             }
         }
         rememberShellIdentity(context, session)
-        if (session.active && !voip) startAllowedContact(context, id, session.number)
         Log.i("Telecom call state=$state voip=$voip app=" + (packageName ?: "unknown") +
             " namePresent=" + (session.name != null) + " numberPresent=" + (session.number != null))
         reconcile(context)
@@ -320,47 +319,8 @@ object CallMonitor {
         }
     }
 
-    /**
-     * In selective mode the shell is ON_DEMAND. Start only a positively identified
-     * active cellular call, never an unknown caller or a VoIP notification.
-     * The daemon itself verifies that the call is still active.
-     */
-    private val selectiveAttempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
-    private fun startAllowedContact(context: Context, sessionId: String, number: String?) {
-        if (!com.vrec.app.calls.ContactRecordingRules.enabled(context) ||
-            !Prefs.recordingEnabled(context) || !Prefs.autoRecord(context) ||
-            !com.vrec.app.calls.ContactRecordingRules.matches(
-                number, com.vrec.app.calls.ContactRecordingRules.numbers(context))) return
-        if (!selectiveAttempted.add(sessionId)) return
-        val app = context.applicationContext
-        modeScope.launch {
-            repeat(8) { index ->
-                val stillEligible = synchronized(this@CallMonitor) {
-                    sessions[sessionId]?.let {
-                        it.active && !it.isVoip &&
-                            com.vrec.app.calls.ContactRecordingRules.matches(
-                                it.number, com.vrec.app.calls.ContactRecordingRules.numbers(app))
-                    } == true
-                }
-                if (!stillEligible || !Prefs.recordingEnabled(app) ||
-                    !com.vrec.app.calls.ContactRecordingRules.enabled(app)) return@launch
-                val snapshot = ExperimentalCaptureDaemon.captureSnapshot(app)
-                if (snapshot is ExperimentalCaptureDaemon.CaptureSnapshot.Recording) return@launch
-                val result = ExperimentalCaptureDaemon.startCurrentCall(app)
-                if (result.isSuccess) {
-                    Log.i("Selective recording: matching contact call accepted by shell")
-                    return@launch
-                }
-                if (index < 7) delay(250L)
-            }
-            Log.w("Selective recording: matching caller not captured; shell did not confirm active call")
-        }
-    }
-
     @Synchronized
     fun onTelecomRemoved(context: Context, id: String) {
-        selectiveAttempted.remove(id)
         if (id !in sessions) {
             Log.i("Capture diagnostic: duplicate Telecom removal ignored session=" + id)
             return
@@ -438,11 +398,9 @@ object CallMonitor {
                 session.active = true
                 if (session.connectedAt == null) session.connectedAt = System.currentTimeMillis()
                 rememberShellIdentity(context, session)
-                startAllowedContact(context, session.id, session.number)
                 reconcile(context)
             }
             "IDLE" -> {
-                selectiveAttempted.remove("sim-legacy")
                 sawRinging = false
                 pendingIncomingNumber = null
                 pendingDialerIdentity = null
