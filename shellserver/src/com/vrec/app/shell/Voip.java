@@ -100,6 +100,14 @@ final class Voip {
         return policy != null;
     }
 
+    /** The actual messenger call followed by the shell audio watcher.
+     * Reading this must never infer call identity from a stale notification.
+     */
+    static String followedApp() {
+        Watch w = watch;
+        return w == null ? null : w.active;
+    }
+
     /**
      * Independent evidence that one configured messenger is BOTH playing
      * voice-communication audio and capturing. A Telecom state alone is
@@ -294,7 +302,7 @@ final class Voip {
         private AudioManager.OnModeChangedListener modeChanges;
         /** A tick is posted, so a mode change does not start a second loop. */
         private boolean ticking;
-        private String active;
+        private volatile String active;
         /** The uid of [active]'s app, to ask whether it is still in its call. */
         private int activeUid = -1;
         /** The mode left "communication" while the app still talked; said once. */
