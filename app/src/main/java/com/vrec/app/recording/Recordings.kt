@@ -259,9 +259,8 @@ object RecordingStore {
     fun cleanOldSaved(context: Context, nowMs: Long = System.currentTimeMillis()): Int {
         val days = savedDays(context)
         if (days == 0) return 0
-        val threshold = nowMs - days * 86_400_000L
         return list(context).count { item ->
-            !item.favorite && item.startedAt > 0 && item.startedAt < threshold &&
+            RecordingRetentionPolicy.savedEligible(item.startedAt, item.favorite, days, nowMs) &&
                 moveToTrash(context, item)
         }
     }
@@ -302,7 +301,7 @@ object RecordingStore {
         trashDir(context).listFiles { f ->
             f.isFile && (f.name.endsWith(".ogg", true) || f.name.endsWith(".m4a", true))
         }?.forEach { audio ->
-            if (audio.lastModified() < nowMs - trashDays(context) * 86_400_000L) {
+            if (RecordingRetentionPolicy.trashExpired(audio.lastModified(), trashDays(context), nowMs)) {
                 delete(read(audio))
             }
         }
