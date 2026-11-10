@@ -78,7 +78,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     // Match n2k02theme and n2k02updater's Material 3 ABI. A stale 1.3.0 runtime
     // crashes when users open ModalBottomSheet with NoSuchMethodError.
-    implementation("androidx.compose.material3:material3:1.5.0-beta02")
+    implementation("androidx.compose.material3:material3:1.5.0-rc01")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("androidx.work:work-runtime-ktx:2.12.0") // persistent periodic ADB watchdog
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
@@ -87,14 +87,14 @@ dependencies {
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
     implementation("org.bouncycastle:bcprov-jdk15to18:1.86")
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
-    implementation("org.conscrypt:conscrypt-android:2.8.0")
+    implementation("org.conscrypt:conscrypt-android:2.9.0")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
  // Opt-in compile-only shared library evaluation; no production runtime cutover.
 dependencies {
-    implementation("dev.n2k02:theme:0.1.5")
+    implementation("dev.n2k02:theme:0.1.14")
         implementation("dev.n2k02:updater:0.1.32")
     implementation("dev.n2k02:adb-core:0.1.7")
 }
