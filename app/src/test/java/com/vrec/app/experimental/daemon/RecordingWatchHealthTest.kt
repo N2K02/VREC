@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RecordingWatchHealthTest {
-    private val valid = "WATCH 1 since=100 watching=1 looper=ok mode=1 call=0 events=3 lastevent=90 offhooks=2 recording=0 voip=0"
+    private val valid = "WATCH 1 since=100 watching=1 looper=ok mode=1 call=0 events=3 lastevent=90 offhooks=2 lastoffhook=90 recording=0 voip=0"
     @Test fun healthyWatcherPasses() {
         val snapshot = RecordingWatchHealth.parse(valid)
         assertNotNull(snapshot)
