@@ -349,8 +349,10 @@ fun RecordingsList() {
                 player.start()
                 com.vrec.app.recording.RecordingPlaybackService.currentPath = rec.file.absolutePath
                 com.vrec.app.recording.RecordingPlaybackService.paused = false
-                com.vrec.app.recording.RecordingPlaybackService.send(
-                    context, com.vrec.app.recording.RecordingPlaybackService.ACTION_REFRESH)
+                check(com.vrec.app.recording.RecordingPlaybackService.send(
+                    context, com.vrec.app.recording.RecordingPlaybackService.ACTION_REFRESH)) {
+                    "Playback notification could not be started."
+                }
                 playingPath = rec.file.absolutePath
                 playbackPaused = false
                 playbackPosition = 0L
