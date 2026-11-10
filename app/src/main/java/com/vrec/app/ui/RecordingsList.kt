@@ -201,12 +201,16 @@ fun RecordingsList() {
             if (changed > 0) refresh++
         }
     }
-    var playingPath by remember { mutableStateOf<String?>(null) }
-    var playbackPaused by remember { mutableStateOf(false) }
+    var playingPath by remember {
+        mutableStateOf<String?>(com.vrec.app.recording.RecordingPlaybackService.currentPath)
+    }
+    var playbackPaused by remember {
+        mutableStateOf(com.vrec.app.recording.RecordingPlaybackService.paused)
+    }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var playbackPosition by remember { mutableStateOf(0L) }
     var playbackDuration by remember { mutableStateOf(0L) }
-    val player = remember { MediaPlayer() }
+    val player = remember { com.vrec.app.recording.RecordingPlaybackService.player }
     var currentRecording by remember { mutableStateOf<Recording?>(null) }
     var confirmDelete by remember { mutableStateOf<Recording?>(null) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
@@ -301,23 +305,29 @@ fun RecordingsList() {
             playbackError = "Unable to play the recording. Check the file or format."
             true
         }
-        onDispose { runCatching { player.release() } }
+        // Media session service owns playback; leaving this page must not stop audio.
+        onDispose {
+            player.setOnCompletionListener(null)
+            player.setOnErrorListener(null)
+        }
     }
 
     fun stopPlayback() {
+        com.vrec.app.recording.RecordingPlaybackService.send(
+            context, com.vrec.app.recording.RecordingPlaybackService.ACTION_STOP)
         runCatching { player.reset() }
+        com.vrec.app.recording.RecordingPlaybackService.currentPath = null
         playingPath = null
         playbackPaused = false
         playbackPosition = 0L
         playbackDuration = 0L
     }
 
-    // Playback controls live only in the active recording card. If the recording
-    // disappears from the filtered library, stop playback rather than leave audio
-    // running with no visible controls.
+    // A changed search/filter must not end background playback. Only actual deletion
+    // or an explicit Stop should stop an existing playback session.
     LaunchedEffect(playingPath, search, filter, refresh, tick) {
         val path = playingPath
-        if (path != null && visibleRecordings.none { it.file.absolutePath == path }) {
+        if (path != null && recordings.none { it.file.absolutePath == path }) {
             stopPlayback()
         }
     }
@@ -329,6 +339,9 @@ fun RecordingsList() {
             runCatching {
                 if (playbackPaused) player.start() else player.pause()
                 playbackPaused = !playbackPaused
+                com.vrec.app.recording.RecordingPlaybackService.paused = playbackPaused
+                com.vrec.app.recording.RecordingPlaybackService.send(
+                    context, com.vrec.app.recording.RecordingPlaybackService.ACTION_REFRESH)
             }.onFailure {
                 stopPlayback()
                 playbackError = "Could not resume playback."
@@ -341,6 +354,10 @@ fun RecordingsList() {
                 if (Build.VERSION.SDK_INT >= 23) player.playbackParams = player.playbackParams.setSpeed(speed)
                 playbackDuration = player.duration.toLong().coerceAtLeast(0L)
                 player.start()
+                com.vrec.app.recording.RecordingPlaybackService.currentPath = rec.file.absolutePath
+                com.vrec.app.recording.RecordingPlaybackService.paused = false
+                com.vrec.app.recording.RecordingPlaybackService.send(
+                    context, com.vrec.app.recording.RecordingPlaybackService.ACTION_REFRESH)
                 playingPath = rec.file.absolutePath
                 playbackPaused = false
                 playbackPosition = 0L
