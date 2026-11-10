@@ -264,12 +264,8 @@ object RecordingStore {
         val source = recording.file
         if (!source.exists()) return@synchronized false
         val dest = File(trashDir(context), source.name)
-        if (dest.exists() || !source.renameTo(dest)) return@synchronized false
-        val meta = sidecar(source)
-        if (meta.exists() && !meta.renameTo(sidecar(dest))) {
-            if (!dest.renameTo(source)) Log.w("Unable to roll back trash move for " + source.name)
+        if (!runCatching { RecordingTrashFiles.move(source, dest) }.getOrDefault(false))
             return@synchronized false
-        }
         dest.setLastModified(System.currentTimeMillis())
         notifySaved()
         true
@@ -279,12 +275,8 @@ object RecordingStore {
         val source = recording.file
         if (source.parentFile?.canonicalFile != trashDir(context).canonicalFile) return@synchronized false
         val dest = File(dir(context), source.name)
-        if (!source.exists() || dest.exists() || !source.renameTo(dest)) return@synchronized false
-        val meta = sidecar(source)
-        if (meta.exists() && !meta.renameTo(sidecar(dest))) {
-            if (!dest.renameTo(source)) Log.w("Unable to roll back trash restore for " + source.name)
+        if (!runCatching { RecordingTrashFiles.move(source, dest) }.getOrDefault(false))
             return@synchronized false
-        }
         notifySaved()
         true
     }
