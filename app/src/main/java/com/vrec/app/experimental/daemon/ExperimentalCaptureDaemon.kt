@@ -574,7 +574,7 @@ object ExperimentalCaptureDaemon {
         }
 
     /** An authenticated, read-only recorder health inspection. Never disrupt an ongoing call. */
-    suspend fun watchHealth(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    suspend fun watchHealth(context: Context, auditCallHistory: Boolean = true): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val snapshot = runCatching {
             open(context, 'W').use { socket ->
                 RecordingWatchHealth.parse(
@@ -584,7 +584,7 @@ object ExperimentalCaptureDaemon {
         }.getOrNull()
         val mode = requestedMode(context, Prefs.recordingEnabled(context))
         val watcherHealthy = RecordingWatchHealth.healthy(snapshot, mode)
-        val missed = if (snapshot != null && watcherHealthy && !snapshot.inCall) {
+        val missed = if (auditCallHistory && snapshot != null && watcherHealthy && !snapshot.inCall) {
             val starts = com.vrec.app.calls.MissedCallWatchAudit.recentCellularCalls(
                 context, snapshot.startedAt
             )
