@@ -707,6 +707,13 @@ private fun RecordingRow(
     onSeek: (Float) -> Unit, onStop: () -> Unit, onShare: () -> Unit, onActions: () -> Unit,
 ) {
     val context = LocalContext.current
+    val waveform by produceState<FloatArray?>(
+        initialValue = null, rec.file.absolutePath, rec.file.lastModified()
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.vrec.app.recording.RecordingWaveform.calculate(rec.file)
+        }
+    }
     val callApp = remember(rec.sourcePackage) {
         resolveCallAppName(context, rec.sourcePackage)
     }
@@ -797,6 +804,25 @@ private fun RecordingRow(
                 callMediaType = rec.callMediaType,
             )
             if (active && !selectionMode) {
+                waveform?.let { peaks ->
+                    val tint = MaterialTheme.colorScheme.primary
+                    androidx.compose.foundation.Canvas(
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    ) {
+                        val width = size.width / peaks.size
+                        peaks.forEachIndexed { i, amplitude ->
+                            val height = (amplitude * size.height).coerceAtLeast(2f)
+                            drawLine(
+                                color = tint.copy(alpha = if (i.toFloat() / peaks.size <= progress) 1f else 0.38f),
+                                start = androidx.compose.ui.geometry.Offset(width * (i + 0.5f),
+                                    (size.height - height) / 2),
+                                end = androidx.compose.ui.geometry.Offset(width * (i + 0.5f),
+                                    (size.height + height) / 2),
+                                strokeWidth = (width * 0.72f).coerceAtLeast(1f),
+                            )
+                        }
+                    }
+                }
                 // One in-card player: the row's left button handles Play/Pause/Resume,
                 // while the expanded controls handle seeking and stopping.
                 Row(
