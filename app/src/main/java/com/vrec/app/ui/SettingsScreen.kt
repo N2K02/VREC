@@ -102,6 +102,8 @@ fun SettingsScreen(
     val simSourceMessage by ExperimentalCaptureDaemon.simSourceMessage.collectAsState()
     var watcherHealthResult by remember { mutableStateOf<String?>(null) }
     var watcherHealthChecking by remember { mutableStateOf(false) }
+    var trashRetentionDays by remember { mutableStateOf(prefs.getInt("trash_retention_days", 30)) }
+    var savedRetentionDays by remember { mutableStateOf(prefs.getInt("saved_retention_days", 0)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
     var showOverlay by remember { mutableStateOf(Prefs.showOverlay(context)) }
     val overlayPermissionGranted = remember(resumeTick) {
@@ -167,6 +169,37 @@ fun SettingsScreen(
             watcherHealthResult?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
+
+            Text("Recording retention", style = MaterialTheme.typography.titleSmall)
+            Text("Automatic cleanup moves older recordings to Recently Deleted; favorites are protected. Defaults to off.",
+                style = MaterialTheme.typography.bodySmall)
+            listOf(0 to "Never", 30 to "30 days", 90 to "90 days",
+                180 to "180 days", 365 to "1 year").forEach { (days, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = savedRetentionDays == days, onClick = {
+                        savedRetentionDays = days
+                        prefs.edit().putInt("saved_retention_days", days).apply()
+                    })
+                    Text("Saved: $label", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text("Recently Deleted retention", style = MaterialTheme.typography.titleSmall)
+            listOf(7, 30, 90).forEach { days ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = trashRetentionDays == days, onClick = {
+                        trashRetentionDays = days
+                        prefs.edit().putInt("trash_retention_days", days).apply()
+                    })
+                    Text("$days days", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            OutlinedButton(onClick = {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    com.vrec.app.recording.RecordingStore.cleanOldSaved(context)
+                    com.vrec.app.recording.RecordingStore.purgeTrash(context)
+                    com.vrec.app.recording.RecordingStore.notifySaved()
+                }
+            }) { Text("Run cleanup now") }
 
             ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
                 autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
