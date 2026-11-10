@@ -12,6 +12,7 @@ internal object RecordingWatchHealth {
         val events: Long,
         val lastEventAt: Long,
         val offHooks: Long,
+        val lastOffHookAt: Long,
     )
     fun parse(line: String): Snapshot? {
         if (!line.startsWith("WATCH 1 ")) return null
@@ -36,6 +37,7 @@ internal object RecordingWatchHealth {
             events = number("events") ?: return null,
             lastEventAt = number("lastevent") ?: return null,
             offHooks = number("offhooks") ?: return null,
+            lastOffHookAt = number("lastoffhook") ?: return null,
         )
     }
     fun verdict(snapshot: Snapshot?, expectedMode: Int): String = when {
