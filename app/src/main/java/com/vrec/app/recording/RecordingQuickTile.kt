@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Explicit user toggle only: never silently bootstraps ADB, pairs, or opens a microphone.
@@ -16,6 +18,7 @@ import kotlinx.coroutines.launch
  */
 class RecordingQuickTile : TileService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val toggleMutex = Mutex()
 
     override fun onStartListening() {
         super.onStartListening()
@@ -24,20 +27,25 @@ class RecordingQuickTile : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val old = Prefs.recordingEnabled(this)
-        val target = !old
-        // Do not show "on" until an existing authenticated helper accepts it.
+        // Serialize quick repeated taps; always reread the latest persisted setting.
         scope.launch {
+          toggleMutex.withLock {
+            val old = Prefs.recordingEnabled(applicationContext)
+            val target = !old
             val available = !target || ExperimentalCaptureDaemon.probe(applicationContext)
             if (available) Prefs.setRecordingEnabled(applicationContext, target)
             val ok = available && runCatching {
                 ExperimentalCaptureDaemon.setMode(applicationContext, target)
             }.getOrDefault(false)
             if (!ok) {
-                if (available) Prefs.setRecordingEnabled(applicationContext, old)
+                if (available) {
+                    Prefs.setRecordingEnabled(applicationContext, old)
+                    runCatching { ExperimentalCaptureDaemon.setMode(applicationContext, old) }
+                }
                 com.vrec.app.Log.w("Quick tile: recorder unavailable or mode change not acknowledged")
             }
             update()
+          }
         }
     }
 
