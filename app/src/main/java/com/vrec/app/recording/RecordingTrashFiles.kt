@@ -7,7 +7,8 @@ internal object RecordingTrashFiles {
     fun move(audio: File, destination: File): Boolean {
         if (!audio.isFile || destination.exists() || audio.canonicalPath == destination.canonicalPath)
             return false
-        if (!destination.parentFile.exists() && !destination.parentFile.mkdirs()) return false
+        val targetParent = destination.parentFile ?: return false
+        if (!targetParent.exists() && !targetParent.mkdirs()) return false
         if (!audio.renameTo(destination)) return false
         val sourceMetadata = File(audio.parentFile, audio.name + ".json")
         val destinationMetadata = File(destination.parentFile, destination.name + ".json")
