@@ -828,8 +828,23 @@ private fun RecordingRow(
                 }
                 Column(Modifier.weight(1f).clickable { if (selectionMode) onSelect() else onOpen() },
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(dateFmt.format(Date(rec.startedAt)), style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            dateFmt.format(Date(rec.startedAt)),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (rec.durationMs > 0L) {
+                            Text(
+                                "• " + formatDuration(rec.durationMs),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     Text(displayedContact, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
