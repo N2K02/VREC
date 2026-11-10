@@ -69,12 +69,15 @@ class AdbRecoveryPreferencesContractTest {
         assertTrue(controller.contains("activePort = 5555, activeTransport = \"TCP\""))
         assertTrue(controller.contains("activePort = port, activeTransport = \"TLS\""))
         assertTrue(controller.contains("activePort = null, activeTransport = null"))
-        assertTrue(home.contains("ADB connection ports"))
-        assertTrue(home.contains("verified && adbState.activePort != null && adbState.activeTransport != null"))
-        assertTrue(home.contains("TCP/5555 listening · no verified active ADB session"))
-        assertTrue(home.contains("Wireless TLS discovered: "))
-        assertTrue(home.contains("AdbUserChoices.lastVerifiedPort(context)"))
-        assertTrue(home.indexOf("ADB connection ports") < home.indexOf("if (healthy) {"))
+        // Detailed port endpoints are no longer duplicated on Home.
+        // Connection and verified shell identity remain visible in System Status.
+        val dashboard = source("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
+        assertFalse(home.contains("ADB connection ports"))
+        assertFalse(home.contains("portsExpanded"))
+        assertTrue(home.contains("verified = verified"))
+        assertTrue(dashboard.contains("Stat(\"Connection\""))
+        assertTrue(dashboard.contains("Stat(\"Shell UID\""))
+        assertTrue(dashboard.contains("healthy && verified"))
     }
 
     @Test fun switchesAreDelegatedToTheSharedAdbSettingsPage() {
