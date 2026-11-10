@@ -26,6 +26,10 @@ class RecordingCleanupWorker(context: Context, params: WorkerParameters) :
 
     companion object {
         private const val NAME = "vrec-recording-retention"
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(NAME)
+        }
+
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<RecordingCleanupWorker>(1, TimeUnit.DAYS)
                 .build()
