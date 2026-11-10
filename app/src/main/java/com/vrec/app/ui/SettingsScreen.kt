@@ -108,6 +108,25 @@ fun SettingsScreen(
     var selectiveNumbers by remember {
         mutableStateOf(com.vrec.app.calls.ContactRecordingRules.numbers(context))
     }
+    val allowedContactPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+            val number = runCatching {
+                context.contentResolver.query(uri,
+                    arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            }.getOrNull()
+            if (!number.isNullOrBlank()) {
+                selectiveNumbers = listOf(selectiveNumbers, number).filter { it.isNotBlank() }
+                    .joinToString(", ").take(4000)
+                com.vrec.app.calls.ContactRecordingRules.setNumbers(context, selectiveNumbers)
+            }
+        }
+    }
     var trashRetentionDays by remember { mutableStateOf(prefs.getInt("trash_retention_days", 30)) }
     var savedRetentionDays by remember { mutableStateOf(prefs.getInt("saved_retention_days", 0)) }
     var discardSilent by remember { mutableStateOf(prefs.getBoolean(Prefs.DISCARD_SILENT, false)) }
@@ -189,6 +208,12 @@ fun SettingsScreen(
                 }
             }
             if (selectiveContacts) {
+                OutlinedButton(onClick = {
+                    allowedContactPicker.launch(
+                        Intent(Intent.ACTION_PICK,
+                            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
+                    )
+                }) { Text("Choose contact number") }
                 androidx.compose.material3.OutlinedTextField(
                     value = selectiveNumbers,
                     onValueChange = {
