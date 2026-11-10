@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaMetadata
 import android.media.MediaPlayer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -31,6 +32,20 @@ class RecordingPlaybackService : Service() {
         val player: MediaPlayer by lazy { MediaPlayer() }
         @Volatile var currentPath: String? = null
         @Volatile var paused = false
+        @Volatile var playbackTitle: String = "Saved recording"
+        @Volatile var playbackDetails: String = "VRec"
+        @Volatile var playbackDurationMs: Long = 0L
+
+        /** Only VRec's local recording library supplies playback metadata. */
+        fun setRecording(rec: Recording) {
+            playbackTitle = rec.displayName.take(90).ifBlank { "Saved recording" }
+            playbackDetails = RecordingPlaybackLabels.details(
+                sourcePackage = rec.sourcePackage,
+                direction = rec.callFlowDirection ?: rec.direction.name,
+                startedAt = rec.startedAt,
+            )
+            playbackDurationMs = rec.durationMs.coerceAtLeast(0L)
+        }
 
         fun send(context: Context, action: String): Boolean {
             val intent = Intent(context, RecordingPlaybackService::class.java).setAction(action)
@@ -121,6 +136,9 @@ class RecordingPlaybackService : Service() {
         audioManager.abandonAudioFocusRequest(focusRequest)
         currentPath = null
         paused = false
+        playbackTitle = "Saved recording"
+        playbackDetails = "VRec"
+        playbackDurationMs = 0L
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -137,6 +155,14 @@ class RecordingPlaybackService : Service() {
 
     private fun notification(): Notification {
         val state = if (paused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING
+        session?.setMetadata(MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, playbackTitle)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, playbackDetails)
+            .putString(MediaMetadata.METADATA_KEY_ALBUM, "VRec recordings")
+            .putLong(MediaMetadata.METADATA_KEY_DURATION,
+                playbackDurationMs.takeIf { it > 0L }
+                    ?: runCatching { player.duration.toLong() }.getOrDefault(0L))
+            .build())
         session?.setPlaybackState(PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
                 PlaybackState.ACTION_STOP or PlaybackState.ACTION_SEEK_TO)
@@ -146,9 +172,15 @@ class RecordingPlaybackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("VRec recording playback")
-            .setContentText("Saved recording")
+            .setContentTitle(playbackTitle)
+            .setContentText(playbackDetails)
+            .setSubText("VRec · Recording playback")
             .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notification.Builder(this, CHANNEL)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle("VRec playback")
+                .setContentText("Recording playback")
+                .build())
             .setContentIntent(home)
             .setOngoing(!paused)
             .setStyle(Notification.MediaStyle().setMediaSession(session?.sessionToken))
@@ -166,6 +198,9 @@ class RecordingPlaybackService : Service() {
         runCatching { player.reset() }
         currentPath = null
         paused = false
+        playbackTitle = "Saved recording"
+        playbackDetails = "VRec"
+        playbackDurationMs = 0L
         player.setOnCompletionListener(null)
         player.setOnErrorListener(null)
         session?.release()
