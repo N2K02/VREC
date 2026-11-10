@@ -19,7 +19,7 @@ import kotlin.math.max
  * across the entire track. The caller runs this on Dispatchers.IO.
  */
 object RecordingWaveform {
-    const val BARS = 64
+    const val BARS = 72
     private const val DEADLINE_MS = 12_000L
     private val cache = LruCache<String, FloatArray>(12)
 
@@ -54,29 +54,34 @@ object RecordingWaveform {
                 val positionUs = (durationUs / BARS) * bar
                 extractor.seekTo(positionUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                 decoder.flush()
-                // Audio decoders often need two packets after a seek before
-                // producing PCM. Bound both input and output per window.
-                repeat(3) {
-                    val inputIndex = decoder.dequeueInputBuffer(10_000L)
-                    if (inputIndex >= 0) {
-                        val input = decoder.getInputBuffer(inputIndex)
-                        if (input != null) {
-                            input.clear()
-                            val size = extractor.readSampleData(input, 0)
-                            if (size >= 0) {
-                                decoder.queueInputBuffer(inputIndex, 0, size,
-                                    extractor.sampleTime.coerceAtLeast(0L), 0)
-                                extractor.advance()
-                            } else {
-                                decoder.queueInputBuffer(inputIndex, 0, 0, 0,
-                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                // Seeking compressed audio often needs multiple packets before
+                // the decoder emits PCM. Feed/drain together rather than queuing
+                // only three packets and giving up with a flat zero preview.
+                var peak = 0f
+                var outputs = 0
+                var inputEnded = false
+                for (attempt in 0 until 24) {
+                    if (SystemClock.elapsedRealtime() >= deadline || outputs >= 3) break
+                    if (!inputEnded) {
+                        val inputIndex = decoder.dequeueInputBuffer(2_000L)
+                        if (inputIndex >= 0) {
+                            val input = decoder.getInputBuffer(inputIndex)
+                            if (input != null) {
+                                input.clear()
+                                val size = extractor.readSampleData(input, 0)
+                                if (size >= 0) {
+                                    decoder.queueInputBuffer(inputIndex, 0, size,
+                                        extractor.sampleTime.coerceAtLeast(0L), 0)
+                                    extractor.advance()
+                                } else {
+                                    decoder.queueInputBuffer(inputIndex, 0, 0, 0,
+                                        MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputEnded = true
+                                }
                             }
                         }
                     }
-                }
-                var peak = 0f
-                repeat(5) {
-                    val outputIndex = decoder.dequeueOutputBuffer(info, 10_000L)
+                    val outputIndex = decoder.dequeueOutputBuffer(info, 2_000L)
                     if (outputIndex >= 0) {
                         val output = decoder.getOutputBuffer(outputIndex)
                         if (output != null && info.size > 1) {
@@ -95,7 +100,7 @@ object RecordingWaveform {
                                     peak = max(peak, abs(floats.get()).coerceIn(0f, 1f))
                                     floats.position((floats.position() + step - 1).coerceAtMost(floats.limit()))
                                 }
-                            } else {
+                            } else if (encoding == AudioFormat.ENCODING_PCM_16BIT) {
                                 val shorts = samples.asShortBuffer()
                                 val step = max(1, shorts.remaining() / 256)
                                 while (shorts.hasRemaining()) {
@@ -103,8 +108,10 @@ object RecordingWaveform {
                                     shorts.position((shorts.position() + step - 1).coerceAtMost(shorts.limit()))
                                 }
                             }
+                            outputs++
                         }
                         decoder.releaseOutputBuffer(outputIndex, false)
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
                     }
                 }
                 peaks[bar] = peak.coerceIn(0f, 1f)
@@ -115,9 +122,8 @@ object RecordingWaveform {
             if (visited == 0) return null
             for (bar in visited until BARS) peaks[bar] = peaks[visited - 1]
             val maxPeak = peaks.maxOrNull() ?: 0f
-            if (maxPeak > 0.001f) {
-                for (bar in peaks.indices) peaks[bar] = (peaks[bar] / maxPeak).coerceIn(0f, 1f)
-            }
+            if (maxPeak <= 0.001f) return null
+            for (bar in peaks.indices) peaks[bar] = (peaks[bar] / maxPeak).coerceIn(0f, 1f)
             synchronized(cache) { cache.put(key, peaks.copyOf()) }
             return peaks
         } catch (_: Exception) {
