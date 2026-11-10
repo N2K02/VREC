@@ -13,11 +13,13 @@ class AllCallsModeContractTest {
         assertEquals(0, CaptureSetupProtocol.selectedMode(false, true))
     }
     @Test fun sourceContainsNoSelectiveRecordingRule() {
-        val source = java.io.File("src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
-            .readText()
+        fun read(path: String): String = listOf(
+            java.io.File(path), java.io.File("../$path")
+        ).firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
+        val source = read("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
         assertFalse(source.contains("ContactRecordingRules"))
         assertTrue(source.contains("Prefs.autoRecord(context)"))
-        val prefs = java.io.File("src/main/java/com/vrec/app/Prefs.kt").readText()
+        val prefs = read("app/src/main/java/com/vrec/app/Prefs.kt")
         assertTrue(prefs.contains("fun autoRecord(c: Context) = true"))
         assertTrue(prefs.contains("fun recordVoip(c: Context) = true"))
     }
