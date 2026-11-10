@@ -21,8 +21,8 @@ class AdbDashboardCompactContractTest {
 
     @Test fun compactBadgesKeepLabelsValuesAndAccessibleDescription() {
         val src = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
-        assertTrue(src.contains("contentDescription = \"$label: $value\""))
-        assertTrue(src.contains("\"$label: $value\""))
+        assertTrue(src.contains("contentDescription = \"\$label: \$value\""))
+        assertTrue(src.contains("\"\$label: \$value\""))
         assertTrue(src.contains("MaterialTheme.typography.labelSmall"))
         assertTrue(src.contains("verticalArrangement = Arrangement.spacedBy(6.dp)"))
     }
