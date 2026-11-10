@@ -769,6 +769,13 @@ object ExperimentalCaptureDaemon {
                     else journal.consume(context, started, identity.appPackage)
                     delete(context, name)
                     RecordingStore.notifySaved()
+                    // Defer waveform decoding: importing and saving the audio must
+                    // finish promptly even for hour-long calls.
+                    runCatching {
+                        com.vrec.app.recording.RecordingWaveformWorker.schedule(context, dest)
+                    }.onFailure {
+                        com.vrec.app.Log.w("Could not schedule waveform preview", it)
+                    }
                     collected++
                 } catch (t: Throwable) {
                     if (t is CancellationException) throw t
