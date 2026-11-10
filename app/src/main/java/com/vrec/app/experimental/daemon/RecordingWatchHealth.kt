@@ -25,7 +25,7 @@ internal object RecordingWatchHealth {
         val inCall = entries["call"] ?: return null
         if (watching !in listOf("0", "1") || looper !in listOf("ok", "stuck") ||
             inCall !in listOf("0", "1")) return null
-        val mode = number("mode")?.toInt()?.takeIf { it in 0..2 } ?: return null
+        val mode = number("mode")?.takeIf { it in 0L..2L }?.toInt() ?: return null
         return Snapshot(
             startedAt = number("since") ?: return null,
             watching = watching == "1",
