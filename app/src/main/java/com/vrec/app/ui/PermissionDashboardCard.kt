@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.People
@@ -93,6 +95,7 @@ fun PermissionDashboardCard() {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
+    var expanded by remember { androidx.compose.runtime.mutableStateOf(false) }
     var actionMessage by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var working by remember { androidx.compose.runtime.mutableStateOf(false) }
     val runtimePermission = mapOf(
@@ -217,8 +220,11 @@ fun PermissionDashboardCard() {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Icon(Icons.Rounded.VerifiedUser, contentDescription = null,
                     tint = Color(0xFF66D9A4), modifier = Modifier.size(27.dp))
                 Column(Modifier.weight(1f)) {
@@ -241,7 +247,14 @@ fun PermissionDashboardCard() {
                         color = summaryTint, style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold)
                 }
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "Collapse Android permissions" else "Expand Android permissions",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
             }
+            if (expanded) {
             LinearProgressIndicator(
                 progress = { count.toFloat() / permissions.size.coerceAtLeast(1) },
                 modifier = Modifier.fillMaxWidth(),
@@ -336,6 +349,7 @@ fun PermissionDashboardCard() {
                 Text(it, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            } // expanded permission details
         }
     }
 }
