@@ -33,10 +33,10 @@ class ShellCommandOpcodeContractTest {
         assertTrue(shell.contains("COMMAND_GO_AHEAD = 'O'"))
         assertTrue(shell.contains("COMMAND_HEALTH = 'H'"))
         assertTrue(shell.contains("COMMAND_HANDOVER = 'B'"))
-        assertTrue(client.contains("open(context, 'J', byteArrayOf(selected.wireValue.toByte()))"))
+        assertTrue(client.contains("open(context, 'J', byteArrayOf(selectedWireValue.toByte()))"))
         assertTrue(client.contains("open(context, 'Y', byteArrayOf(action.code.toByte()))"))
         assertFalse("Legacy SIM opcode would be interpreted as capture control",
-            client.contains("open(context, 'Y', byteArrayOf(selected.wireValue.toByte()))"))
+            client.contains("open(context, 'Y', byteArrayOf(selectedWireValue.toByte()))"))
     }
 
     @Test fun sourceReplyMustStillBeVerifiedBeforeShowingReady() {
