@@ -393,12 +393,13 @@ object ExperimentalCaptureDaemon {
                     it.getInputStream().bufferedReader().readLine()?.trim()
                 }
             }.getOrNull()
-            val selected = EnhancedCapturePreferences.simSource(context)
+            // Preserve the proven two-way VOICE_CALL source on every start and reconnect.
+            val selectedWireValue = SIM_VOICE_CALL_SOURCE
             var sourceTransportError: String? = null
             val sourceReply = if (CaptureSetupProtocol.modeAcceptedMode(modeReply, mode, waitForAnswer)) {
                 CaptureSourceHandshake.request(
                     read = {
-                        open(context, 'J', byteArrayOf(selected.wireValue.toByte())).use {
+                        open(context, 'J', byteArrayOf(selectedWireValue.toByte())).use {
                             it.getInputStream().bufferedReader().readLine()
                         }
                     },
@@ -407,12 +408,12 @@ object ExperimentalCaptureDaemon {
                 )
             } else null
             val verdict = CaptureSetupProtocol.evaluateMode(
-                modeReply, sourceReply, mode, waitForAnswer, selected.wireValue,
+                modeReply, sourceReply, mode, waitForAnswer, selectedWireValue,
             )
             val verified = verdict.ready
             incompatibleProtocol.value = verdict.incompatible
             simSourceMessage.value = when (verdict.source) {
-                CaptureSetupProtocol.Source.APPLIED -> "SOURCE ${selected.wireValue}"
+                CaptureSetupProtocol.Source.APPLIED -> "SOURCE $selectedWireValue"
                 CaptureSetupProtocol.Source.DEFERRED_DURING_CALL ->
                     "SIM source change deferred until the current call ends."
                 else -> verdict.detail
