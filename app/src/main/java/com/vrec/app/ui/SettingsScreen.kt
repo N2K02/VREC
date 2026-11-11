@@ -355,3 +355,72 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
+
+@Composable
+private fun RecordingSettingsCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    action: @Composable (() -> Unit)? = null,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f).padding(start = 12.dp),
+                )
+                action?.invoke()
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun RecordingRetentionSelector(
+    label: String,
+    value: Int,
+    options: List<Pair<Int, String>>,
+    onSelected: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(options.firstOrNull { it.first == value }?.second ?: "Never",
+                    style = MaterialTheme.typography.bodyLarge)
+            }
+            Icon(Icons.Rounded.ChevronRight, contentDescription = "Choose retention")
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (days, name) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = { expanded = false; onSelected(days) },
+                    trailingIcon = if (days == value) {
+                        { Icon(Icons.Default.CheckCircle, contentDescription = "Selected") }
+                    } else null,
+                )
+            }
+        }
+    }
+}
