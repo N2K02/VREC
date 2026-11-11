@@ -20,7 +20,9 @@ class AllCallsModeContractTest {
         assertFalse(source.contains("ContactRecordingRules"))
         assertTrue(source.contains("Prefs.autoRecord(context)"))
         val prefs = read("app/src/main/java/com/vrec/app/Prefs.kt")
-        assertTrue(prefs.contains("fun autoRecord(c: Context) = true"))
-        assertTrue(prefs.contains("fun recordVoip(c: Context) = true"))
+        // Restored v6.8: VoIP capture is opt-in (off by default) so its audio
+        // policy is not armed during cellular calls unless the user enables it.
+        assertTrue(prefs.contains("fun autoRecord(c: Context) = of(c).getBoolean(AUTO_RECORD, true)"))
+        assertTrue(prefs.contains("fun recordVoip(c: Context) = of(c).getBoolean(RECORD_VOIP, false)"))
     }
 }

@@ -32,23 +32,17 @@ class VoipShellOwnershipContractTest {
         assertTrue(shell.contains("if (callActive && (app != null || callVoipApp != null))"))
     }
 
-    @Test fun phoneToVoipHandoffRequiresLiveAudioEvidence() {
+    @Test fun cellularCallEndDoesNotStartMessengerRecording() {
+        // Restored v6.8 behaviour: ending a phone call never opens a VoIP capture.
         val shell = source("shellserver/src/com/vrec/app/shell/Main.java")
-        val segment = shell.substringAfter("private static void onCallEnd() {")
-            .substringBefore("private static void onVoipCallEnd()")
-        assertTrue(segment.contains("Voip.followedApp()"))
-        assertTrue(segment.contains("Voip.uniquelyCallingApp(callAudio)"))
-        assertTrue(segment.contains("followed.equals(verified)"))
-        assertTrue(segment.contains("onCallStart(false, followed)"))
-        assertTrue(segment.contains("if (callVoipApp != null)"))
+        assertFalse(shell.contains("Voip.followedApp()"))
+        assertFalse(shell.contains("continuing messenger call"))
     }
 
-    @Test fun voipCaptureUsesMonotonicPtsAndProtectsCallMicrophone() {
+    @Test fun voipCaptureUsesV68ClockAndMicGuard() {
         val voip = source("shellserver/src/com/vrec/app/shell/Voip.java")
-        assertTrue(voip.contains("startUs = System.nanoTime() / 1000;"))
-        assertTrue(voip.contains("long wait = due - System.nanoTime() / 1000;"))
-        assertTrue(voip.contains("capture.dropMic();"))
-        assertTrue(voip.contains("microphone safety check failed"))
+        assertTrue(voip.contains("startUs = SystemClock.elapsedRealtimeNanos() / 1000;"))
+        assertFalse(voip.contains("microphone safety check failed"))
     }
 
     @Test fun telegramViberAndMeetAllRemainArmedWithoutCallerFilters() {
