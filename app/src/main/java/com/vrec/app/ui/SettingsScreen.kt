@@ -17,12 +17,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
@@ -33,8 +31,6 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.LinearProgressIndicator
 import com.vrec.app.calls.CallDetectionAccess
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
-import com.vrec.app.experimental.daemon.EnhancedCapturePreferences
-import com.vrec.app.experimental.daemon.SimCaptureSource
 import android.os.Build
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import kotlinx.coroutines.launch
@@ -96,10 +92,8 @@ fun SettingsScreen(
     // Local mirror of the stored values, so the UI updates immediately.
     var autoRecord by remember { mutableStateOf(prefs.getBoolean(Prefs.AUTO_RECORD, true)) }
     var recordVoip by remember { mutableStateOf(prefs.getBoolean(Prefs.RECORD_VOIP, false)) }
-    var simCaptureSource by remember { mutableStateOf(EnhancedCapturePreferences.simSource(context)) }
     val voipArmed by ExperimentalCaptureDaemon.voipArmed.collectAsState()
     val voipMessage by ExperimentalCaptureDaemon.voipMessage.collectAsState()
-    val simSourceMessage by ExperimentalCaptureDaemon.simSourceMessage.collectAsState()
     var watcherHealthResult by remember { mutableStateOf<String?>(null) }
     var watcherHealthChecking by remember { mutableStateOf(false) }
     var trashRetentionDays by remember { mutableStateOf(prefs.getInt("trash_retention_days", 30)) }
@@ -127,7 +121,6 @@ fun SettingsScreen(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("Audio source", "Enhanced SIM capture source and diagnostics", Icons.Rounded.Tune),
                 Triple("ADB connection", "Automatic pairing, reboot recovery and network access", Icons.Rounded.Settings),
             ).forEach { (name, detail, icon) ->
                 ListItem(
@@ -150,74 +143,96 @@ fun SettingsScreen(
                 modifier = Modifier.clickable(onClick = onOpenUpdates),
             )
         } else {
-        if (section == "Recording") SettingCard("Recording") {
-            Text("Recorder health", style = MaterialTheme.typography.titleSmall)
-            OutlinedButton(
-                enabled = !watcherHealthChecking,
-                onClick = {
-                    watcherHealthChecking = true
+        if (section == "Recording") {
+            RecordingSettingsCard("Recording behavior", Icons.Rounded.Tune) {
+                ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
+                    autoRecord = it
+                    putBool(Prefs.AUTO_RECORD, it)
                     scope.launch {
-                        try {
-                            val (healthy, detail) = ExperimentalCaptureDaemon.watchHealth(context)
-                            watcherHealthResult = (if (healthy) "Healthy: " else "Attention: ") + detail
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            com.vrec.app.Log.w("Call watcher health check failed", error)
-                            watcherHealthResult = "Attention: Could not check the recorder. Retry after reconnecting ADB."
-                        } finally {
-                            watcherHealthChecking = false
-                        }
+                        if (!ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)))
+                            com.vrec.app.Log.w("Recording mode update was not confirmed by shell")
+                    }
+                }
+                HorizontalDivider()
+                ToggleRow(
+                    "Discard silent recordings",
+                    "If capture is silent, delete the recording instead of keeping it.",
+                    discardSilent,
+                ) { discardSilent = it; putBool(Prefs.DISCARD_SILENT, it) }
+            }
+
+            RecordingSettingsCard("Recorder health", Icons.Rounded.Mic,
+                action = {
+                    OutlinedButton(
+                        enabled = !watcherHealthChecking,
+                        onClick = {
+                            watcherHealthChecking = true
+                            scope.launch {
+                                try {
+                                    val (healthy, detail) = ExperimentalCaptureDaemon.watchHealth(context)
+                                    watcherHealthResult = (if (healthy) "Healthy: " else "Attention: ") + detail
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (error: Exception) {
+                                    com.vrec.app.Log.w("Call watcher health check failed", error)
+                                    watcherHealthResult = "Attention: Could not check the recorder. Retry after reconnecting ADB."
+                                } finally {
+                                    watcherHealthChecking = false
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (watcherHealthChecking) "Checking…" else "Check call watcher")
                     }
                 },
-            ) { Text(if (watcherHealthChecking) "Checking…" else "Check call watcher") }
-            watcherHealthResult?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall)
+            ) {
+                watcherHealthResult?.let { result ->
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (result.startsWith("Healthy:")) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error,
+                    )
+                }
             }
 
-            Text("Recording retention", style = MaterialTheme.typography.titleSmall)
-            Text("Automatic cleanup moves older recordings to Recently Deleted; favorites are protected. Defaults to off.",
-                style = MaterialTheme.typography.bodySmall)
-            listOf(0 to "Never", 30 to "30 days", 90 to "90 days",
-                180 to "180 days", 365 to "1 year").forEach { (days, label) ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = savedRetentionDays == days, onClick = {
-                        savedRetentionDays = days
-                        prefs.edit().putInt("saved_retention_days", days).apply()
-                    })
-                    Text("Saved: $label", style = MaterialTheme.typography.bodySmall)
+            RecordingSettingsCard("Recording retention", Icons.Default.FolderOpen) {
+                Text(
+                    "Older recordings move to Recently Deleted; favorites are protected.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                RecordingRetentionSelector(
+                    label = "Keep recordings for",
+                    value = savedRetentionDays,
+                    options = listOf(0 to "Never", 30 to "30 days", 90 to "90 days",
+                        180 to "180 days", 365 to "1 year"),
+                ) { days ->
+                    savedRetentionDays = days
+                    prefs.edit().putInt("saved_retention_days", days).apply()
                 }
             }
-            Text("Recently Deleted retention", style = MaterialTheme.typography.titleSmall)
-            listOf(7, 30, 90).forEach { days ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = trashRetentionDays == days, onClick = {
-                        trashRetentionDays = days
-                        prefs.edit().putInt("trash_retention_days", days).apply()
-                    })
-                    Text("$days days", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            OutlinedButton(onClick = {
-                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    com.vrec.app.recording.RecordingStore.cleanOldSaved(context)
-                    com.vrec.app.recording.RecordingStore.purgeTrash(context)
-                    com.vrec.app.recording.RecordingStore.notifySaved()
-                }
-            }) { Text("Run cleanup now") }
 
-            ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
-                autoRecord = it; putBool(Prefs.AUTO_RECORD, it)
-                scope.launch {
-                    if (!ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)))
-                        com.vrec.app.Log.w("Recording mode update was not confirmed by shell")
+            RecordingSettingsCard("Recently Deleted retention", Icons.Rounded.Article) {
+                RecordingRetentionSelector(
+                    label = "Keep deleted recordings for",
+                    value = trashRetentionDays,
+                    options = listOf(7 to "7 days", 30 to "30 days", 90 to "90 days"),
+                ) { days ->
+                    trashRetentionDays = days
+                    prefs.edit().putInt("trash_retention_days", days).apply()
                 }
+                androidx.compose.material3.Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            com.vrec.app.recording.RecordingStore.cleanOldSaved(context)
+                            com.vrec.app.recording.RecordingStore.purgeTrash(context)
+                            com.vrec.app.recording.RecordingStore.notifySaved()
+                        }
+                    },
+                ) { Text("Run cleanup now") }
             }
-            ToggleRow(
-                "Discard silent recordings",
-                "If a recording comes out silent (this phone blocked capture), delete it instead of keeping it.",
-                discardSilent,
-            ) { discardSilent = it; putBool(Prefs.DISCARD_SILENT, it) }
         }
 
          if (section == "Floating controls") SettingCard("Floating controls") {
@@ -254,31 +269,6 @@ fun SettingsScreen(
                         )
                     },
                 )
-        }
-
-        if (section == "Audio source") {
-                SettingCard("Enhanced SIM capture source") {
-                    Text(
-                        "Select the shell's call-audio source. This does not use VRec's " +
-                            "standard microphone source setting. Availability depends on Android and your phone.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    SimCaptureSource.entries.forEach { option ->
-                        SourceOption(option.description, option.name, simCaptureSource.name) { chosen ->
-                            simCaptureSource = SimCaptureSource.from(chosen)
-                            EnhancedCapturePreferences.setSimSource(context, simCaptureSource)
-                            scope.launch { ExperimentalCaptureDaemon.setMode(context, Prefs.recordingEnabled(context)) }
-                        }
-                    }
-                    Text(
-                        "Dual captures uplink and downlink as separate stereo channels. " +
-                            "A selected source may be unavailable or silent on some phones; " +
-                            "changes during a call apply after the call ends. " + simSourceMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
         }
 
         if (section == "VoIP") SettingCard("VoIP") {
@@ -367,12 +357,70 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
 }
 
 @Composable
-private fun SourceOption(label: String, value: String, selected: String, onSelect: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().selectable(selected == value) { onSelect(value) },
-        verticalAlignment = Alignment.CenterVertically,
+private fun RecordingSettingsCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    action: @Composable (() -> Unit)? = null,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        RadioButton(selected = selected == value, onClick = { onSelect(value) })
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f).padding(start = 12.dp),
+                )
+                action?.invoke()
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun RecordingRetentionSelector(
+    label: String,
+    value: Int,
+    options: List<Pair<Int, String>>,
+    onSelected: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(options.firstOrNull { it.first == value }?.second ?: "Never",
+                    style = MaterialTheme.typography.bodyLarge)
+            }
+            Icon(Icons.Rounded.ChevronRight, contentDescription = "Choose retention")
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (days, name) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = { expanded = false; onSelected(days) },
+                    trailingIcon = if (days == value) {
+                        { Icon(Icons.Default.CheckCircle, contentDescription = "Selected") }
+                    } else null,
+                )
+            }
+        }
     }
 }
