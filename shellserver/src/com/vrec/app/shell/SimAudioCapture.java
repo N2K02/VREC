@@ -59,6 +59,10 @@ final class SimAudioCapture {
         private final MediaCodec.BufferInfo nearInfo = new MediaCodec.BufferInfo();
         private final MediaCodec.BufferInfo farInfo = new MediaCodec.BufferInfo();
         private boolean started;
+        // Keep unconsumed PCM from the longer source instead of dropping it.
+        private int nearAvailable, farAvailable;
+        private int nearOffset, farOffset;
+        private long nearTimestampUs;
 
         @Override public void checkCompatibility() throws AudioCaptureException {
             near.checkCompatibility();
@@ -83,30 +87,60 @@ final class SimAudioCapture {
 
         @Override public int read(ByteBuffer out, MediaCodec.BufferInfo info) {
             if (!started) return -1;
-            nearBuffer.clear();
-            farBuffer.clear();
-            int a = near.read(nearBuffer, nearInfo);
-            if (a < 0) return a;
-            int b = far.read(farBuffer, farInfo);
-            if (b < 0) return b;
-            if (a == 0 || b == 0) return 0;
-            int frames = Math.min(Math.min(a, b) / 4, out.remaining() / 4);
+            // AudioDirectCapture returns complete interleaved stereo frames (4 bytes).
+            // Never silently discard a longer read when its peer produces less data.
+            if (nearAvailable == 0) {
+                nearBuffer.clear();
+                int n = near.read(nearBuffer, nearInfo);
+                if (n < 0) return n;
+                if (n == 0) return 0;
+                if (n % 4 != 0 || n > nearBuffer.capacity()) {
+                    Ln.w("Dual SIM: malformed uplink PCM size " + n);
+                    return -1;
+                }
+                nearAvailable = n / 4;
+                nearOffset = 0;
+                nearTimestampUs = nearInfo.presentationTimeUs;
+            }
+            if (farAvailable == 0) {
+                farBuffer.clear();
+                int n = far.read(farBuffer, farInfo);
+                if (n < 0) return n;
+                if (n == 0) return 0;
+                if (n % 4 != 0 || n > farBuffer.capacity()) {
+                    Ln.w("Dual SIM: malformed downlink PCM size " + n);
+                    return -1;
+                }
+                farAvailable = n / 4;
+                farOffset = 0;
+            }
+            int frames = Math.min(Math.min(nearAvailable, farAvailable), out.remaining() / 4);
+            if (frames == 0) return 0;
             nearBuffer.order(ByteOrder.nativeOrder());
             farBuffer.order(ByteOrder.nativeOrder());
             out.order(ByteOrder.nativeOrder());
             for (int i = 0; i < frames; i++) {
-                int l = (nearBuffer.getShort(i * 4) + nearBuffer.getShort(i * 4 + 2)) / 2;
-                int r = (farBuffer.getShort(i * 4) + farBuffer.getShort(i * 4 + 2)) / 2;
-                out.putShort((short) l);
-                out.putShort((short) r);
+                int left = (nearBuffer.getShort((nearOffset + i) * 4)
+                        + nearBuffer.getShort((nearOffset + i) * 4 + 2)) / 2;
+                int right = (farBuffer.getShort((farOffset + i) * 4)
+                        + farBuffer.getShort((farOffset + i) * 4 + 2)) / 2;
+                out.putShort((short) left);
+                out.putShort((short) right);
             }
             int bytes = frames * 4;
-            info.set(0, bytes, nearInfo.presentationTimeUs, 0);
+            info.set(0, bytes, nearTimestampUs, 0);
+            nearTimestampUs += frames * 1_000_000L / AudioConfig.SAMPLE_RATE;
+            nearOffset += frames;
+            farOffset += frames;
+            nearAvailable -= frames;
+            farAvailable -= frames;
             return bytes;
         }
 
         @Override public void stop() {
             started = false;
+            nearAvailable = farAvailable = 0;
+            nearOffset = farOffset = 0;
             try { near.stop(); } finally { far.stop(); }
         }
     }
