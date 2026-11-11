@@ -427,24 +427,31 @@ final class Voip {
         /** An app on the list that is playing voice-call audio and capturing:
          *  a call, not a voice message. */
         private String callingApp() {
+            String candidate = null;
+            int candidateUid = -1;
             for (int uid : callingUids(audio, false)) {
                 String[] packages = FakeContext.get().getPackageManager().getPackagesForUid(uid);
-                if (packages == null) {
-                    continue;
-                }
+                if (packages == null) continue;
                 for (String pkg : packages) {
-                    if (apps.contains(pkg)) {
-                        activeUid = uid;
-                        return pkg;
+                    if (!apps.contains(pkg)) continue;
+                    if (candidate != null && (!candidate.equals(pkg) || candidateUid != uid)) {
+                        // Never attribute a simultaneous call to an arbitrary app.
+                        Ln.w("voip: multiple eligible calling apps; waiting for an unambiguous call");
+                        return null;
+                    }
+                    candidate = pkg;
+                    candidateUid = uid;
+                }
+                if (candidate == null) {
+                    String who = String.join(",", packages);
+                    if (!who.equals(noted)) {
+                        noted = who;
+                        Ln.i("voip: a call in " + who + ", which is not switched on");
                     }
                 }
-                String who = String.join(",", packages);
-                if (!who.equals(noted)) {
-                    noted = who;
-                    Ln.i("voip: a call in " + who + ", which is not switched on");
-                }
             }
-            return null;
+            if (candidate != null) activeUid = candidateUid;
+            return candidate;
         }
 
         /** The call app's own capture silenced while we record: give the
@@ -563,13 +570,20 @@ final class Voip {
             }
             farPump = new Pump("far", far, 2);
             farPump.start();
+            AudioRecord mic = null;
             try {
-                AudioRecord mic = mic();
+                mic = mic();
                 mic.startRecording();
+                Pump pump = new Pump("near", mic, 1);
+                pump.start();
+                nearPump = pump;
                 near = mic;
-                nearPump = new Pump("near", mic, 1);
-                nearPump.start();
             } catch (Throwable t) {
+                // Do not leak an AudioRecord when initialization fails halfway.
+                if (mic != null && near == null) {
+                    try { mic.stop(); } catch (Throwable ignored) { }
+                    try { mic.release(); } catch (Throwable ignored) { }
+                }
                 // The other side alone is still worth having.
                 Ln.w("voip: no microphone, recording the other side only: " + t);
             }
