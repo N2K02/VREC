@@ -26,6 +26,10 @@ jobs:
             shellserver/src/com/vrec/app/shell/AnsweredCallGate.java \
             shellserver/tests/AnsweredCallGateTest.java
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.AnsweredCallGateTest
+          javac -d "$RUNNER_TEMP/vrec-shell-regression" \\
+            shellserver/src/com/vrec/app/shell/CallStates.java \\
+            shellserver/tests/CallStatesTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.CallStatesTest
           javac -d "$RUNNER_TEMP/vrec-shell-regression" \
             shellserver/src/com/vrec/app/shell/PcmChannelHealth.java \
             shellserver/tests/PcmChannelHealthTest.java \
