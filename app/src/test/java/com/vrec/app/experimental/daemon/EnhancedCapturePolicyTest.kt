@@ -18,12 +18,8 @@ class EnhancedCapturePolicyTest {
         assertFalse(EnhancedVoipPolicy.isShellVoipCall(true, true, 34, null))
     }
 
-    @Test fun simSourcesHaveStableWireValuesAndSafeFallback() {
-        assertEquals(0, SimCaptureSource.VOICE_CALL.wireValue)
-        assertEquals(1, SimCaptureSource.UPLINK.wireValue)
-        assertEquals(2, SimCaptureSource.DOWNLINK.wireValue)
-        assertEquals(3, SimCaptureSource.DUAL.wireValue)
-        assertEquals(SimCaptureSource.VOICE_CALL, SimCaptureSource.from("bad-option"))
+    @Test fun simCaptureIsFixedToVoiceCall() {
+        assertEquals(0, SIM_VOICE_CALL_SOURCE)
     }
 
     @Test fun importedShellVoipPreservesAppIdentityAndType() {
