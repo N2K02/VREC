@@ -564,12 +564,21 @@ final class Voip {
             try {
                 far = policy.sink();
                 far.startRecording();
+                farPump = new Pump("far", far, 2);
+                farPump.start();
             } catch (Throwable t) {
+                // A partially opened capture is not a valid recording session.
+                // Release it before reporting failure so the next call can retry.
+                if (farPump != null) {
+                    farPump.close();
+                } else if (far != null) {
+                    try { far.stop(); } catch (Throwable ignored) { }
+                    try { far.release(); } catch (Throwable ignored) { }
+                }
+                far = null;
                 Ln.e("voip: could not read the call's audio", t);
                 throw new AudioCaptureException();
             }
-            farPump = new Pump("far", far, 2);
-            farPump.start();
             AudioRecord mic = null;
             try {
                 mic = mic();
