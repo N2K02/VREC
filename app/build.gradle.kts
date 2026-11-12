@@ -123,7 +123,7 @@ val verifyComposeMaterial3RuntimeAbi = tasks.register("verifyComposeMaterial3Run
     group = "verification"
     description = "Fail the build if Material 3's compile and runtime versions diverge"
     doLast {
-        val expected = "1.5.0-beta02"
+        val expected = "1.5.0-rc01"
         listOf("debugCompileClasspath", "debugRuntimeClasspath").forEach { configurationName ->
             val selectedVersions = configurations.getByName(configurationName)
                 .incoming.resolutionResult.allComponents

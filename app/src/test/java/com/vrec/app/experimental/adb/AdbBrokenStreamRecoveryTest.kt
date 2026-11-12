@@ -37,7 +37,7 @@ class AdbBrokenStreamRecoveryTest {
     @Test fun verifiedSharedLibraryUpgradeKeepsAdbRecoveryBuildable() {
         val build = listOf(File("app/build.gradle.kts"), File("../app/build.gradle.kts"))
             .first { it.isFile }.readText()
-        assertTrue(build.contains("dev.n2k02:theme:0.1.5"))
+        assertTrue(build.contains("dev.n2k02:theme:0.1.14"))
         assertTrue(build.contains("dev.n2k02:updater:0.1.32"))
         assertTrue(build.contains("dev.n2k02:adb-core:0.1.7"))
     }
