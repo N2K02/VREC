@@ -42,6 +42,10 @@ jobs:
             shellserver/tests/PcmRingTest.java
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.VoipMicHealthTest
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.PcmRingTest
+          javac -cp "$RUNNER_TEMP/vrec-shell-regression" -d "$RUNNER_TEMP/vrec-shell-regression" \
+            shellserver/src/com/vrec/app/shell/CaptureHealthFile.java \
+            shellserver/tests/CaptureHealthFileTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.CaptureHealthFileTest
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.PcmChannelHealthTest
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.genymobile.scrcpy.audio.AudioReadGuardTest
       - name: Compile and test without publishing

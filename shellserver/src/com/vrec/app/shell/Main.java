@@ -1344,6 +1344,7 @@ public final class Main {
             // far end of a phone call was recorded on that channel.
             Voip.Capture voipCapture = capture instanceof Voip.Capture ? (Voip.Capture) capture : null;
             PcmChannelHealth channelHealth = new PcmChannelHealth();
+            if (voipCapture != null) voipCapture.attachHealth(channelHealth);
             capture = new LevelTap(capture, (pcm, frames, atMs) -> {
                 channelHealth.accept(pcm, frames);
                 if (machine != null && machine.answeredThisCall()) {

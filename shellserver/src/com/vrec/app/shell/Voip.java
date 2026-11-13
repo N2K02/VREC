@@ -395,7 +395,10 @@ final class Voip {
             }
             guard(active);
             Capture recording = current;
-            if (recording != null) recording.checkMic();
+            if (recording != null) {
+                recording.checkMic();
+                recording.publishHealth(false);
+            }
             if (inCommunication) {
                 leftAt = 0;
                 heldOver = false;
@@ -546,6 +549,10 @@ final class Voip {
         private final VoipMicHealth micHealth = new VoipMicHealth();
         private int micDeviceType = -1;
         private boolean micBlocked;
+        private PcmChannelHealth channelHealth = new PcmChannelHealth();
+        private long lastHealthAt;
+        private final CaptureHealthFile healthFile = new CaptureHealthFile(
+                new java.io.File("/data/local/tmp/vrec-capture.health"));
         private volatile boolean running;
         private long framesOut;
         private long startUs;
@@ -592,6 +599,7 @@ final class Voip {
             openNextMic();
             startUs = SystemClock.elapsedRealtimeNanos() / 1000;
             current = this;
+            publishHealth(true);
             Ln.i("voip: recording both sides (" + (near != null ? "mic on" : "mic off") + ")");
         }
 
@@ -657,6 +665,19 @@ final class Voip {
                 Ln.w("voip: recovering microphone: " + micHealth.summary());
                 if (closeMic()) openNextMic();
                 else { micBlocked = true; micHealth.readerStuck(); }
+            }
+        }
+
+        synchronized void attachHealth(PcmChannelHealth health) { channelHealth = health; }
+
+        synchronized void publishHealth(boolean force) {
+            long now = SystemClock.elapsedRealtime();
+            if (!force && now - lastHealthAt < 5000) return;
+            lastHealthAt = now;
+            try {
+                healthFile.write(System.currentTimeMillis(), running, micDiagnostic(), channelHealth.snapshot());
+            } catch (java.io.IOException error) {
+                Ln.w("voip: live health unavailable: " + error.getClass().getSimpleName());
             }
         }
 
@@ -732,6 +753,7 @@ final class Voip {
             if (farPump != null) {
                 farPump.close();
             }
+            publishHealth(true);
             recordingEnded();
         }
     }
