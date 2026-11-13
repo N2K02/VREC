@@ -393,10 +393,12 @@ final class Voip {
                 }
                 return;
             }
+            guard(active);
+            Capture recording = current;
+            if (recording != null) recording.checkMic();
             if (inCommunication) {
                 leftAt = 0;
                 heldOver = false;
-                guard(active);
                 return;
             }
             boolean stillCalling = activeUid >= 0 && callingUids(audio, false).contains(activeUid);
@@ -520,13 +522,9 @@ final class Voip {
      * Both sides as one stereo stream, the shape every other recording has:
      * the other person on the left, the user on the right.
      *
-     * The microphone is the clock. Each read takes the next block of it and
-     * whatever the copy of the call has delivered: silence where the copy is
-     * short (the app paused its player, a route change), and the oldest of it
-     * dropped if it ever runs too far ahead, so two clocks that drift apart
-     * over a long call cannot pull the sides out of step by more than that.
-     * Without a microphone - dropped by the guard, or never started - a timer
-     * paces the reads instead, so the encoder never stalls.
+     * The monotonic clock paces both sides. A stopped or stalled microphone
+     * must never stall the playback channel. Both queues are bounded and old
+     * samples are dropped on route changes so delayed audio cannot drift apart.
      */
     static final class Capture implements AudioCapture {
         private static final int FRAMES = 960;              // 20 ms
@@ -536,7 +534,10 @@ final class Voip {
         private AudioRecord far;
         private volatile AudioRecord near;
         private Pump farPump;
-        private Pump nearPump;
+        private volatile Pump nearPump;
+        private final VoipMicHealth micHealth = new VoipMicHealth();
+        private int micDeviceType = -1;
+        private boolean micBlocked;
         private volatile boolean running;
         private long framesOut;
         private long startUs;
@@ -560,7 +561,7 @@ final class Voip {
         }
 
         @Override
-        public void start() throws AudioCaptureException {
+        public synchronized void start() throws AudioCaptureException {
             try {
                 far = policy.sink();
                 far.startRecording();
@@ -579,31 +580,15 @@ final class Voip {
                 Ln.e("voip: could not read the call's audio", t);
                 throw new AudioCaptureException();
             }
-            AudioRecord mic = null;
-            try {
-                mic = mic();
-                mic.startRecording();
-                Pump pump = new Pump("near", mic, 1);
-                pump.start();
-                nearPump = pump;
-                near = mic;
-            } catch (Throwable t) {
-                // Do not leak an AudioRecord when initialization fails halfway.
-                if (mic != null && near == null) {
-                    try { mic.stop(); } catch (Throwable ignored) { }
-                    try { mic.release(); } catch (Throwable ignored) { }
-                }
-                // The other side alone is still worth having.
-                Ln.w("voip: no microphone, recording the other side only: " + t);
-            }
             running = true;
+            openNextMic();
             startUs = SystemClock.elapsedRealtimeNanos() / 1000;
             current = this;
             Ln.i("voip: recording both sides (" + (near != null ? "mic on" : "mic off") + ")");
         }
 
         @SuppressLint({"WrongConstant", "MissingPermission"})
-        private static AudioRecord mic() {
+        private static AudioRecord mic(int source) {
             AudioFormat format = new AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .setSampleRate(SAMPLE_RATE)
@@ -611,7 +596,7 @@ final class Voip {
                     .build();
             return new AudioRecord.Builder()
                     .setContext(FakeContext.get())
-                    .setAudioSource(MediaRecorder.AudioSource.MIC)
+                    .setAudioSource(source)
                     .setAudioFormat(format)
                     .setPrivacySensitive(false)
                     .setBufferSizeInBytes(8 * AudioRecord.getMinBufferSize(
@@ -619,13 +604,70 @@ final class Voip {
                     .build();
         }
 
-        /** The guard's call: the call app needs the microphone more. */
-        void dropMic() {
-            AudioRecord mic = near;
-            near = null;
-            if (mic != null && nearPump != null) {
-                nearPump.close();
+        private synchronized void openNextMic() {
+            int[] sources = { MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION };
+            while (running && !micBlocked) {
+                int index = micHealth.next(SystemClock.elapsedRealtime());
+                if (index < 0) return;
+                AudioRecord mic = null;
+                try {
+                    mic = mic(sources[index]);
+                    mic.startRecording();
+                    if (mic.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING)
+                        throw new IllegalStateException("microphone did not start");
+                    Pump pump = new Pump("near", mic, 1);
+                    pump.health = micHealth;
+                    pump.start();
+                    micDeviceType = -1;
+                    nearPump = pump;
+                    near = mic;
+                    Ln.i("voip: " + micHealth.summary());
+                    return;
+                } catch (Throwable t) {
+                    if (mic != null) {
+                        try { mic.stop(); } catch (Throwable ignored) { }
+                        try { mic.release(); } catch (Throwable ignored) { }
+                    }
+                    micHealth.failed();
+                    Ln.w("voip: microphone open failed: " + micHealth.summary() + " " + t);
+                }
             }
+        }
+
+        /** Runs on the watcher thread, never the encoder or reader thread. */
+        synchronized void checkMic() {
+            if (!running || micBlocked || near == null || nearPump == null) return;
+            Boolean silenced = null;
+            try {
+                AudioRecordingConfiguration config = near.getActiveRecordingConfiguration();
+                if (config != null) silenced = config.isClientSilenced();
+                android.media.AudioDeviceInfo device = near.getRoutedDevice();
+                micDeviceType = device == null ? -1 : device.getType();
+            } catch (RuntimeException ignored) { /* state unknown, samples remain evidence */ }
+            if (micHealth.inspect(SystemClock.elapsedRealtime(), silenced, nearPump.running)) {
+                Ln.w("voip: recovering microphone: " + micHealth.summary());
+                if (closeMic()) openNextMic();
+                else { micBlocked = true; micHealth.readerStuck(); }
+            }
+        }
+
+        synchronized String micDiagnostic() {
+            return micHealth.summary() + ";deviceType=" + micDeviceType;
+        }
+
+        private boolean closeMic() {
+            near = null;
+            Pump pump = nearPump;
+            nearPump = null;
+            return pump == null || pump.close();
+        }
+
+        /** Protecting the call is terminal: recovery must never re-acquire its mic. */
+        synchronized void dropMic() {
+            micBlocked = true;
+            micHealth.protectCall();
+            closeMic();
         }
 
         @Override
@@ -633,22 +675,16 @@ final class Voip {
             if (!running) {
                 return -1;
             }
+            long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
+            long wait = due - SystemClock.elapsedRealtimeNanos() / 1000;
+            if (wait > 0) SystemClock.sleep(wait / 1000 + 1);
+            if (!running) return -1;
             Pump np = nearPump;
-            boolean fromMic = near != null && np != null && np.take(mine, FRAMES, true);
-            if (!running) {
-                return -1;
-            }
-            if (!fromMic) {
-                // No microphone - never started, or dropped by the guard while
-                // this read waited on it. The call goes on with the other
-                // side only, paced by the clock: failing the read here would
-                // end the whole recording, theirs included.
+            if (near != null && np != null) {
+                np.dropBeyond(MAX_AHEAD);
+                np.take(mine, FRAMES, false);
+            } else {
                 java.util.Arrays.fill(mine, (short) 0);
-                long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
-                long wait = due - SystemClock.elapsedRealtimeNanos() / 1000;
-                if (wait > 0) {
-                    SystemClock.sleep(wait / 1000 + 1);
-                }
             }
             farPump.dropBeyond(MAX_AHEAD * 2);
             farPump.take(theirs, FRAMES * 2, false);
@@ -668,12 +704,12 @@ final class Voip {
         }
 
         @Override
-        public void stop() {
+        public synchronized void stop() {
             running = false;
             if (current == this) {
                 current = null;
             }
-            dropMic();
+            closeMic();
             if (farPump != null) {
                 farPump.close();
             }
@@ -693,6 +729,7 @@ final class Voip {
         private int head;
         private int size;
         private volatile boolean running = true;
+        private VoipMicHealth health;
 
         Pump(String name, AudioRecord record, int channels) {
             this.name = name;
@@ -718,7 +755,7 @@ final class Voip {
          * release. Releasing an AudioRecord another thread is still reading
          * frees it under that read.
          */
-        void close() {
+        boolean close() {
             halt();
             try {
                 record.stop();
@@ -732,9 +769,10 @@ final class Voip {
             }
             if (thread.isAlive()) {
                 Ln.w("voip: " + name + " reader did not stop; leaving the record unreleased");
-                return;
+                return false;
             }
             record.release();
+            return true;
         }
 
         @Override
@@ -747,6 +785,7 @@ final class Voip {
                     break;
                 }
                 if (n > 0) {
+                    if (health != null) health.samples(buf, n, SystemClock.elapsedRealtime());
                     put(buf, n);
                 }
             }

@@ -1305,9 +1305,10 @@ public final class Main {
         private final FileOutputStream out;
         private final AsyncProcessor recorder;
         private final PcmChannelHealth channelHealth;
+        private final Voip.Capture voipCapture;
 
         private RecordingSession(String name, boolean incoming, long startedAt, String app, File file,
-                                 FileOutputStream out, AsyncProcessor recorder, PcmChannelHealth channelHealth) {
+                                 FileOutputStream out, AsyncProcessor recorder, PcmChannelHealth channelHealth, Voip.Capture voipCapture) {
             this.name = name;
             this.incoming = incoming;
             this.app = app;
@@ -1316,6 +1317,7 @@ public final class Main {
             this.out = out;
             this.recorder = recorder;
             this.channelHealth = channelHealth;
+            this.voipCapture = voipCapture;
         }
 
         static RecordingSession start(boolean incoming, String app) throws Exception {
@@ -1340,6 +1342,7 @@ public final class Main {
             // Observe PCM16 stereo without changing the sample data. The metrics
             // are diagnostic only: a non-silent channel is NOT proof that the
             // far end of a phone call was recorded on that channel.
+            Voip.Capture voipCapture = capture instanceof Voip.Capture ? (Voip.Capture) capture : null;
             PcmChannelHealth channelHealth = new PcmChannelHealth();
             capture = new LevelTap(capture, (pcm, frames, atMs) -> {
                 channelHealth.accept(pcm, frames);
@@ -1368,7 +1371,7 @@ public final class Main {
                 });
                 Ln.i("recording: started -> " + name);
                 return new RecordingSession(name, incoming, startedAt, app, file, out, recorder,
-                        channelHealth);
+                        channelHealth, voipCapture);
             } catch (Exception | Error failure) {
                 closeQuietly(out);
                 if (!file.delete()) {
@@ -1396,7 +1399,7 @@ public final class Main {
             File healthFile = new File(REC_DIR, name + ".health");
             String kind = app == null ? SimAudioCapture.label(simCaptureMode) : "VOIP_PLAYBACK_MIC";
             try (FileOutputStream info = new FileOutputStream(healthFile)) {
-                info.write((kind + " | " + summary + " | " + health.verdict() + "\n")
+                info.write((kind + " | " + summary + (voipCapture == null ? "" : " | " + voipCapture.micDiagnostic()) + " | " + health.verdict() + "\n")
                         .getBytes(StandardCharsets.UTF_8));
             } catch (IOException e) {
                 Ln.w("recording: could not save audio diagnostic " + e);
