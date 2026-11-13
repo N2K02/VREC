@@ -529,6 +529,8 @@ final class Voip {
     static final class Capture implements AudioCapture {
         private static final int FRAMES = 960;              // 20 ms
         private static final int MAX_AHEAD = SAMPLE_RATE / 5; // 200 ms
+        /** Longer than one 40 ms microphone read plus scheduling jitter. */
+        private static final long MIC_GRACE_US = 60_000L;
 
         private final Policy policy;
         private AudioRecord far;
@@ -676,18 +678,27 @@ final class Voip {
                 return -1;
             }
             long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
-            long wait = due - SystemClock.elapsedRealtimeNanos() / 1000;
-            if (wait > 0) SystemClock.sleep(wait / 1000 + 1);
-            if (!running) return -1;
+            long nowUs = SystemClock.elapsedRealtimeNanos() / 1000;
             Pump np = nearPump;
-            if (near != null && np != null) {
-                np.dropBeyond(MAX_AHEAD);
-                np.take(mine, FRAMES, false);
-            } else {
-                java.util.Arrays.fill(mine, (short) 0);
+            try {
+                if (near != null && np != null) {
+                    // A healthy microphone is the clock: wait for a full block,
+                    // but never past due + MIC_GRACE, so a stalled or reopening
+                    // microphone cannot stall the other person's channel.
+                    np.queue.dropBeyond(MAX_AHEAD);
+                    long timeoutMs = Math.max(0L, (due + MIC_GRACE_US - nowUs) / 1000);
+                    np.queue.takeWithin(mine, FRAMES, timeoutMs);
+                } else {
+                    java.util.Arrays.fill(mine, (short) 0);
+                    if (due > nowUs) SystemClock.sleep((due - nowUs) / 1000 + 1);
+                }
+                if (!running) return -1;
+                farPump.queue.dropBeyond(MAX_AHEAD * 2);
+                farPump.queue.take(theirs, FRAMES * 2, false);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return -1;
             }
-            farPump.dropBeyond(MAX_AHEAD * 2);
-            farPump.take(theirs, FRAMES * 2, false);
 
             // PCM in the platform's byte order, as AudioRecord writes it; a
             // ByteBuffer starts out big-endian, which would be noise.
@@ -725,16 +736,15 @@ final class Voip {
         private final String name;
         private final AudioRecord record;
         private final Thread thread;
-        private final short[] ring;
-        private int head;
-        private int size;
-        private volatile boolean running = true;
-        private VoipMicHealth health;
+        /** Two seconds of samples; the encoder takes from here. */
+        final PcmRing queue;
+        volatile boolean running = true;
+        VoipMicHealth health;
 
         Pump(String name, AudioRecord record, int channels) {
             this.name = name;
             this.record = record;
-            this.ring = new short[SAMPLE_RATE * channels * 2]; // two seconds
+            this.queue = new PcmRing(SAMPLE_RATE * channels * 2);
             this.thread = new Thread(this, "jemrec-voip-" + name);
         }
 
@@ -744,9 +754,7 @@ final class Voip {
 
         void halt() {
             running = false;
-            synchronized (this) {
-                notifyAll();
-            }
+            queue.close();
         }
 
         /**
@@ -785,63 +793,14 @@ final class Voip {
                     break;
                 }
                 if (n > 0) {
-                    if (health != null) health.samples(buf, n, SystemClock.elapsedRealtime());
-                    put(buf, n);
+                    VoipMicHealth h = health;
+                    if (h != null) h.samples(buf, n, SystemClock.elapsedRealtime());
+                    queue.put(buf, n);
                 }
             }
             // However it ended, say so: a read waiting on this side must not
             // wait for samples that will never come.
             halt();
-        }
-
-        private synchronized void put(short[] src, int n) {
-            for (int i = 0; i < n; i++) {
-                if (size == ring.length) {
-                    // Full: the oldest goes, nothing blocks the reader.
-                    head = (head + 1) % ring.length;
-                    size--;
-                }
-                ring[(head + size) % ring.length] = src[i];
-                size++;
-            }
-            notifyAll();
-        }
-
-        /** Fill dst with n samples. Waiting for them if [wait]; otherwise what
-         *  there is, and silence for the rest. False if it stopped first. */
-        synchronized boolean take(short[] dst, int n, boolean wait) {
-            if (wait) {
-                while (size < n && running) {
-                    try {
-                        wait(100);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return false;
-                    }
-                }
-                if (size < n) {
-                    return false;
-                }
-            }
-            int got = Math.min(n, size);
-            for (int i = 0; i < got; i++) {
-                dst[i] = ring[head];
-                head = (head + 1) % ring.length;
-            }
-            size -= got;
-            for (int i = got; i < n; i++) {
-                dst[i] = 0;
-            }
-            return true;
-        }
-
-        /** Keep at most [max] samples waiting: the rest is the past. */
-        synchronized void dropBeyond(int max) {
-            if (size > max) {
-                int drop = size - max;
-                head = (head + drop) % ring.length;
-                size = max;
-            }
         }
     }
 }
