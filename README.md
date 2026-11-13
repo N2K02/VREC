@@ -78,13 +78,31 @@ remain user-controlled.
 
 ## Reference and inspiration
 
+- [**JemRec**](https://github.com/jemcik/JemRec) by Yevhen Yemchynskyi
+  (Apache-2.0) — the primary reference. VRec's shell recording helper
+  (`shellserver/`) is adapted from JemRec's shell-side capture daemon: the
+  UID 2000 `app_process` recorder, SIM `VOICE_CALL` capture, and the VoIP
+  audio policy that records the other person's playback alongside your
+  microphone. The code lives in `com.vrec.app.shell` and was extended with
+  VRec's own recovery, diagnostics and tests.
 - [**Shizuku-Next**](https://github.com/rushiranpise/Shizuku-Next) — reference
   for wireless ADB pairing ergonomics, automatic pairing-code detection,
   reconnect/recovery strategies, watchdogs, and boot-start controls.
 
-VRec implements its **own** authorized ADB client and recording helper.
-Shizuku-Next is credited as an engineering reference; VRec does **not**
-require the Shizuku-Next app or server, and does not bundle its runtime.
+VRec does **not** require the JemRec or Shizuku-Next apps, and does not
+talk to them at runtime. It builds its own ADB client, and it builds its
+recording helper from source.
+
+### Third-party code
+
+JemRec's helper itself embeds the audio-only runtime of
+[scrcpy](https://github.com/Genymobile/scrcpy) v4.1 (Apache-2.0), which
+VRec inherits unchanged under `com.genymobile.scrcpy`. That code is used only
+for audio encoding and capture plumbing; VRec has no screen mirroring or
+scrcpy client. Licence texts and attribution are in
+[`shellserver/NOTICE`](shellserver/NOTICE),
+[`shellserver/LICENSE-scrcpy`](shellserver/LICENSE-scrcpy) and
+[`shellserver/PATCHES.md`](shellserver/PATCHES.md).
 
 ## APKs
 
