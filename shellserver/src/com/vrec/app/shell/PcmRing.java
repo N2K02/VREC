@@ -12,6 +12,11 @@ package com.vrec.app.shell;
  * (and with it the other person's channel) longer than the given timeout.
  */
 final class PcmRing {
+    interface Clock {
+        long nowUs();
+        void sleepUs(long durationUs) throws InterruptedException;
+    }
+
     private final short[] ring;
     private int head;
     private int size;
@@ -75,6 +80,22 @@ final class PcmRing {
             wait(remainingMs);
         }
         return copyOut(dst, n);
+    }
+
+    /**
+     * A full microphone block supplies its own timing. A short/closed source
+     * must fall back to the output deadline before emitting inserted silence.
+     * Sleep outside the queue monitor so the producer and close remain free.
+     */
+    int takePaced(short[] dst, int n, long timeoutMs, long dueUs, Clock clock) throws InterruptedException {
+        int got = takeWithin(dst, n, timeoutMs);
+        if (got < n) paceUntil(dueUs, clock);
+        return got;
+    }
+
+    static void paceUntil(long dueUs, Clock clock) throws InterruptedException {
+        long remaining;
+        while ((remaining = dueUs - clock.nowUs()) > 0) clock.sleepUs(remaining);
     }
 
     /** Keep at most [max] samples waiting: the rest is the past. */

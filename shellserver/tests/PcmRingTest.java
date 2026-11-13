@@ -9,6 +9,13 @@ public final class PcmRingTest {
         return s;
     }
 
+    private static final class FakeClock implements PcmRing.Clock {
+        long now;
+        int sleeps;
+        @Override public long nowUs() { return now; }
+        @Override public void sleepUs(long us) { check(us > 0, "positive wait"); now += us; sleeps++; }
+    }
+
     public static void main(String[] args) throws Exception {
         short[] block = new short[960];
 
@@ -81,6 +88,45 @@ public final class PcmRingTest {
         far.put(new short[] { 7, 8 }, 2);
         short[] out = new short[4];
         check(far.take(out, 4, false) && out[0] == 7 && out[1] == 8 && out[2] == 0, "partial then zeros");
+
+        // A dead reader returns immediately; inserted silence must still use
+        // one 20 ms output deadline per block until the watchdog recovers it.
+        FakeClock clock = new FakeClock();
+        PcmRing dead = new PcmRing(96000);
+        dead.put(ramp(100, 1), 100);
+        dead.close();
+        for (int i = 1; i <= 25; i++) {
+            int real = dead.takePaced(block, 960, 80, i * 20_000L, clock);
+            check(real == (i == 1 ? 100 : 0), "preserve remaining real samples before silence");
+            check(clock.now == i * 20_000L, "closed reader cannot run timestamps ahead of real time");
+            check(block[959] == 0, "missing samples padded");
+        }
+        check(clock.sleeps == 25, "every short block paced during watchdog interval");
+
+        // Healthy 40 ms mic chunks remain the clock, with no extra wall-clock
+        // delay added between their two complete encoder blocks.
+        PcmRing healthy = new PcmRing(96000);
+        healthy.put(ramp(1920, 1), 1920);
+        clock = new FakeClock();
+        check(healthy.takePaced(block, 960, 0, 20_000, clock) == 960, "healthy first block");
+        check(healthy.takePaced(block, 960, 0, 40_000, clock) == 960, "healthy second block");
+        check(clock.sleeps == 0 && block[0] == 961, "healthy mic pacing unchanged");
+
+        // An exhausted timeout cannot add another delay when already late.
+        clock.now = 100_000;
+        check(dead.takePaced(block, 960, 0, 80_000, clock) == 0, "late short read");
+        check(clock.sleeps == 0 && clock.now == 100_000, "no extra delay past deadline");
+        PcmRing.paceUntil(120_000, clock);
+        check(clock.now == 120_000, "absent mic uses the same clock fallback");
+
+        // Quit/interruption must break a clock wait, not keep emitting audio.
+        try {
+            dead.takePaced(block, 960, 0, 1, new PcmRing.Clock() {
+                @Override public long nowUs() { return 0; }
+                @Override public void sleepUs(long us) throws InterruptedException { throw new InterruptedException(); }
+            });
+            throw new AssertionError("interruption swallowed");
+        } catch (InterruptedException expected) { }
 
         System.out.println("PCM ring pacing regression tests passed");
     }

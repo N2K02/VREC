@@ -531,6 +531,12 @@ final class Voip {
         private static final int MAX_AHEAD = SAMPLE_RATE / 5; // 200 ms
         /** Longer than one 40 ms microphone read plus scheduling jitter. */
         private static final long MIC_GRACE_US = 60_000L;
+        private static final PcmRing.Clock CLOCK = new PcmRing.Clock() {
+            @Override public long nowUs() { return SystemClock.elapsedRealtimeNanos() / 1000; }
+            @Override public void sleepUs(long us) throws InterruptedException {
+                Thread.sleep(us / 1000, (int) (us % 1000) * 1000);
+            }
+        };
 
         private final Policy policy;
         private AudioRecord far;
@@ -687,10 +693,12 @@ final class Voip {
                     // microphone cannot stall the other person's channel.
                     np.queue.dropBeyond(MAX_AHEAD);
                     long timeoutMs = Math.max(0L, (due + MIC_GRACE_US - nowUs) / 1000);
-                    np.queue.takeWithin(mine, FRAMES, timeoutMs);
+                    // Closed readers return immediately. Pace an incomplete
+                    // block before advancing timestamps or consuming playback.
+                    np.queue.takePaced(mine, FRAMES, timeoutMs, due, CLOCK);
                 } else {
                     java.util.Arrays.fill(mine, (short) 0);
-                    if (due > nowUs) SystemClock.sleep((due - nowUs) / 1000 + 1);
+                    PcmRing.paceUntil(due, CLOCK);
                 }
                 if (!running) return -1;
                 farPump.queue.dropBeyond(MAX_AHEAD * 2);
