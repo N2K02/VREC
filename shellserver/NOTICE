@@ -1,0 +1,28 @@
+VRec shell recording helper
+===========================
+
+This directory contains code from the following Apache-2.0 projects, as
+modified by VRec. The full Apache License 2.0 text is in LICENSE-scrcpy (it
+is identical for both projects).
+
+JemRec
+  https://github.com/jemcik/JemRec
+  Author: Yevhen Yemchynskyi
+  License: Apache License 2.0
+  Used: the shell-side capture daemon (Main, Voip, CallStates, Checks,
+  AnswerMachine, AnswerSettings, Forwarding, Greeting, GreetingPlayer,
+  LevelTap), originally in package com.jemcik.jemrec.shell; moved to
+  com.vrec.app.shell and modified by VRec.
+
+scrcpy
+  https://github.com/Genymobile/scrcpy
+  Copyright (C) 2018 Genymobile
+  Copyright (C) 2018-2026 Romain Vimont
+  License: Apache License 2.0
+  Used: audio-only server runtime from v4.1, under com.genymobile.scrcpy,
+  as embedded by JemRec. See PATCHES.md for every change.
+
+VRec additions (not from either project) include PcmChannelHealth,
+AnsweredCallGate, SimAudioCapture, VoipMicHealth, PcmRing and
+CaptureHealthFile, plus VRec's recovery and diagnostic changes in the files
+above.

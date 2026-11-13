@@ -393,10 +393,15 @@ final class Voip {
                 }
                 return;
             }
+            guard(active);
+            Capture recording = current;
+            if (recording != null) {
+                recording.checkMic();
+                recording.publishHealth(false);
+            }
             if (inCommunication) {
                 leftAt = 0;
                 heldOver = false;
-                guard(active);
                 return;
             }
             boolean stillCalling = activeUid >= 0 && callingUids(audio, false).contains(activeUid);
@@ -520,23 +525,34 @@ final class Voip {
      * Both sides as one stereo stream, the shape every other recording has:
      * the other person on the left, the user on the right.
      *
-     * The microphone is the clock. Each read takes the next block of it and
-     * whatever the copy of the call has delivered: silence where the copy is
-     * short (the app paused its player, a route change), and the oldest of it
-     * dropped if it ever runs too far ahead, so two clocks that drift apart
-     * over a long call cannot pull the sides out of step by more than that.
-     * Without a microphone - dropped by the guard, or never started - a timer
-     * paces the reads instead, so the encoder never stalls.
+     * The monotonic clock paces both sides. A stopped or stalled microphone
+     * must never stall the playback channel. Both queues are bounded and old
+     * samples are dropped on route changes so delayed audio cannot drift apart.
      */
     static final class Capture implements AudioCapture {
         private static final int FRAMES = 960;              // 20 ms
         private static final int MAX_AHEAD = SAMPLE_RATE / 5; // 200 ms
+        /** Longer than one 40 ms microphone read plus scheduling jitter. */
+        private static final long MIC_GRACE_US = 60_000L;
+        private static final PcmRing.Clock CLOCK = new PcmRing.Clock() {
+            @Override public long nowUs() { return SystemClock.elapsedRealtimeNanos() / 1000; }
+            @Override public void sleepUs(long us) throws InterruptedException {
+                Thread.sleep(us / 1000, (int) (us % 1000) * 1000);
+            }
+        };
 
         private final Policy policy;
         private AudioRecord far;
         private volatile AudioRecord near;
         private Pump farPump;
-        private Pump nearPump;
+        private volatile Pump nearPump;
+        private final VoipMicHealth micHealth = new VoipMicHealth();
+        private int micDeviceType = -1;
+        private boolean micBlocked;
+        private PcmChannelHealth channelHealth = new PcmChannelHealth();
+        private long lastHealthAt;
+        private final CaptureHealthFile healthFile = new CaptureHealthFile(
+                new java.io.File("/data/local/tmp/vrec-capture.health"));
         private volatile boolean running;
         private long framesOut;
         private long startUs;
@@ -560,7 +576,7 @@ final class Voip {
         }
 
         @Override
-        public void start() throws AudioCaptureException {
+        public synchronized void start() throws AudioCaptureException {
             try {
                 far = policy.sink();
                 far.startRecording();
@@ -579,31 +595,16 @@ final class Voip {
                 Ln.e("voip: could not read the call's audio", t);
                 throw new AudioCaptureException();
             }
-            AudioRecord mic = null;
-            try {
-                mic = mic();
-                mic.startRecording();
-                Pump pump = new Pump("near", mic, 1);
-                pump.start();
-                nearPump = pump;
-                near = mic;
-            } catch (Throwable t) {
-                // Do not leak an AudioRecord when initialization fails halfway.
-                if (mic != null && near == null) {
-                    try { mic.stop(); } catch (Throwable ignored) { }
-                    try { mic.release(); } catch (Throwable ignored) { }
-                }
-                // The other side alone is still worth having.
-                Ln.w("voip: no microphone, recording the other side only: " + t);
-            }
             running = true;
+            openNextMic();
             startUs = SystemClock.elapsedRealtimeNanos() / 1000;
             current = this;
+            publishHealth(true);
             Ln.i("voip: recording both sides (" + (near != null ? "mic on" : "mic off") + ")");
         }
 
         @SuppressLint({"WrongConstant", "MissingPermission"})
-        private static AudioRecord mic() {
+        private static AudioRecord mic(int source) {
             AudioFormat format = new AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .setSampleRate(SAMPLE_RATE)
@@ -611,7 +612,7 @@ final class Voip {
                     .build();
             return new AudioRecord.Builder()
                     .setContext(FakeContext.get())
-                    .setAudioSource(MediaRecorder.AudioSource.MIC)
+                    .setAudioSource(source)
                     .setAudioFormat(format)
                     .setPrivacySensitive(false)
                     .setBufferSizeInBytes(8 * AudioRecord.getMinBufferSize(
@@ -619,13 +620,83 @@ final class Voip {
                     .build();
         }
 
-        /** The guard's call: the call app needs the microphone more. */
-        void dropMic() {
-            AudioRecord mic = near;
-            near = null;
-            if (mic != null && nearPump != null) {
-                nearPump.close();
+        private synchronized void openNextMic() {
+            int[] sources = { MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION };
+            while (running && !micBlocked) {
+                int index = micHealth.next(SystemClock.elapsedRealtime());
+                if (index < 0) return;
+                AudioRecord mic = null;
+                try {
+                    mic = mic(sources[index]);
+                    mic.startRecording();
+                    if (mic.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING)
+                        throw new IllegalStateException("microphone did not start");
+                    Pump pump = new Pump("near", mic, 1);
+                    pump.health = micHealth;
+                    pump.start();
+                    micDeviceType = -1;
+                    nearPump = pump;
+                    near = mic;
+                    Ln.i("voip: " + micHealth.summary());
+                    return;
+                } catch (Throwable t) {
+                    if (mic != null) {
+                        try { mic.stop(); } catch (Throwable ignored) { }
+                        try { mic.release(); } catch (Throwable ignored) { }
+                    }
+                    micHealth.failed();
+                    Ln.w("voip: microphone open failed: " + micHealth.summary() + " " + t);
+                }
             }
+        }
+
+        /** Runs on the watcher thread, never the encoder or reader thread. */
+        synchronized void checkMic() {
+            if (!running || micBlocked || near == null || nearPump == null) return;
+            Boolean silenced = null;
+            try {
+                AudioRecordingConfiguration config = near.getActiveRecordingConfiguration();
+                if (config != null) silenced = config.isClientSilenced();
+                android.media.AudioDeviceInfo device = near.getRoutedDevice();
+                micDeviceType = device == null ? -1 : device.getType();
+            } catch (RuntimeException ignored) { /* state unknown, samples remain evidence */ }
+            if (micHealth.inspect(SystemClock.elapsedRealtime(), silenced, nearPump.running)) {
+                Ln.w("voip: recovering microphone: " + micHealth.summary());
+                if (closeMic()) openNextMic();
+                else { micBlocked = true; micHealth.readerStuck(); }
+            }
+        }
+
+        synchronized void attachHealth(PcmChannelHealth health) { channelHealth = health; }
+
+        synchronized void publishHealth(boolean force) {
+            long now = SystemClock.elapsedRealtime();
+            if (!force && now - lastHealthAt < 5000) return;
+            lastHealthAt = now;
+            try {
+                healthFile.write(System.currentTimeMillis(), running, micDiagnostic(), channelHealth.snapshot());
+            } catch (java.io.IOException error) {
+                Ln.w("voip: live health unavailable: " + error.getClass().getSimpleName());
+            }
+        }
+
+        synchronized String micDiagnostic() {
+            return micHealth.summary() + ";deviceType=" + micDeviceType;
+        }
+
+        private boolean closeMic() {
+            near = null;
+            Pump pump = nearPump;
+            nearPump = null;
+            return pump == null || pump.close();
+        }
+
+        /** Protecting the call is terminal: recovery must never re-acquire its mic. */
+        synchronized void dropMic() {
+            micBlocked = true;
+            micHealth.protectCall();
+            closeMic();
         }
 
         @Override
@@ -633,25 +704,30 @@ final class Voip {
             if (!running) {
                 return -1;
             }
+            long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
+            long nowUs = SystemClock.elapsedRealtimeNanos() / 1000;
             Pump np = nearPump;
-            boolean fromMic = near != null && np != null && np.take(mine, FRAMES, true);
-            if (!running) {
+            try {
+                if (near != null && np != null) {
+                    // A healthy microphone is the clock: wait for a full block,
+                    // but never past due + MIC_GRACE, so a stalled or reopening
+                    // microphone cannot stall the other person's channel.
+                    np.queue.dropBeyond(MAX_AHEAD);
+                    long timeoutMs = Math.max(0L, (due + MIC_GRACE_US - nowUs) / 1000);
+                    // Closed readers return immediately. Pace an incomplete
+                    // block before advancing timestamps or consuming playback.
+                    np.queue.takePaced(mine, FRAMES, timeoutMs, due, CLOCK);
+                } else {
+                    java.util.Arrays.fill(mine, (short) 0);
+                    PcmRing.paceUntil(due, CLOCK);
+                }
+                if (!running) return -1;
+                farPump.queue.dropBeyond(MAX_AHEAD * 2);
+                farPump.queue.take(theirs, FRAMES * 2, false);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 return -1;
             }
-            if (!fromMic) {
-                // No microphone - never started, or dropped by the guard while
-                // this read waited on it. The call goes on with the other
-                // side only, paced by the clock: failing the read here would
-                // end the whole recording, theirs included.
-                java.util.Arrays.fill(mine, (short) 0);
-                long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
-                long wait = due - SystemClock.elapsedRealtimeNanos() / 1000;
-                if (wait > 0) {
-                    SystemClock.sleep(wait / 1000 + 1);
-                }
-            }
-            farPump.dropBeyond(MAX_AHEAD * 2);
-            farPump.take(theirs, FRAMES * 2, false);
 
             // PCM in the platform's byte order, as AudioRecord writes it; a
             // ByteBuffer starts out big-endian, which would be noise.
@@ -668,15 +744,16 @@ final class Voip {
         }
 
         @Override
-        public void stop() {
+        public synchronized void stop() {
             running = false;
             if (current == this) {
                 current = null;
             }
-            dropMic();
+            closeMic();
             if (farPump != null) {
                 farPump.close();
             }
+            publishHealth(true);
             recordingEnded();
         }
     }
@@ -689,15 +766,15 @@ final class Voip {
         private final String name;
         private final AudioRecord record;
         private final Thread thread;
-        private final short[] ring;
-        private int head;
-        private int size;
-        private volatile boolean running = true;
+        /** Two seconds of samples; the encoder takes from here. */
+        final PcmRing queue;
+        volatile boolean running = true;
+        VoipMicHealth health;
 
         Pump(String name, AudioRecord record, int channels) {
             this.name = name;
             this.record = record;
-            this.ring = new short[SAMPLE_RATE * channels * 2]; // two seconds
+            this.queue = new PcmRing(SAMPLE_RATE * channels * 2);
             this.thread = new Thread(this, "jemrec-voip-" + name);
         }
 
@@ -707,9 +784,7 @@ final class Voip {
 
         void halt() {
             running = false;
-            synchronized (this) {
-                notifyAll();
-            }
+            queue.close();
         }
 
         /**
@@ -718,7 +793,7 @@ final class Voip {
          * release. Releasing an AudioRecord another thread is still reading
          * frees it under that read.
          */
-        void close() {
+        boolean close() {
             halt();
             try {
                 record.stop();
@@ -732,9 +807,10 @@ final class Voip {
             }
             if (thread.isAlive()) {
                 Ln.w("voip: " + name + " reader did not stop; leaving the record unreleased");
-                return;
+                return false;
             }
             record.release();
+            return true;
         }
 
         @Override
@@ -747,62 +823,14 @@ final class Voip {
                     break;
                 }
                 if (n > 0) {
-                    put(buf, n);
+                    VoipMicHealth h = health;
+                    if (h != null) h.samples(buf, n, SystemClock.elapsedRealtime());
+                    queue.put(buf, n);
                 }
             }
             // However it ended, say so: a read waiting on this side must not
             // wait for samples that will never come.
             halt();
-        }
-
-        private synchronized void put(short[] src, int n) {
-            for (int i = 0; i < n; i++) {
-                if (size == ring.length) {
-                    // Full: the oldest goes, nothing blocks the reader.
-                    head = (head + 1) % ring.length;
-                    size--;
-                }
-                ring[(head + size) % ring.length] = src[i];
-                size++;
-            }
-            notifyAll();
-        }
-
-        /** Fill dst with n samples. Waiting for them if [wait]; otherwise what
-         *  there is, and silence for the rest. False if it stopped first. */
-        synchronized boolean take(short[] dst, int n, boolean wait) {
-            if (wait) {
-                while (size < n && running) {
-                    try {
-                        wait(100);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return false;
-                    }
-                }
-                if (size < n) {
-                    return false;
-                }
-            }
-            int got = Math.min(n, size);
-            for (int i = 0; i < got; i++) {
-                dst[i] = ring[head];
-                head = (head + 1) % ring.length;
-            }
-            size -= got;
-            for (int i = got; i < n; i++) {
-                dst[i] = 0;
-            }
-            return true;
-        }
-
-        /** Keep at most [max] samples waiting: the rest is the past. */
-        synchronized void dropBeyond(int max) {
-            if (size > max) {
-                int drop = size - max;
-                head = (head + drop) % ring.length;
-                size = max;
-            }
         }
     }
 }

@@ -100,7 +100,7 @@ dependencies {
 }
 
 
-// Build the Apache-2.0 audio-only scrcpy/JemRec-derived service FROM SOURCE.
+// Build the Apache-2.0 JemRec-derived shell recorder (with its embedded scrcpy audio runtime) FROM SOURCE.
 // The jar is bundled in the APK; no runtime download or companion app.
 val daemonDir = rootProject.file("shellserver")
 val daemonJar = File(daemonDir, "vrec-capture.jar")
