@@ -38,8 +38,10 @@ final class CallStates {
         /** The scheduled end check is not to run. */
         void cancelEndCheck();
 
-        /** Whether telecom still holds a call's audio mode. */
-        boolean audioInCall();
+        /** What the audio says about the phone call after its IDLE: one of
+         *  {@link #AUDIO_UP}, {@link #AUDIO_DOWN}, {@link #AUDIO_UNKNOWN},
+         *  {@link #AUDIO_MESSENGER}. See {@link #phoneCallAudio}. */
+        int phoneCallAudio();
 
         /** An idle came, and the call is still up after it: whatever else
          *  took that idle for the end can think again. */
@@ -53,11 +55,75 @@ final class CallStates {
      *  finished call recording into silence. */
     static final long END_CHECK_MS = 2000L;
 
+    /** The phone call still holds the audio: keep recording. */
+    static final int AUDIO_UP = 1;
+    /** The audio left the call and telecom does not say otherwise: over. */
+    static final int AUDIO_DOWN = 0;
+    /** The audio mode could not be read, but telecom positively says no
+     *  call is up: probably over, confirmed over a short bound. */
+    static final int AUDIO_UNKNOWN = -1;
+    /** Neither the audio mode nor telecom could be read: no signal at all.
+     *  Not an end - a longer bound, so a few seconds of audio-service
+     *  trouble cannot cut a live call, and a dead service cannot leave a
+     *  recording running forever. */
+    static final int AUDIO_BLIND = -2;
+    /** A messenger app, not the phone call, now holds the communication
+     *  mode, and telecom says no phone call is up. */
+    static final int AUDIO_MESSENGER = 2;
+    /** The audio mode says over but telecom says a call is up: a mode
+     *  flip (Wi-Fi calling hand-off, call waiting swap, a held call).
+     *  Recording goes on; bounded in case telecom is the one that is stale. */
+    static final int AUDIO_CONFLICT = 3;
+
+    /** Consecutive checks (2 s apart) before each doubtful answer ends the
+     *  call. Any AUDIO_UP resets them all. */
+    static final int MAX_UNKNOWN_CHECKS = 3;
+    static final int MAX_BLIND_CHECKS = 15;
+    static final int MESSENGER_CHECKS = 2;
+    static final int MAX_CONFLICT_CHECKS = 15;
+
+    /** AudioManager.MODE_IN_CALL / MODE_IN_COMMUNICATION. */
+    static final int MODE_IN_CALL = 2;
+    static final int MODE_IN_COMMUNICATION = 3;
+
+    /**
+     * What the signals say about a phone call whose IDLE arrived.
+     *
+     * [mode]: the audio mode, null if unreadable. [messengerInCall]: a
+     * third-party app (not the phone process or dialer) is playing and
+     * capturing call audio. [telecomInCall]: TelecomManager.isInManagedCall()
+     * (carrier and Wi-Fi calls, not messengers' self-managed ones), null
+     * if unreadable - an independent signal from telephony's call state.
+     *
+     * A positive live answer from either signal keeps recording. Over needs
+     * both to agree, or one to say so with the other silent; contradictions
+     * and blindness keep recording within a bound.
+     */
+    static int phoneCallAudio(Integer mode, boolean messengerInCall, Boolean telecomInCall) {
+        boolean telecomUp = Boolean.TRUE.equals(telecomInCall);
+        boolean telecomDown = Boolean.FALSE.equals(telecomInCall);
+        if (mode == null) {
+            if (telecomUp) return AUDIO_UP;
+            return telecomDown ? AUDIO_UNKNOWN : AUDIO_BLIND;
+        }
+        if (mode == MODE_IN_CALL) return AUDIO_UP;
+        if (mode == MODE_IN_COMMUNICATION) {
+            // Wi-Fi calling and some dialers use it: only a messenger plus a
+            // telecom "no call" hands over.
+            return messengerInCall && telecomDown ? AUDIO_MESSENGER : AUDIO_UP;
+        }
+        return telecomUp ? AUDIO_CONFLICT : AUDIO_DOWN;
+    }
+
     private final Effects effects;
     /** The call starting now rang first: it is incoming. */
     private boolean sawRinging;
     private boolean inCall;
     private boolean endCheckPending;
+    private int unknownChecks;
+    private int blindChecks;
+    private int messengerChecks;
+    private int conflictChecks;
 
     CallStates(Effects effects) {
         this.effects = effects;
@@ -95,6 +161,7 @@ final class CallStates {
         // saver then took the call before for it).
         sawRinging = false;
         cancelEndCheck();
+        resetChecks();
         endCheckPending = true;
         effects.scheduleEndCheck(END_CHECK_MS);
     }
@@ -123,17 +190,71 @@ final class CallStates {
             return;
         }
         endCheckPending = false;
-        if (effects.audioInCall()) {
-            // Still up. Telephony won't tell us again; keep watching the
-            // audio mode, which will.
+        int audio = effects.phoneCallAudio();
+        boolean over;
+        String why;
+        switch (audio) {
+            case AUDIO_UP:
+                resetChecks();
+                over = false;
+                why = null;
+                break;
+            case AUDIO_UNKNOWN:
+                over = streak(audio) >= MAX_UNKNOWN_CHECKS;
+                why = "audio mode unreadable, telecom has no call";
+                break;
+            case AUDIO_BLIND:
+                over = streak(audio) >= MAX_BLIND_CHECKS;
+                why = "no call signal readable for " + (MAX_BLIND_CHECKS * END_CHECK_MS / 1000) + " s";
+                break;
+            case AUDIO_MESSENGER:
+                over = streak(audio) >= MESSENGER_CHECKS;
+                why = "a messenger call holds the audio and telecom has no call";
+                break;
+            case AUDIO_CONFLICT:
+                over = streak(audio) >= MAX_CONFLICT_CHECKS;
+                why = "audio mode out of call while telecom reported one for "
+                        + (MAX_CONFLICT_CHECKS * END_CHECK_MS / 1000) + " s";
+                break;
+            default:
+                over = true;
+                why = "audio mode left in-call, telecom agrees";
+                break;
+        }
+        if (!over) {
+            // Still up, or not yet sure. Telephony won't tell us again; keep
+            // watching the audio mode, which will.
             endCheckPending = true;
             effects.scheduleEndCheck(END_CHECK_MS);
-            effects.callGoesOn();
+            if (audio == AUDIO_UP) {
+                effects.callGoesOn();
+            }
             return;
         }
         inCall = false;
-        effects.log("callwatch: end confirmed (audio mode left in-call)");
+        resetChecks();
+        effects.log("callwatch: end confirmed (" + why + ")");
         effects.callEnded();
+    }
+
+    /** One more doubtful check of [kind]; any other kind's streak breaks. */
+    private int streak(int kind) {
+        int unknown = kind == AUDIO_UNKNOWN ? unknownChecks + 1 : 0;
+        int blind = kind == AUDIO_BLIND ? blindChecks + 1 : 0;
+        int messenger = kind == AUDIO_MESSENGER ? messengerChecks + 1 : 0;
+        int conflict = kind == AUDIO_CONFLICT ? conflictChecks + 1 : 0;
+        unknownChecks = unknown;
+        blindChecks = blind;
+        messengerChecks = messenger;
+        conflictChecks = conflict;
+        return Math.max(Math.max(unknown, blind), Math.max(messenger, conflict));
+    }
+
+    private void resetChecks() {
+        unknownChecks = 0;
+        blindChecks = 0;
+        messengerChecks = 0;
+        conflictChecks = 0;
     }
 
     /** A phone call is up: off-hook, its end not yet confirmed. */
