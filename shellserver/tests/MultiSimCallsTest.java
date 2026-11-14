@@ -63,7 +63,48 @@ public final class MultiSimCallsTest {
         check(m.update(S1, 7) == NONE && m.sources() == 0, "unknown state ignored");
     }
 
+    static void staleDuplicateCannotHoldCallOpen() {
+        MultiSimCalls m = new MultiSimCalls();
+        m.update(D, IDLE); m.update(S1, IDLE); m.update(S2, IDLE);
+        check(m.setDefaultTrusted(false) == NONE, "dropping an idle duplicate changes nothing");
+        check(m.update(S1, OFF) == OFF, "SIM1 call starts from its own watch");
+        check(m.update(S1, IDLE) == IDLE, "SIM1's own idle ends it");
+        check(m.update(D, OFF) == NONE, "a late OFFHOOK from the default duplicate is ignored");
+        check(m.update(D, IDLE) == NONE, "and so is its late IDLE");
+        check(m.combined() == IDLE, "call stays over");
+    }
+
+    static void delayedPerSimCallbackStillEnds() {
+        MultiSimCalls m = new MultiSimCalls();
+        m.update(D, IDLE); m.update(S1, IDLE);
+        m.setDefaultTrusted(false);
+        m.update(S1, RING);
+        check(m.update(S1, OFF) == OFF, "answered");
+        check(m.update(S1, OFF) == NONE, "repeated OFFHOOK is not a new call");
+        check(m.update(S1, IDLE) == IDLE, "the end arrives even after a repeated callback");
+    }
+
+    static void defaultCountsAgainWhenASimLosesItsWatch() {
+        MultiSimCalls m = new MultiSimCalls();
+        m.update(D, IDLE); m.update(S1, IDLE);
+        m.setDefaultTrusted(false);
+        m.update(D, OFF);
+        check(m.combined() == IDLE, "untrusted default alone is not a call");
+        check(m.setDefaultTrusted(true) == OFF, "default trusted again: its live call is heard");
+        check(m.setDefaultTrusted(false) == IDLE, "and dropped again when every SIM is watched");
+    }
+
+    static void untrustingBeforeAnyReport() {
+        MultiSimCalls m = new MultiSimCalls();
+        check(m.setDefaultTrusted(false) == NONE, "no state yet, nothing to publish");
+        check(m.update(S1, IDLE) == IDLE, "first real report still passes through");
+    }
+
     public static void main(String[] args) {
+        staleDuplicateCannotHoldCallOpen();
+        delayedPerSimCallbackStillEnds();
+        defaultCountsAgainWhenASimLosesItsWatch();
+        untrustingBeforeAnyReport();
         firstReportPassesThrough();
         incomingOnSecondSim();
         outgoingOnDefaultSimReportedTwice();

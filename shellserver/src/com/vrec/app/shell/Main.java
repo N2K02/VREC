@@ -468,8 +468,8 @@ public final class Main {
                 }
 
                 @Override
-                public boolean audioInCall() {
-                    return CallWatch.this.audioInCall();
+                public int phoneCallAudio() {
+                    return CallWatch.this.phoneCallAudio();
                 }
 
                 @Override
@@ -636,7 +636,14 @@ public final class Main {
                     Ln.w("callwatch: could not watch a SIM; it relies on the default watch: " + t);
                 }
             }
-            Ln.i("callwatch: watching " + simWatches.size() + " SIM(s)");
+            // Every active SIM has its own watch: the default watch would only
+            // duplicate one of them, out of order. Otherwise it still counts.
+            int changed = sims.setDefaultTrusted(simWatches.isEmpty() || simWatches.size() < active.size());
+            if (changed != MultiSimCalls.NO_CHANGE) {
+                onCombinedState(fromSimState(changed));
+            }
+            Ln.i("callwatch: watching " + simWatches.size() + " of " + active.size() + " SIM(s)"
+                    + (sims.defaultTrusted() ? ", default watch counted" : ""));
         }
 
         private final class SimWatch extends TelephonyCallback
@@ -691,20 +698,36 @@ public final class Main {
          * Logged at each poll so a premature or late stop can be read straight
          * from the daemon log.
          */
-        private boolean audioInCall() {
-            int mode;
+        private int phoneCallAudio() {
+            Integer mode;
             try {
                 mode = audio.getMode();
             } catch (Throwable t) {
-                Ln.w("callwatch: could not read the audio mode; treating the call as over");
-                return false;
+                // Unknown is not over: CallStates retries a bounded number
+                // of times before it ends the recording.
+                Ln.w("callwatch: could not read the audio mode: " + t);
+                mode = null;
             }
-            boolean messenger = mode == AudioManager.MODE_IN_COMMUNICATION && messengerInCall();
-            boolean up = CallSignals.phoneCallAudioUp(mode, messenger);
+            boolean messenger = mode != null && mode == AudioManager.MODE_IN_COMMUNICATION && messengerInCall();
+            Boolean telecomInCall = null;
+            if (messenger) {
+                TelecomManager t = telecom;
+                if (t != null) {
+                    try {
+                        telecomInCall = t.isInCall();
+                    } catch (Throwable ignored) {
+                        // Unknown keeps the phone recording.
+                    }
+                }
+            }
+            int result = CallStates.phoneCallAudio(mode, messenger, telecomInCall);
             Ln.i("callwatch: idle seen, audio mode=" + mode
-                    + (messenger ? " held by a messenger call" : "")
-                    + (up ? " (still in a call)" : " (call is over)"));
-            return up;
+                    + (messenger ? ", messenger in a call, telecom in call=" + telecomInCall : "")
+                    + " -> " + (result == CallStates.AUDIO_UP ? "still in a call"
+                        : result == CallStates.AUDIO_DOWN ? "call is over"
+                        : result == CallStates.AUDIO_MESSENGER ? "handing over to the messenger"
+                        : "unknown, checking again"));
+            return result;
         }
 
         /** A third-party app - not the phone process, not the dialer - is
@@ -1866,7 +1889,7 @@ public final class Main {
         endCall();
         // The mirror of onVoipCallEnd: a messenger call that began during the
         // phone call was turned away while that one ran; it is the call now.
-        String messenger = Voip.activeCall();
+        String messenger = CallSignals.messengerAfterPhoneEnd(callVoipApp, Voip.activeCall());
         if (messenger != null) {
             Ln.i("recording: the phone call gave way to a messenger call; recording that");
             onCallStart(false, messenger);
@@ -1882,7 +1905,7 @@ public final class Main {
         // A phone call answered during the messenger call - which is what
         // ended it - was turned away while that one ran; it is the call now.
         CallWatch watch = callWatch;
-        if (watch != null && watch.phoneCallUp()) {
+        if (watch != null && CallSignals.phoneAfterMessengerEnd(true, watch.phoneCallUp())) {
             Ln.i("recording: the messenger call gave way to a phone call; recording that");
             onCallStart(watch.phoneCallRang(), null);
         }

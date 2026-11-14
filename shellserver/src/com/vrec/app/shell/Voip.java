@@ -335,40 +335,59 @@ final class Voip {
             } catch (Throwable t) {
                 Ln.w("voip: no audio mode callback; polling the mode instead: " + t);
             }
-            try {
-                AudioManager.AudioPlaybackCallback playback = new AudioManager.AudioPlaybackCallback() {
-                    @Override
-                    public void onPlaybackConfigChanged(java.util.List<AudioPlaybackConfiguration> configs) {
-                        wake();
-                    }
-                };
-                audio.registerAudioPlaybackCallback(playback, handler);
-                playbackChanges = playback;
-                AudioManager.AudioRecordingCallback recording = new AudioManager.AudioRecordingCallback() {
-                    @Override
-                    public void onRecordingConfigChanged(java.util.List<AudioRecordingConfiguration> configs) {
-                        // The call comes first: if the call app's capture was
-                        // just silenced, give the microphone back now, not
-                        // at the next poll.
-                        String app = active;
-                        if (app != null) {
-                            try {
-                                guard(app);
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                        wake();
-                    }
-                };
-                audio.registerAudioRecordingCallback(recording, handler);
-                recordingChanges = recording;
-            } catch (Throwable t) {
-                Ln.w("voip: no playback/recording callbacks; polling only: " + t);
-            }
+            registerActivityCallbacks();
             // After registering, not before: a change in between would
             // otherwise never be heard, and nothing would poll for it.
             mode = audio.getMode();
             wake();
+        }
+
+        /**
+         * Both callbacks or neither: if the second registration fails, the
+         * first is unregistered at once, so no half-registered listener is
+         * left behind and the poll alone carries on as before.
+         */
+        private void registerActivityCallbacks() {
+            AudioManager.AudioPlaybackCallback playback = new AudioManager.AudioPlaybackCallback() {
+                @Override
+                public void onPlaybackConfigChanged(java.util.List<AudioPlaybackConfiguration> configs) {
+                    wake();
+                }
+            };
+            AudioManager.AudioRecordingCallback recording = new AudioManager.AudioRecordingCallback() {
+                @Override
+                public void onRecordingConfigChanged(java.util.List<AudioRecordingConfiguration> configs) {
+                    // The call comes first: if the call app's capture was
+                    // just silenced, give the microphone back now, not at
+                    // the next poll.
+                    String app = active;
+                    if (app != null) {
+                        try {
+                            guard(app);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    wake();
+                }
+            };
+            boolean playbackRegistered = false;
+            try {
+                audio.registerAudioPlaybackCallback(playback, handler);
+                playbackRegistered = true;
+                audio.registerAudioRecordingCallback(recording, handler);
+                playbackChanges = playback;
+                recordingChanges = recording;
+            } catch (Throwable t) {
+                if (playbackRegistered) {
+                    try {
+                        audio.unregisterAudioPlaybackCallback(playback);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                playbackChanges = null;
+                recordingChanges = null;
+                Ln.w("voip: no playback/recording callbacks; polling only: " + t);
+            }
         }
 
         /** Stopped watching: the call is over as far as this goes. */
@@ -620,8 +639,8 @@ final class Voip {
         private volatile Pump nearPump;
         private final VoipMicHealth micHealth = new VoipMicHealth();
         private int micDeviceType = -1;
-        /** The input type our microphone was asked to follow; 0 for none. */
-        private int followedInput;
+        /** Which headset input our microphone follows; see CallSignals. */
+        private final CallSignals.MicFollow micFollow = new CallSignals.MicFollow();
         private boolean micBlocked;
         private PcmChannelHealth channelHealth = new PcmChannelHealth();
         private long lastHealthAt;
@@ -710,7 +729,7 @@ final class Voip {
                     pump.health = micHealth;
                     pump.start();
                     micDeviceType = -1;
-                    followedInput = 0;
+                    micFollow.reopened();
                     nearPump = pump;
                     near = mic;
                     Ln.i("voip: " + micHealth.summary());
@@ -752,22 +771,27 @@ final class Voip {
          * and the silenced-client guard still drops ours on any conflict.
          */
         private void followCallInput(android.media.AudioDeviceInfo callInput) {
-            int callType = callInput == null ? -1 : callInput.getType();
-            int ours = micDeviceType;
+            int ourId = -1;
             try {
                 android.media.AudioDeviceInfo routed = near.getRoutedDevice();
-                if (routed != null) ours = routed.getType();
+                if (routed != null) ourId = routed.getId();
             } catch (RuntimeException ignored) {
             }
-            int follow = CallSignals.micToFollow(callType, ours, followedInput);
-            if (follow < 0) return;
+            int callId = callInput == null ? -1 : callInput.getId();
+            int callType = callInput == null ? -1 : callInput.getType();
+            int action = micFollow.decide(callId, callType, ourId);
+            if (action == CallSignals.MicFollow.NONE) return;
+            boolean reset = action == CallSignals.MicFollow.RESET;
             try {
-                if (near.setPreferredDevice(follow == 0 ? null : callInput)) {
-                    followedInput = follow;
-                    Ln.i("voip: recording microphone " + (follow == 0
-                            ? "back on the system's choice" : "follows the call to input type " + follow));
+                if (near.setPreferredDevice(reset ? null : callInput)) {
+                    Ln.i("voip: recording microphone " + (reset
+                            ? "back on the system's choice" : "asked to follow the call's headset (type " + callType + ")"));
+                } else if (!reset) {
+                    micFollow.refused();
+                    Ln.w("voip: Android refused the call's headset for the recording microphone");
                 }
             } catch (RuntimeException e) {
+                if (!reset) micFollow.refused();
                 Ln.w("voip: could not follow the call's input: " + e);
             }
         }

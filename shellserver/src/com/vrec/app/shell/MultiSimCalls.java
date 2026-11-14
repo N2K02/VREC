@@ -17,9 +17,11 @@ import java.util.Map;
  * (call waiting on an active call stays OFFHOOK), so CallStates sees the same
  * edges it always has and none of its measured workarounds change.
  *
- * The default-subscription callback stays registered as its own source: it
- * duplicates one SIM's state, which the combination makes harmless, and it is
- * still there if per-subscription registration is refused.
+ * The default-subscription callback stays registered as its own source, but
+ * it only COUNTS while some active SIM has no watch of its own (or none could
+ * be registered). Two callbacks reporting the same SIM can arrive in either
+ * order, and a late OFFHOOK from the duplicate would hold the call open after
+ * its own SIM said IDLE; once every SIM is watched, the duplicate is ignored.
  *
  * Plain Java, so it can be tested without a device (MultiSimCallsTest).
  */
@@ -39,6 +41,8 @@ final class MultiSimCalls {
     /** Whether anything has been reported yet: the first report is passed on
      *  as-is, so CallStates still sees the registration-time state. */
     private boolean reported;
+    /** Whether the default-subscription source counts. */
+    private boolean defaultTrusted = true;
 
     /** [source] now reports [state]; returns the combined state if it changed. */
     synchronized int update(int source, int state) {
@@ -57,6 +61,20 @@ final class MultiSimCalls {
         return publish();
     }
 
+    /** Whether the default-subscription source counts; returns the
+     *  combined state if that changed it. */
+    synchronized int setDefaultTrusted(boolean trusted) {
+        if (defaultTrusted == trusted) {
+            return NO_CHANGE;
+        }
+        defaultTrusted = trusted;
+        return reported ? publish() : NO_CHANGE;
+    }
+
+    synchronized boolean defaultTrusted() {
+        return defaultTrusted;
+    }
+
     synchronized int combined() {
         return combined;
     }
@@ -72,8 +90,9 @@ final class MultiSimCalls {
 
     private int publish() {
         int next = IDLE;
-        for (int s : states.values()) {
-            if (s > next) next = s;
+        for (Map.Entry<Integer, Integer> e : states.entrySet()) {
+            if (!defaultTrusted && e.getKey() == DEFAULT_SOURCE) continue;
+            if (e.getValue() > next) next = e.getValue();
         }
         if (reported && next == combined) {
             return NO_CHANGE;

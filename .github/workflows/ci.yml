@@ -66,6 +66,9 @@ jobs:
             shellserver/tests/CallSignalsTest.java
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.MultiSimCallsTest
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.CallSignalsTest
+          javac -cp "$RUNNER_TEMP/vrec-shell-regression" -d "$RUNNER_TEMP/vrec-shell-regression" \
+            shellserver/tests/CallLifecycleTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.CallLifecycleTest
 
       - name: Build debug APK
         run: |
