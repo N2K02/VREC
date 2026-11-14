@@ -87,9 +87,9 @@ public final class CallLifecycleTest {
     private static Phone dualSim() {
         Phone p = new Phone();
         p.sim(MultiSimCalls.DEFAULT_SOURCE, IDLE);
+        p.sims.setActiveSims(new java.util.HashSet<>(java.util.Arrays.asList(1, 2)));
         p.sim(1, IDLE);
         p.sim(2, IDLE);
-        p.sims.setDefaultTrusted(false);
         return p;
     }
 
@@ -173,6 +173,9 @@ public final class CallLifecycleTest {
     static void concurrentSimCallbacksStayConsistent() throws InterruptedException {
         MultiSimCalls m = new MultiSimCalls();
         int threads = 8;
+        java.util.Set<Integer> all = new java.util.HashSet<>();
+        for (int t = 1; t <= threads; t++) all.add(t);
+        m.setActiveSims(all);
         CountDownLatch go = new CountDownLatch(1), done = new CountDownLatch(threads);
         for (int t = 0; t < threads; t++) {
             final int sub = t + 1;
@@ -194,7 +197,43 @@ public final class CallLifecycleTest {
         check(m.combined() == IDLE && m.sources() == threads, "every SIM ended idle, combined must be idle");
     }
 
+    static void simListGlitchDuringLiveCallKeepsRecording() {
+        Phone p = dualSim();
+        p.sim(1, OFF);
+        // The call's SIM briefly drops out of the active list: an IDLE claim.
+        int c = p.sims.setActiveSims(new java.util.HashSet<>(java.util.Arrays.asList(2)));
+        if (c == IDLE) p.states.idle();
+        p.audio = CallStates.phoneCallAudio(CallStates.MODE_IN_CALL, false, true);
+        p.tick(); p.tick();
+        check("sim:out".equals(p.recording), "audio and telecom still live: recording goes on");
+        p.sims.setActiveSims(new java.util.HashSet<>(java.util.Arrays.asList(1, 2)));
+        p.sim(1, OFF);  // its re-registered watch reports the live call
+        check(p.recordings.size() == 1, "the call coming back is not a second recording: " + p.recordings);
+        p.sim(1, IDLE);
+        p.audio = CallStates.phoneCallAudio(0, false, false);
+        p.tick();
+        check(p.recording == null && p.finalized == 1, "finalized once at the real end");
+    }
+
+    static void wifiCallingFlipThenRealEnd() {
+        Phone p = dualSim();
+        p.sim(2, RING);
+        p.sim(2, OFF);
+        p.sim(2, IDLE);  // premature idle while handing over to Wi-Fi calling
+        int[] modes = {0, CallStates.MODE_IN_COMMUNICATION, 0, CallStates.MODE_IN_CALL};
+        for (int m : modes) {
+            p.audio = CallStates.phoneCallAudio(m, false, true);
+            p.tick();
+        }
+        check("sim:in".equals(p.recording), "mode flips with telecom live never cut the call");
+        p.audio = CallStates.phoneCallAudio(0, false, false);
+        p.tick();
+        check(p.recording == null && p.recordings.size() == 1 && p.finalized == 1, "one recording, one end");
+    }
+
     public static void main(String[] args) throws Exception {
+        simListGlitchDuringLiveCallKeepsRecording();
+        wifiCallingFlipThenRealEnd();
         incomingOnSim2RecordedOnce();
         outgoingOnSim1WithLateDefaultDuplicate();
         phoneCallThenWhatsAppIsHandedOver();

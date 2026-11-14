@@ -174,7 +174,16 @@ public final class CallStatesTest {
 
     private static void audioDecision() {
         int ic = CallStates.MODE_IN_CALL, com = CallStates.MODE_IN_COMMUNICATION;
-        check(CallStates.phoneCallAudio(null, false, null) == CallStates.AUDIO_UNKNOWN, "unreadable mode is unknown");
+        check(CallStates.phoneCallAudio(null, false, null) == CallStates.AUDIO_BLIND, "nothing readable is blind");
+        check(CallStates.phoneCallAudio(null, false, false) == CallStates.AUDIO_UNKNOWN,
+                "unreadable mode, telecom no call: unknown (short bound)");
+        check(CallStates.phoneCallAudio(null, false, true) == CallStates.AUDIO_UP,
+                "unreadable mode but telecom positively in a call: keep recording");
+        check(CallStates.phoneCallAudio(0, false, true) == CallStates.AUDIO_CONFLICT,
+                "normal mode while telecom has a call: conflict, not an end");
+        check(CallStates.phoneCallAudio(1, false, true) == CallStates.AUDIO_CONFLICT,
+                "ringtone mode (call waiting) while telecom has a call: conflict");
+        check(CallStates.phoneCallAudio(0, false, false) == CallStates.AUDIO_DOWN, "both agree: over");
         check(CallStates.phoneCallAudio(ic, true, false) == CallStates.AUDIO_UP, "in-call is telecom's");
         check(CallStates.phoneCallAudio(com, false, null) == CallStates.AUDIO_UP,
                 "communication with no messenger keeps the call (Wi-Fi calling)");
@@ -188,7 +197,97 @@ public final class CallStatesTest {
         check(CallStates.phoneCallAudio(1, true, false) == CallStates.AUDIO_DOWN, "ringtone mode: over");
     }
 
+    private static void blindSignalsGetLongerBound() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        e.audio = CallStates.AUDIO_BLIND;
+        for (int i = 1; i < CallStates.MAX_BLIND_CHECKS; i++) {
+            states.endCheck();
+            check(states.inCall(), "audio service out for " + (2 * i) + " s must not cut the call");
+        }
+        states.endCheck();
+        check(!states.inCall() && e.ended == 1, "bounded: still blind after 30 s ends the call");
+    }
+
+    private static void telecomConfirmationDuringOutageKeepsRecording() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        for (int i = 0; i < 40; i++) {
+            // Mode unreadable every check, telecom says live: phoneCallAudio -> UP.
+            e.audio = CallStates.phoneCallAudio(null, false, true);
+            states.endCheck();
+        }
+        check(states.inCall() && e.ended == 0, "a positively confirmed live call is never cut");
+        e.audio = CallStates.phoneCallAudio(0, false, false);
+        states.endCheck();
+        check(!states.inCall(), "ends when both signals agree");
+    }
+
+    private static void wifiCallingModeFlipDoesNotCut() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        // Wi-Fi calling hand-off: mode briefly NORMAL, telecom still has the call.
+        int[] modes = {CallStates.MODE_IN_COMMUNICATION, 0, 0, CallStates.MODE_IN_CALL, 0, CallStates.MODE_IN_CALL};
+        for (int m : modes) {
+            e.audio = CallStates.phoneCallAudio(m, false, true);
+            states.endCheck();
+            check(states.inCall(), "mode " + m + " during a hand-off must not cut the call");
+        }
+    }
+
+    private static void callWaitingRingtoneModeDoesNotCut() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        e.audio = CallStates.phoneCallAudio(1, false, true);  // ringtone mode, telecom live
+        states.endCheck();
+        states.endCheck();
+        e.audio = CallStates.phoneCallAudio(CallStates.MODE_IN_CALL, false, true);
+        states.endCheck();
+        check(states.inCall() && e.ended == 0, "call waiting swap keeps the recording");
+    }
+
+    private static void persistentConflictIsBounded() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        e.audio = CallStates.AUDIO_CONFLICT;
+        for (int i = 1; i < CallStates.MAX_CONFLICT_CHECKS; i++) states.endCheck();
+        check(states.inCall(), "conflict within the bound keeps recording");
+        states.endCheck();
+        check(!states.inCall() && e.ended == 1, "a telecom state stale for 30 s cannot record forever");
+    }
+
+    private static void mixedDoubtsDoNotAccumulateAcrossKinds() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        int[] seq = {CallStates.AUDIO_UNKNOWN, CallStates.AUDIO_UNKNOWN, CallStates.AUDIO_BLIND,
+                CallStates.AUDIO_UNKNOWN, CallStates.AUDIO_UNKNOWN, CallStates.AUDIO_MESSENGER,
+                CallStates.AUDIO_UNKNOWN, CallStates.AUDIO_UNKNOWN};
+        for (int a : seq) {
+            e.audio = a;
+            states.endCheck();
+        }
+        check(states.inCall(), "each kind's streak restarts when another kind interrupts it");
+    }
+
     public static void main(String[] args) {
+        blindSignalsGetLongerBound();
+        telecomConfirmationDuringOutageKeepsRecording();
+        wifiCallingModeFlipDoesNotCut();
+        callWaitingRingtoneModeDoesNotCut();
+        persistentConflictIsBounded();
+        mixedDoubtsDoNotAccumulateAcrossKinds();
         unreadableAudioModeIsNotAnEnd();
         oneGoodReadResetsUnknownCount();
         messengerHandOverNeedsConsecutiveChecks();

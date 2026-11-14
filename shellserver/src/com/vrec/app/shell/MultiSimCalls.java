@@ -1,7 +1,9 @@
 package com.vrec.app.shell;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * ONE PHONE-CALL STATE FROM EVERY SIM.
@@ -18,10 +20,14 @@ import java.util.Map;
  * edges it always has and none of its measured workarounds change.
  *
  * The default-subscription callback stays registered as its own source, but
- * it only COUNTS while some active SIM has no watch of its own (or none could
- * be registered). Two callbacks reporting the same SIM can arrive in either
- * order, and a late OFFHOOK from the duplicate would hold the call open after
- * its own SIM said IDLE; once every SIM is watched, the duplicate is ignored.
+ * it only COUNTS while some active SIM's watch is not READY - registered and
+ * having delivered its first state. Two callbacks reporting the same SIM can
+ * arrive in either order, and a late OFFHOOK from the duplicate would hold
+ * the call open after its own SIM said IDLE; once every SIM's watch is ready,
+ * the duplicate is ignored. Registration alone is not readiness: a watch
+ * registered during a SIM change may not have reported yet, and until it
+ * does the default watch still covers that SIM. A watch that could not be
+ * registered never becomes ready, so the default watch keeps counting.
  *
  * Plain Java, so it can be tested without a device (MultiSimCallsTest).
  */
@@ -37,49 +43,59 @@ final class MultiSimCalls {
     static final int DEFAULT_SOURCE = Integer.MIN_VALUE;
 
     private final Map<Integer, Integer> states = new HashMap<>();
+    /** The active SIMs' subscription ids, as last read. */
+    private final Set<Integer> active = new HashSet<>();
     private int combined = IDLE;
     /** Whether anything has been reported yet: the first report is passed on
      *  as-is, so CallStates still sees the registration-time state. */
     private boolean reported;
-    /** Whether the default-subscription source counts. */
-    private boolean defaultTrusted = true;
 
     /** [source] now reports [state]; returns the combined state if it changed. */
     synchronized int update(int source, int state) {
         if (state != IDLE && state != RINGING && state != OFFHOOK) {
             return NO_CHANGE;
         }
+        if (source != DEFAULT_SOURCE && !active.contains(source)) {
+            // A late callback from a SIM no longer active: it cannot hold a
+            // call open.
+            return NO_CHANGE;
+        }
         states.put(source, state);
         return publish();
     }
 
-    /** A SIM went away; whatever it said no longer counts. */
-    synchronized int remove(int source) {
-        if (states.remove(source) == null) {
-            return NO_CHANGE;
-        }
-        return publish();
-    }
-
-    /** Whether the default-subscription source counts; returns the
-     *  combined state if that changed it. */
-    synchronized int setDefaultTrusted(boolean trusted) {
-        if (defaultTrusted == trusted) {
-            return NO_CHANGE;
-        }
-        defaultTrusted = trusted;
+    /**
+     * The active SIMs now. SIMs that left stop counting (their state is
+     * forgotten); SIMs that arrived count once their watch reports. Returns
+     * the combined state if that changed it.
+     */
+    synchronized int setActiveSims(Set<Integer> now) {
+        active.clear();
+        active.addAll(now);
+        states.keySet().removeIf(id -> id != DEFAULT_SOURCE && !active.contains(id));
         return reported ? publish() : NO_CHANGE;
     }
 
+    /** Whether [subId]'s watch has delivered a state. */
+    synchronized boolean ready(int subId) {
+        return states.containsKey(subId);
+    }
+
+    /** Whether the default-subscription source counts: until every active
+     *  SIM's own watch is ready. */
     synchronized boolean defaultTrusted() {
-        return defaultTrusted;
+        if (active.isEmpty()) return true;
+        for (int id : active) {
+            if (!states.containsKey(id)) return true;
+        }
+        return false;
     }
 
     synchronized int combined() {
         return combined;
     }
 
-    /** Whether [source] is being listened to. */
+    /** Whether [source] is being listened to and has reported. */
     synchronized boolean has(int source) {
         return states.containsKey(source);
     }
@@ -89,9 +105,10 @@ final class MultiSimCalls {
     }
 
     private int publish() {
+        boolean useDefault = defaultTrusted();
         int next = IDLE;
         for (Map.Entry<Integer, Integer> e : states.entrySet()) {
-            if (!defaultTrusted && e.getKey() == DEFAULT_SOURCE) continue;
+            if (!useDefault && e.getKey() == DEFAULT_SOURCE) continue;
             if (e.getValue() > next) next = e.getValue();
         }
         if (reported && next == combined) {

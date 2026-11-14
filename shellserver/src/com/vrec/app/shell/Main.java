@@ -566,7 +566,9 @@ public final class Main {
                     Ln.w("callwatch: could not rebind the subscription context: " + e);
                 }
                 subscriptions = manager;
-                refreshSims();
+                // On the main looper, like every callback that touches the
+                // call state.
+                handler.post(this::refreshSims);
                 handler.post(() -> {
                     try {
                         SubscriptionManager.OnSubscriptionsChangedListener changes =
@@ -603,14 +605,26 @@ public final class Main {
             Set<Integer> active = new HashSet<>();
             try {
                 List<SubscriptionInfo> infos = manager.getActiveSubscriptionInfoList();
-                if (infos != null) {
-                    for (SubscriptionInfo info : infos) {
-                        active.add(info.getSubscriptionId());
-                    }
+                if (infos == null) {
+                    // Unreadable (mid SIM change, or refused) is not "no SIMs":
+                    // keep every watch as it is rather than drop a live call's.
+                    Ln.w("callwatch: active SIMs unreadable; keeping current watches");
+                    return;
+                }
+                for (SubscriptionInfo info : infos) {
+                    active.add(info.getSubscriptionId());
                 }
             } catch (Throwable t) {
                 Ln.w("callwatch: could not read active SIMs: " + t);
                 return;
+            }
+            // First, so a SIM that left stops counting and a SIM that arrived
+            // keeps the default watch counting until its own watch reports.
+            int changed = sims.setActiveSims(active);
+            if (changed != MultiSimCalls.NO_CHANGE) {
+                // An IDLE here is only a claim: CallStates confirms it
+                // against the audio mode and telecom before ending anything.
+                onCombinedState(fromSimState(changed));
             }
             for (Integer id : new HashSet<>(simWatches.keySet())) {
                 if (!active.contains(id)) {
@@ -618,10 +632,6 @@ public final class Main {
                     try {
                         gone.manager.unregisterTelephonyCallback(gone);
                     } catch (Throwable ignored) {
-                    }
-                    int combined = sims.remove(id);
-                    if (combined != MultiSimCalls.NO_CHANGE) {
-                        onCombinedState(fromSimState(combined));
                     }
                 }
             }
@@ -636,14 +646,10 @@ public final class Main {
                     Ln.w("callwatch: could not watch a SIM; it relies on the default watch: " + t);
                 }
             }
-            // Every active SIM has its own watch: the default watch would only
-            // duplicate one of them, out of order. Otherwise it still counts.
-            int changed = sims.setDefaultTrusted(simWatches.isEmpty() || simWatches.size() < active.size());
-            if (changed != MultiSimCalls.NO_CHANGE) {
-                onCombinedState(fromSimState(changed));
-            }
+            // Readiness, not registration, retires the default watch: each new
+            // watch's first state arrives later, through onSourceState.
             Ln.i("callwatch: watching " + simWatches.size() + " of " + active.size() + " SIM(s)"
-                    + (sims.defaultTrusted() ? ", default watch counted" : ""));
+                    + (sims.defaultTrusted() ? ", default watch counted until each is ready" : ""));
         }
 
         private final class SimWatch extends TelephonyCallback
@@ -709,24 +715,28 @@ public final class Main {
                 mode = null;
             }
             boolean messenger = mode != null && mode == AudioManager.MODE_IN_COMMUNICATION && messengerInCall();
+            // Telecom on every check: the independent signal that confirms a
+            // live call when the audio mode is unreadable or says otherwise.
+            // isInManagedCall, not isInCall: isInCall also counts messengers'
+            // self-managed calls (WhatsApp registers one), which would make
+            // a messenger call look like the phone call going on.
             Boolean telecomInCall = null;
-            if (messenger) {
-                TelecomManager t = telecom;
-                if (t != null) {
-                    try {
-                        telecomInCall = t.isInCall();
-                    } catch (Throwable ignored) {
-                        // Unknown keeps the phone recording.
-                    }
+            TelecomManager t = telecom;
+            if (t != null) {
+                try {
+                    telecomInCall = t.isInManagedCall();
+                } catch (Throwable ignored) {
+                    // Unknown: CallStates keeps recording within a bound.
                 }
             }
             int result = CallStates.phoneCallAudio(mode, messenger, telecomInCall);
-            Ln.i("callwatch: idle seen, audio mode=" + mode
-                    + (messenger ? ", messenger in a call, telecom in call=" + telecomInCall : "")
+            Ln.i("callwatch: idle seen, audio mode=" + mode + ", telecom in call=" + telecomInCall
+                    + (messenger ? ", messenger in a call" : "")
                     + " -> " + (result == CallStates.AUDIO_UP ? "still in a call"
                         : result == CallStates.AUDIO_DOWN ? "call is over"
                         : result == CallStates.AUDIO_MESSENGER ? "handing over to the messenger"
-                        : "unknown, checking again"));
+                        : result == CallStates.AUDIO_CONFLICT ? "signals disagree, recording on"
+                        : "signals unreadable, checking again"));
             return result;
         }
 
