@@ -135,7 +135,43 @@ public final class MultiSimCallsTest {
         check(m.update(D, 7) == NONE && m.sources() == 0, "unknown state ignored");
     }
 
+    static void staleDefaultOffhookIgnoredWhenNewSimAdded() {
+        MultiSimCalls m = dual();
+        // A late duplicate OFFHOOK lands while the default is retired.
+        m.update(S1, OFF);
+        m.update(S1, IDLE);
+        m.update(D, OFF);
+        check(m.combined() == IDLE, "retired default's stale OFFHOOK ignored");
+        // A new SIM arrives: its watch is not ready, so the default is back in use.
+        check(m.setActiveSims(sims(S1, S2, S3)) == NONE,
+                "the default's stale OFFHOOK must not start a false call");
+        check(m.defaultTrusted() && !m.defaultCounts(), "trusted again, but stale until it reports");
+        check(m.update(S3, IDLE) == NONE && m.combined() == IDLE, "new SIM ready: still no call");
+    }
+
+    static void freshDefaultReportAfterReturnCounts() {
+        MultiSimCalls m = dual();
+        m.update(D, OFF);                       // stale while retired
+        m.setActiveSims(sims(S1, S2, S3));      // default back in use, stale
+        check(m.update(D, IDLE) == NONE, "fresh IDLE: no change, now counting");
+        check(m.defaultCounts(), "fresh report makes it count");
+        check(m.update(D, OFF) == OFF, "a real call on the new default SIM, before its watch reports, is heard");
+        check(m.update(D, IDLE) == IDLE, "and its end");
+    }
+
+    static void defaultNeverRetiredIsNeverStale() {
+        MultiSimCalls m = new MultiSimCalls();
+        m.update(D, IDLE);
+        m.setActiveSims(sims(S1));
+        check(m.update(D, OFF) == OFF, "default in use from the start: its OFFHOOK counts");
+        m.setActiveSims(sims(S1, S2));
+        check(m.combined() == OFF && m.defaultCounts(), "adding a SIM does not make a live default stale");
+    }
+
     public static void main(String[] args) {
+        staleDefaultOffhookIgnoredWhenNewSimAdded();
+        freshDefaultReportAfterReturnCounts();
+        defaultNeverRetiredIsNeverStale();
         firstReportPassesThrough();
         registeredIsNotReady();
         watchThatNeverReportsKeepsDefault();

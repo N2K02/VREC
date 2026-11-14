@@ -29,6 +29,11 @@ import java.util.Set;
  * does the default watch still covers that SIM. A watch that could not be
  * registered never becomes ready, so the default watch keeps counting.
  *
+ * When the default watch comes back into use (a new SIM's watch is not ready
+ * yet), the state it last reported while retired may be stale - it is not
+ * counted again until the default watch reports afresh. Telephony reports
+ * only changes, so a real call on that SIM produces that fresh report.
+ *
  * Plain Java, so it can be tested without a device (MultiSimCallsTest).
  */
 final class MultiSimCalls {
@@ -49,6 +54,10 @@ final class MultiSimCalls {
     /** Whether anything has been reported yet: the first report is passed on
      *  as-is, so CallStates still sees the registration-time state. */
     private boolean reported;
+    /** Whether the default source counted at the last publish. */
+    private boolean defaultCounted = true;
+    /** The default source's stored state predates its return to use. */
+    private boolean defaultStale;
 
     /** [source] now reports [state]; returns the combined state if it changed. */
     synchronized int update(int source, int state) {
@@ -61,6 +70,9 @@ final class MultiSimCalls {
             return NO_CHANGE;
         }
         states.put(source, state);
+        if (source == DEFAULT_SOURCE) {
+            defaultStale = false;
+        }
         return publish();
     }
 
@@ -104,8 +116,20 @@ final class MultiSimCalls {
         return states.size();
     }
 
+    /** Whether the default source's state is counted right now. */
+    synchronized boolean defaultCounts() {
+        return defaultTrusted() && !defaultStale;
+    }
+
     private int publish() {
-        boolean useDefault = defaultTrusted();
+        boolean trusted = defaultTrusted();
+        if (trusted && !defaultCounted) {
+            // Back in use after being retired: what it said meanwhile may be
+            // stale. Wait for its next report.
+            defaultStale = true;
+        }
+        defaultCounted = trusted;
+        boolean useDefault = trusted && !defaultStale;
         int next = IDLE;
         for (Map.Entry<Integer, Integer> e : states.entrySet()) {
             if (!useDefault && e.getKey() == DEFAULT_SOURCE) continue;
