@@ -41,7 +41,7 @@ object RecordingFailureNotice {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         runCatching {
             manager.notify(NOTIFICATION_ID, NotificationCompat.Builder(context, CHANNEL)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(com.vrec.app.R.drawable.ic_stat_app)
                 .setContentTitle("VRec recording warning")
                 .setContentText(detail)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(detail))

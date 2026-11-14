@@ -7,9 +7,10 @@ public final class VoipMicHealthTest {
         check(h.next(0) == 0, "MIC first");
         h.samples(new short[] { 0, 0 }, 2, 2500);
         check(!h.inspect(2999, null, true), "startup grace");
-        check(h.inspect(3000, null, true), "exact zeros trigger bounded recovery");
-        check(h.summary().contains("ZERO_SAMPLES"), "zeros are evidence, not proven policy silence");
-        check(h.next(3000) == 1, "communication fallback");
+        check(!h.inspect(3000, null, true), "zero PCM with active frames cannot trigger a mic restart");
+        check(h.summary().contains("ZERO_SAMPLES"), "silent PCM is visible in diagnostics");
+        check(!h.inspect(4000, null, true), "continued silence cannot exhaust recovery sources");
+        check(h.next(4000) == 1, "next source remains available for confirmed capture failures");
         h.samples(new short[] { 1 }, 1, 5999);
         check(!h.inspect(6000, false, true), "even very quiet nonzero audio prevents zero detection");
         check(!h.inspect(6000, true, true), "silence confirmation grace");
