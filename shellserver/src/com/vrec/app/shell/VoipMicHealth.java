@@ -45,7 +45,16 @@ final class VoipMicHealth {
         if (!readerAlive) return problem("OFF", "READ_FAILED");
         if (now - openedAt < 3000) return false;
         if (now - lastData >= 3000) return problem("NO_DATA", "NO_DATA");
-        if (now - lastNonzero >= 3000) return problem("ZERO_SAMPLES", "ZERO_SAMPLES");
+        if (now - lastNonzero >= 3000) {
+            // Continuous PCM frames containing zeros may be normal silence or
+            // an OS-muted input. They are NOT evidence that restarting the
+            // microphone is safe: a new AudioRecord can disturb a live call.
+            // Keep this stream and report its quality; only a dead reader,
+            // missing frames, or confirmed policy silencing triggers recovery.
+            state = "ZERO_SAMPLES";
+            reason = "ZERO_SAMPLES";
+            return false;
+        }
         return false;
     }
 
