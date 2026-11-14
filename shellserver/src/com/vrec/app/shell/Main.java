@@ -1676,6 +1676,11 @@ public final class Main {
             activeRecording = null;
             return null;
         }
+        if (callDetectedElapsedMs > 0) {
+            long elapsed = SystemClock.elapsedRealtime() - callDetectedElapsedMs;
+            Ln.i("recording: detection-to-capture-start=" + Math.max(0, elapsed)
+                    + "ms, kind=" + (app == null ? "SIM" : "VoIP"));
+        }
         return activeRecording.name;
     }
 
@@ -1722,6 +1727,8 @@ public final class Main {
      * way round, leaves the first one's recording running and is not recorded
      * itself, and neither one's end can stop the other's recording.
      */
+    private static volatile long callDetectedElapsedMs;
+
     private static void onCallStart(boolean incoming, String app) {
         synchronized (Main.class) {
             if (callActive && app != null && app.equals(callVoipApp)) {
@@ -1745,6 +1752,7 @@ public final class Main {
                 return;
             }
             if (!callActive) {
+                callDetectedElapsedMs = SystemClock.elapsedRealtime();
                 callSeq++;
                 answerGate.begin(incoming, app != null, requireOutgoingAnswer);
             }
@@ -1940,6 +1948,7 @@ public final class Main {
         // happened, and the next one is a whole call away.
         synchronized (Main.class) {
             callActive = false;
+            callDetectedElapsedMs = 0;
             userPausedCapture = false;
             userStoppedCapture = false;
             answerGate.reset();
