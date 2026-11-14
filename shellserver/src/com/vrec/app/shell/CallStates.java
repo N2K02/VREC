@@ -74,12 +74,16 @@ final class CallStates {
      *  flip (Wi-Fi calling hand-off, call waiting swap, a held call).
      *  Recording goes on; bounded in case telecom is the one that is stale. */
     static final int AUDIO_CONFLICT = 3;
+    /** Audio mode appears ended but Telecom cannot confirm it. Require a
+     * second observation before ending, to survive transient route changes. */
+    static final int AUDIO_UNCONFIRMED_DOWN = 4;
 
     /** Consecutive checks (2 s apart) before each doubtful answer ends the
      *  call. Any AUDIO_UP resets them all. */
     static final int MAX_UNKNOWN_CHECKS = 3;
     static final int MAX_BLIND_CHECKS = 15;
     static final int MESSENGER_CHECKS = 2;
+    static final int UNCONFIRMED_DOWN_CHECKS = 2;
     static final int MAX_CONFLICT_CHECKS = 15;
 
     /** AudioManager.MODE_IN_CALL / MODE_IN_COMMUNICATION. */
@@ -112,7 +116,8 @@ final class CallStates {
             // telecom "no call" hands over.
             return messengerInCall && telecomDown ? AUDIO_MESSENGER : AUDIO_UP;
         }
-        return telecomUp ? AUDIO_CONFLICT : AUDIO_DOWN;
+        if (telecomUp) return AUDIO_CONFLICT;
+        return telecomDown ? AUDIO_DOWN : AUDIO_UNCONFIRMED_DOWN;
     }
 
     private final Effects effects;
@@ -124,6 +129,7 @@ final class CallStates {
     private int blindChecks;
     private int messengerChecks;
     private int conflictChecks;
+    private int unconfirmedDownChecks;
 
     CallStates(Effects effects) {
         this.effects = effects;
@@ -211,6 +217,10 @@ final class CallStates {
                 over = streak(audio) >= MESSENGER_CHECKS;
                 why = "a messenger call holds the audio and telecom has no call";
                 break;
+            case AUDIO_UNCONFIRMED_DOWN:
+                over = streak(audio) >= UNCONFIRMED_DOWN_CHECKS;
+                why = "audio mode left the call but Telecom confirmation is unavailable";
+                break;
             case AUDIO_CONFLICT:
                 over = streak(audio) >= MAX_CONFLICT_CHECKS;
                 why = "audio mode out of call while telecom reported one for "
@@ -243,11 +253,13 @@ final class CallStates {
         int blind = kind == AUDIO_BLIND ? blindChecks + 1 : 0;
         int messenger = kind == AUDIO_MESSENGER ? messengerChecks + 1 : 0;
         int conflict = kind == AUDIO_CONFLICT ? conflictChecks + 1 : 0;
+        int uncertainDown = kind == AUDIO_UNCONFIRMED_DOWN ? unconfirmedDownChecks + 1 : 0;
         unknownChecks = unknown;
         blindChecks = blind;
         messengerChecks = messenger;
         conflictChecks = conflict;
-        return Math.max(Math.max(unknown, blind), Math.max(messenger, conflict));
+        unconfirmedDownChecks = uncertainDown;
+        return Math.max(Math.max(Math.max(unknown, blind), Math.max(messenger, conflict)), uncertainDown);
     }
 
     private void resetChecks() {
@@ -255,6 +267,7 @@ final class CallStates {
         blindChecks = 0;
         messengerChecks = 0;
         conflictChecks = 0;
+        unconfirmedDownChecks = 0;
     }
 
     /** A phone call is up: off-hook, its end not yet confirmed. */
