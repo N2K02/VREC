@@ -102,7 +102,7 @@ object AdbFallbackNotice {
         val elapsed = RecordingTransportPresentation.durationLabel(elapsedMs)
         val description = RecordingNotificationPresentation.description(info, paused, elapsed)
         val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(com.vrec.app.R.drawable.ic_stat_app)
             .setContentTitle(RecordingNotificationPresentation.title(info.caller, paused))
             .setContentText(description)
             .setStyle(NotificationCompat.BigTextStyle().bigText(description))

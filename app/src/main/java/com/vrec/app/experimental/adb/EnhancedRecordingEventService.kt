@@ -36,7 +36,7 @@ class EnhancedRecordingEventService : Service() {
                 NotificationManager.IMPORTANCE_LOW),
         )
         val notification = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(com.vrec.app.R.drawable.ic_stat_app)
             .setContentTitle("VRec enhanced recording")
             .setContentText("Saving completed call recording")
             .setSilent(true)
