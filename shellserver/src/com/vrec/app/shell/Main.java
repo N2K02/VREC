@@ -24,6 +24,8 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.system.Os;
 import android.telecom.TelecomManager;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
 
@@ -48,6 +50,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -370,6 +376,10 @@ public final class Main {
             telephony.registerTelephonyCallback(handler::post, callWatch);
             watching = true;
             Ln.i("callwatch: watching call state as uid " + android.os.Process.myUid());
+            // Every SIM, not only the default one. Additive: if Android
+            // refuses any of it, the default-subscription watch above is
+            // exactly what ran before.
+            callWatch.watchEverySim(context);
         } catch (Throwable t) {
             Ln.e("callwatch: could not register for call state", t);
         }
@@ -481,10 +491,171 @@ public final class Main {
 
         @Override
         public void onCallStateChanged(int state) {
+            onSourceState(MultiSimCalls.DEFAULT_SOURCE, state);
+        }
+
+        /** Each SIM's state, and the default subscription's, combined into
+         *  the single state CallStates has always been fed. */
+        private final MultiSimCalls sims = new MultiSimCalls();
+        /** Held strongly: the framework only keeps TelephonyCallbacks weakly
+         *  (see callWatch). Touched on the main looper only. */
+        private final Map<Integer, SimWatch> simWatches = new HashMap<>();
+        private SubscriptionManager subscriptions;
+        private SubscriptionManager.OnSubscriptionsChangedListener subscriptionChanges;
+
+        void onSourceState(int source, int raw) {
             // Before anything else, so the self-test sees every event that
             // arrived, whatever came of it.
             callEvents.incrementAndGet();
             lastCallEventAt = System.currentTimeMillis();
+            int combined = sims.update(source, toSimState(raw));
+            if (combined == MultiSimCalls.NO_CHANGE) {
+                return;
+            }
+            if (source != MultiSimCalls.DEFAULT_SOURCE) {
+                Ln.i("callwatch: SIM slot event (subscription #" + simIndex(source) + ")");
+            }
+            onCombinedState(fromSimState(combined));
+        }
+
+        private static int toSimState(int raw) {
+            switch (raw) {
+                case TelephonyManager.CALL_STATE_RINGING: return MultiSimCalls.RINGING;
+                case TelephonyManager.CALL_STATE_OFFHOOK: return MultiSimCalls.OFFHOOK;
+                case TelephonyManager.CALL_STATE_IDLE: return MultiSimCalls.IDLE;
+                default: return -1;
+            }
+        }
+
+        private static int fromSimState(int combined) {
+            switch (combined) {
+                case MultiSimCalls.RINGING: return TelephonyManager.CALL_STATE_RINGING;
+                case MultiSimCalls.OFFHOOK: return TelephonyManager.CALL_STATE_OFFHOOK;
+                default: return TelephonyManager.CALL_STATE_IDLE;
+            }
+        }
+
+        /** A position among the watched SIMs, never the subscription id or
+         *  any SIM identifier. */
+        private int simIndex(int subId) {
+            int i = 1;
+            for (int id : new java.util.TreeSet<>(simWatches.keySet())) {
+                if (id == subId) return i;
+                i++;
+            }
+            return 0;
+        }
+
+        /** One TelephonyCallback per active subscription, kept in step with
+         *  SIMs being added and removed. Never throws. */
+        void watchEverySim(Context context) {
+            try {
+                SubscriptionManager manager = (SubscriptionManager)
+                        context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+                if (manager == null) {
+                    Ln.w("callwatch: no subscription service; default SIM only");
+                    return;
+                }
+                try {
+                    // Same reason as the TelephonyManager's: the calling
+                    // package must belong to uid 2000.
+                    Field mContext = SubscriptionManager.class.getDeclaredField("mContext");
+                    mContext.setAccessible(true);
+                    mContext.set(manager, context);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    Ln.w("callwatch: could not rebind the subscription context: " + e);
+                }
+                subscriptions = manager;
+                refreshSims();
+                handler.post(() -> {
+                    try {
+                        SubscriptionManager.OnSubscriptionsChangedListener changes =
+                                new SubscriptionManager.OnSubscriptionsChangedListener() {
+                                    @Override
+                                    public void onSubscriptionsChanged() {
+                                        refreshSims();
+                                    }
+                                };
+                        manager.addOnSubscriptionsChangedListener(handler::post, changes);
+                        subscriptionChanges = changes;
+                    } catch (Throwable t) {
+                        Ln.w("callwatch: no SIM change callback; SIMs re-read every "
+                                + (SIM_RESCAN_MS / 60000) + " min: " + t);
+                        handler.postDelayed(this::rescanSims, SIM_RESCAN_MS);
+                    }
+                });
+            } catch (Throwable t) {
+                Ln.w("callwatch: per-SIM watch unavailable; default SIM only: " + t);
+            }
+        }
+
+        private static final long SIM_RESCAN_MS = 5 * 60_000L;
+
+        private void rescanSims() {
+            refreshSims();
+            handler.postDelayed(this::rescanSims, SIM_RESCAN_MS);
+        }
+
+        @SuppressLint("MissingPermission")
+        private void refreshSims() {
+            SubscriptionManager manager = subscriptions;
+            if (manager == null) return;
+            Set<Integer> active = new HashSet<>();
+            try {
+                List<SubscriptionInfo> infos = manager.getActiveSubscriptionInfoList();
+                if (infos != null) {
+                    for (SubscriptionInfo info : infos) {
+                        active.add(info.getSubscriptionId());
+                    }
+                }
+            } catch (Throwable t) {
+                Ln.w("callwatch: could not read active SIMs: " + t);
+                return;
+            }
+            for (Integer id : new HashSet<>(simWatches.keySet())) {
+                if (!active.contains(id)) {
+                    SimWatch gone = simWatches.remove(id);
+                    try {
+                        gone.manager.unregisterTelephonyCallback(gone);
+                    } catch (Throwable ignored) {
+                    }
+                    int combined = sims.remove(id);
+                    if (combined != MultiSimCalls.NO_CHANGE) {
+                        onCombinedState(fromSimState(combined));
+                    }
+                }
+            }
+            for (int id : active) {
+                if (simWatches.containsKey(id)) continue;
+                try {
+                    TelephonyManager forSim = telephony.createForSubscriptionId(id);
+                    SimWatch watch = new SimWatch(id, forSim);
+                    forSim.registerTelephonyCallback(handler::post, watch);
+                    simWatches.put(id, watch);
+                } catch (Throwable t) {
+                    Ln.w("callwatch: could not watch a SIM; it relies on the default watch: " + t);
+                }
+            }
+            Ln.i("callwatch: watching " + simWatches.size() + " SIM(s)");
+        }
+
+        private final class SimWatch extends TelephonyCallback
+                implements TelephonyCallback.CallStateListener {
+            final int subId;
+            final TelephonyManager manager;
+
+            SimWatch(int subId, TelephonyManager manager) {
+                this.subId = subId;
+                this.manager = manager;
+            }
+
+            @Override
+            public void onCallStateChanged(int state) {
+                onSourceState(subId, state);
+            }
+        }
+
+        private void onCombinedState(int state) {
             AnswerMachine machine = answerMachine;
             switch (state) {
                 case TelephonyManager.CALL_STATE_RINGING:
@@ -528,10 +699,40 @@ public final class Main {
                 Ln.w("callwatch: could not read the audio mode; treating the call as over");
                 return false;
             }
-            boolean up = mode == AudioManager.MODE_IN_CALL
-                    || mode == AudioManager.MODE_IN_COMMUNICATION;
-            Ln.i("callwatch: idle seen, audio mode=" + mode + (up ? " (still in a call)" : " (call is over)"));
+            boolean messenger = mode == AudioManager.MODE_IN_COMMUNICATION && messengerInCall();
+            boolean up = CallSignals.phoneCallAudioUp(mode, messenger);
+            Ln.i("callwatch: idle seen, audio mode=" + mode
+                    + (messenger ? " held by a messenger call" : "")
+                    + (up ? " (still in a call)" : " (call is over)"));
             return up;
+        }
+
+        /** A third-party app - not the phone process, not the dialer - is
+         *  playing and capturing call audio: the communication mode is its. */
+        private boolean messengerInCall() {
+            try {
+                String dialer = null;
+                TelecomManager t = telecom;
+                if (t != null) {
+                    try {
+                        dialer = t.getDefaultDialerPackage();
+                    } catch (Throwable ignored) {
+                    }
+                }
+                for (int uid : Voip.callingUids(audio, false)) {
+                    if (uid < android.os.Process.FIRST_APPLICATION_UID) continue;
+                    String[] packages = FakeContext.get().getPackageManager().getPackagesForUid(uid);
+                    if (packages == null) continue;
+                    boolean isDialer = false;
+                    for (String pkg : packages) {
+                        if (pkg.equals(dialer)) isDialer = true;
+                    }
+                    if (!isDialer) return true;
+                }
+            } catch (Throwable t) {
+                // Unknown: keep the old, recording-preserving answer.
+            }
+            return false;
         }
     }
 
@@ -1663,6 +1864,13 @@ public final class Main {
             return;
         }
         endCall();
+        // The mirror of onVoipCallEnd: a messenger call that began during the
+        // phone call was turned away while that one ran; it is the call now.
+        String messenger = Voip.activeCall();
+        if (messenger != null) {
+            Ln.i("recording: the phone call gave way to a messenger call; recording that");
+            onCallStart(false, messenger);
+        }
     }
 
     /** A messenger call's end. Only ends a messenger call. */

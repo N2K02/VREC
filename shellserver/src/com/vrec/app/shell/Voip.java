@@ -96,6 +96,13 @@ final class Voip {
         return apps;
     }
 
+    /** The switched-on app whose call the watch is following, or null. Main
+     *  looper only, like the watch itself. */
+    static String activeCall() {
+        Watch w = watch;
+        return w == null ? null : w.active;
+    }
+
     static boolean armed() {
         return policy != null;
     }
@@ -294,6 +301,12 @@ final class Voip {
         private AudioManager.OnModeChangedListener modeChanges;
         /** A tick is posted, so a mode change does not start a second loop. */
         private boolean ticking;
+        /** Wake the watch the moment any app starts or stops playing or
+         *  capturing, rather than up to a poll later: the call app's
+         *  microphone being silenced by ours is answered at once. Null when
+         *  Android would not take them; the poll still runs. */
+        private AudioManager.AudioPlaybackCallback playbackChanges;
+        private AudioManager.AudioRecordingCallback recordingChanges;
         private String active;
         /** The uid of [active]'s app, to ask whether it is still in its call. */
         private int activeUid = -1;
@@ -322,6 +335,36 @@ final class Voip {
             } catch (Throwable t) {
                 Ln.w("voip: no audio mode callback; polling the mode instead: " + t);
             }
+            try {
+                AudioManager.AudioPlaybackCallback playback = new AudioManager.AudioPlaybackCallback() {
+                    @Override
+                    public void onPlaybackConfigChanged(java.util.List<AudioPlaybackConfiguration> configs) {
+                        wake();
+                    }
+                };
+                audio.registerAudioPlaybackCallback(playback, handler);
+                playbackChanges = playback;
+                AudioManager.AudioRecordingCallback recording = new AudioManager.AudioRecordingCallback() {
+                    @Override
+                    public void onRecordingConfigChanged(java.util.List<AudioRecordingConfiguration> configs) {
+                        // The call comes first: if the call app's capture was
+                        // just silenced, give the microphone back now, not
+                        // at the next poll.
+                        String app = active;
+                        if (app != null) {
+                            try {
+                                guard(app);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                        wake();
+                    }
+                };
+                audio.registerAudioRecordingCallback(recording, handler);
+                recordingChanges = recording;
+            } catch (Throwable t) {
+                Ln.w("voip: no playback/recording callbacks; polling only: " + t);
+            }
             // After registering, not before: a change in between would
             // otherwise never be heard, and nothing would poll for it.
             mode = audio.getMode();
@@ -337,6 +380,20 @@ final class Voip {
                     Ln.w("voip: could not drop the audio mode callback: " + t);
                 }
                 modeChanges = null;
+            }
+            if (playbackChanges != null) {
+                try {
+                    audio.unregisterAudioPlaybackCallback(playbackChanges);
+                } catch (Throwable ignored) {
+                }
+                playbackChanges = null;
+            }
+            if (recordingChanges != null) {
+                try {
+                    audio.unregisterAudioRecordingCallback(recordingChanges);
+                } catch (Throwable ignored) {
+                }
+                recordingChanges = null;
             }
             endNow();
         }
@@ -396,7 +453,7 @@ final class Voip {
             guard(active);
             Capture recording = current;
             if (recording != null) {
-                recording.checkMic();
+                recording.checkMic(callAppInput(activeUid));
                 recording.publishHealth(false);
             }
             if (inCommunication) {
@@ -427,6 +484,21 @@ final class Voip {
                 leftAt = 0;
                 listener.onVoipCallEnd();
             }
+        }
+
+        /** The input device the call app itself captures from, or null. */
+        private android.media.AudioDeviceInfo callAppInput(int uid) {
+            if (uid < 0) return null;
+            try {
+                for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
+                    Integer owner = uidOf(r);
+                    if (owner != null && owner == uid) {
+                        return r.getAudioDevice();
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return null;
         }
 
         /** An app on the list that is playing voice-call audio and capturing:
@@ -548,6 +620,8 @@ final class Voip {
         private volatile Pump nearPump;
         private final VoipMicHealth micHealth = new VoipMicHealth();
         private int micDeviceType = -1;
+        /** The input type our microphone was asked to follow; 0 for none. */
+        private int followedInput;
         private boolean micBlocked;
         private PcmChannelHealth channelHealth = new PcmChannelHealth();
         private long lastHealthAt;
@@ -636,6 +710,7 @@ final class Voip {
                     pump.health = micHealth;
                     pump.start();
                     micDeviceType = -1;
+                    followedInput = 0;
                     nearPump = pump;
                     near = mic;
                     Ln.i("voip: " + micHealth.summary());
@@ -652,8 +727,9 @@ final class Voip {
         }
 
         /** Runs on the watcher thread, never the encoder or reader thread. */
-        synchronized void checkMic() {
+        synchronized void checkMic(android.media.AudioDeviceInfo callInput) {
             if (!running || micBlocked || near == null || nearPump == null) return;
+            followCallInput(callInput);
             Boolean silenced = null;
             try {
                 AudioRecordingConfiguration config = near.getActiveRecordingConfiguration();
@@ -665,6 +741,34 @@ final class Voip {
                 Ln.w("voip: recovering microphone: " + micHealth.summary());
                 if (closeMic()) openNextMic();
                 else { micBlocked = true; micHealth.readerStuck(); }
+            }
+        }
+
+        /**
+         * A Bluetooth or wired headset taking the call's input mid-call: put
+         * the recording microphone on the same headset, so the user is still
+         * heard. Only our own AudioRecord's preference changes - the call
+         * app's routing, the output and system settings are never touched -
+         * and the silenced-client guard still drops ours on any conflict.
+         */
+        private void followCallInput(android.media.AudioDeviceInfo callInput) {
+            int callType = callInput == null ? -1 : callInput.getType();
+            int ours = micDeviceType;
+            try {
+                android.media.AudioDeviceInfo routed = near.getRoutedDevice();
+                if (routed != null) ours = routed.getType();
+            } catch (RuntimeException ignored) {
+            }
+            int follow = CallSignals.micToFollow(callType, ours, followedInput);
+            if (follow < 0) return;
+            try {
+                if (near.setPreferredDevice(follow == 0 ? null : callInput)) {
+                    followedInput = follow;
+                    Ln.i("voip: recording microphone " + (follow == 0
+                            ? "back on the system's choice" : "follows the call to input type " + follow));
+                }
+            } catch (RuntimeException e) {
+                Ln.w("voip: could not follow the call's input: " + e);
             }
         }
 

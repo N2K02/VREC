@@ -59,6 +59,13 @@ jobs:
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.CaptureHealthFileTest
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.PcmChannelHealthTest
           java -cp "$RUNNER_TEMP/vrec-shell-regression" com.genymobile.scrcpy.audio.AudioReadGuardTest
+          javac -d "$RUNNER_TEMP/vrec-shell-regression" \
+            shellserver/src/com/vrec/app/shell/MultiSimCalls.java \
+            shellserver/tests/MultiSimCallsTest.java \
+            shellserver/src/com/vrec/app/shell/CallSignals.java \
+            shellserver/tests/CallSignalsTest.java
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.MultiSimCallsTest
+          java -cp "$RUNNER_TEMP/vrec-shell-regression" com.vrec.app.shell.CallSignalsTest
 
       - name: Build debug APK
         run: |
