@@ -193,8 +193,11 @@ public final class CallStatesTest {
                 "telecom still in a call keeps the phone recording");
         check(CallStates.phoneCallAudio(com, true, false) == CallStates.AUDIO_MESSENGER,
                 "messenger in a call and telecom idle: hand over");
-        check(CallStates.phoneCallAudio(0, false, null) == CallStates.AUDIO_DOWN, "normal mode: over");
+        check(CallStates.phoneCallAudio(0, false, null) == CallStates.AUDIO_UNCONFIRMED_DOWN,
+                "normal mode with Telecom unavailable requires confirmation");
         check(CallStates.phoneCallAudio(1, true, false) == CallStates.AUDIO_DOWN, "ringtone mode: over");
+        check(CallStates.phoneCallAudio(1, false, null) == CallStates.AUDIO_UNCONFIRMED_DOWN,
+                "ringtone mode with Telecom unreadable is uncertain");
     }
 
     private static void blindSignalsGetLongerBound() {
@@ -281,7 +284,27 @@ public final class CallStatesTest {
         check(states.inCall(), "each kind's streak restarts when another kind interrupts it");
     }
 
+    private static void uncertainDownNeedsConsecutiveConfirmation() {
+        Effects e = new Effects();
+        CallStates states = new CallStates(e);
+        states.offHook();
+        states.idle();
+        e.audio = CallStates.phoneCallAudio(0, false, null);
+        states.endCheck();
+        check(states.inCall() && e.ended == 0, "one transient audio mode exit must not truncate");
+        e.audio = CallStates.AUDIO_UP;
+        states.endCheck();
+        e.audio = CallStates.AUDIO_UNCONFIRMED_DOWN;
+        states.endCheck();
+        check(states.inCall(), "return to in-call resets uncertain termination checks");
+        states.endCheck();
+        check(!states.inCall() && e.ended == 1, "two consecutive uncertain ends finalize once");
+        states.endCheck();
+        check(e.ended == 1, "stale callback cannot finalize twice");
+    }
+
     public static void main(String[] args) {
+        uncertainDownNeedsConsecutiveConfirmation();
         blindSignalsGetLongerBound();
         telecomConfirmationDuringOutageKeepsRecording();
         wifiCallingModeFlipDoesNotCut();
