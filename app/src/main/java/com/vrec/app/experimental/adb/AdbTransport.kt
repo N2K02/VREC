@@ -2,14 +2,10 @@ package com.vrec.app.experimental.adb
 
 import android.content.Context
 import com.vrec.app.shizuku.ShizukuSession
-import com.vrec.app.shizuku.ShizukuOption
-import com.vrec.app.shizuku.ShizukuTransportMode
 import kotlinx.coroutines.CancellationException
 
-/**
- * Compatibility API for VRec's capture helper. All ADB sockets, pairing,
- * shell streams, UID verification, deadlines and TCP transitions are owned by
- * n2k02AdbCoreLibrary. Never create a second native libadb manager in this app.
+/** Legacy call-site signatures routed exclusively through the app-authorized Shizuku service.
+ * No libadb, wireless pairing, TLS socket, TCP listener or fallback transport is created.
  */
 object AdbTransport {
     const val LOOPBACK = "127.0.0.1"
@@ -18,57 +14,39 @@ object AdbTransport {
     val isConnected: Boolean get() = ShizukuHostAdapter.current()?.state?.value?.connected == true
     val lastKnownConnected: Boolean get() = isConnected
 
-    private fun core(context: Context) = ShizukuHostAdapter.core(context.applicationContext)
+    private fun core(context: Context): ShizukuSession = ShizukuHostAdapter.core(context.applicationContext)
     private fun existing(): ShizukuSession = checkNotNull(ShizukuHostAdapter.current()) {
-        "ADB has not been initialized; independent transport fallback is forbidden"
+        "Shizuku session is not initialized"
     }
 
-    private suspend inline fun <T> result(crossinline block: suspend () -> T): Result<T> =
-        try { Result.success(block()) }
+    private suspend inline fun <T> checked(crossinline operation: suspend () -> T): Result<T> =
+        try { Result.success(operation()) }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { Result.failure(failure) }
 
-    suspend fun connect(context: Context, host: String, port: Int): Result<Unit> = result {
-        require(host == LOOPBACK && port == LEGACY_TCP_PORT) { "Only localhost TCP/5555 allowed" }
-        val adb = core(context)
-        check(adb.retry(auto = true) &&
-            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) {
-            "No authorized TCP/5555 shell UID 2000"
-        }
+    /** Former localhost entry point; now checks only the Shizuku Binder and UID 2000. */
+    suspend fun connect(context: Context, host: String, port: Int): Result<Unit> = checked {
+        require(host == LOOPBACK && port == LEGACY_TCP_PORT) { "Invalid legacy connection request" }
+        check(core(context).retry(auto = true)) { "Authorize VRec in the LocalADB Shizuku server" }
     }
 
-    suspend fun pairLocal(context: Context, port: Int, code: String): Result<Unit> = result {
-        check(core(context).pair(port, code)) { "Android rejected automatic pairing" }
-    }
+    suspend fun pairLocal(context: Context, port: Int, code: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Shizuku uses app permission; pairing is not supported"))
 
-    suspend fun connectLocalTls(context: Context, port: Int): Result<Unit> = result {
-        val adb = core(context)
-        // Do not tear down an already verified TCP connection just to revisit a TLS port.
-        if (adb.state.value.connected &&
-            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) return@result
-        check(adb.connectTls(port)) { "ADB TLS authorization failed" }
+    /** Compatibility entry point: the port is ignored, no TLS socket is ever opened. */
+    suspend fun connectLocalTls(context: Context, port: Int): Result<Unit> = checked {
+        check(core(context).retry(auto = true)) { "Shizuku permission required" }
     }
 
     suspend fun exec(command: String, timeoutMs: Long = 15_000L): Result<String> =
-        result { existing().execVerified(command, timeoutMs) }
+        checked { existing().execVerified(command, timeoutMs) }
 
-    suspend fun switchToTcpip(port: Int = LEGACY_TCP_PORT): Result<Unit> = result {
-        require(port == LEGACY_TCP_PORT)
-        val adb = existing()
-        if (adb.state.value.connected &&
-            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) return@result
-        adb.setOption(ShizukuOption.TCP_5555, true)
-        check(adb.retry(auto = true) &&
-            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) {
-            "TCP/5555 not verified after switching"
-        }
-    }
+    suspend fun switchToTcpip(port: Int = LEGACY_TCP_PORT): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Shizuku does not use TCP/5555"))
 
-    suspend fun switchToUsb(): Result<Unit> = result {
-        check(existing().disableTcp()) { "Could not confirm TCP/5555 shutdown" }
-    }
+    suspend fun switchToUsb(): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Shizuku does not control USB debugging"))
 
-    /** Ordinary cleanup retains authorization; only Quit persists manual Stop. */
     suspend fun disconnect() = close()
     suspend fun close() { ShizukuHostAdapter.current()?.disconnectIdle() }
 }
