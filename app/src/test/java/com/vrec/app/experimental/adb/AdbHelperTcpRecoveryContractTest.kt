@@ -2,6 +2,7 @@ package com.vrec.app.experimental.adb
 
 import java.io.File
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** Cross-component contract: never confuse a verified old TLS UID with live TCP. */
