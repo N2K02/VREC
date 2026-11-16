@@ -4,12 +4,8 @@ import android.content.Context
 import dev.n2k02.adb.core.AdbCore
 import dev.n2k02.adb.core.AdbCoreRegistry
 import dev.n2k02.adb.core.AdbHostHooks
-import dev.n2k02.adb.core.AdbIdentity as CoreIdentity
-import dev.n2k02.adb.core.AdbIdentitySource
 import dev.n2k02.adb.core.AdbOption
 import dev.n2k02.adb.core.AdbPreferenceStore
-import dev.n2k02.adb.core.LibAdbWire
-import dev.n2k02.adb.core.LocalAdbDiscovery
 
 /**
  * Migration adapter. Preserves VRec's authorization files and boot-scoped choices.
@@ -35,12 +31,7 @@ internal object SharedAdbHostAdapter {
 
     fun create(context: Context): AdbCore {
         val app = context.applicationContext
-        val identity = AdbIdentitySource { ctx ->
-            val existing = AdbIdentity.getOrCreate(ctx)
-            CoreIdentity(existing.privateKey, existing.certificate)
-        }
-        return AdbCore(
-            LibAdbWire(app, identity, "VREC"), Choices(app), LocalAdbDiscovery(app),
+        return AdbCore(app, Choices(app),
             object : AdbHostHooks {
                 override suspend fun onRestoreAfterRestartChanged(enabled: Boolean) {
                     if (enabled) AdbSelfRecovery.grantSecureSettings(app)
