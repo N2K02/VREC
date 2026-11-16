@@ -1,9 +1,9 @@
 package com.vrec.app.experimental.adb
 
 import android.content.Context
-import dev.n2k02.adb.core.AdbCore
-import dev.n2k02.adb.core.AdbOption
-import dev.n2k02.adb.core.AdbTransportMode
+import com.vrec.app.shizuku.ShizukuSession
+import com.vrec.app.shizuku.ShizukuOption
+import com.vrec.app.shizuku.ShizukuTransportMode
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -15,11 +15,11 @@ object AdbTransport {
     const val LOOPBACK = "127.0.0.1"
     const val LEGACY_TCP_PORT = 5555
 
-    val isConnected: Boolean get() = SharedAdbHostAdapter.current()?.state?.value?.connected == true
+    val isConnected: Boolean get() = ShizukuHostAdapter.current()?.state?.value?.connected == true
     val lastKnownConnected: Boolean get() = isConnected
 
-    private fun core(context: Context) = SharedAdbHostAdapter.core(context.applicationContext)
-    private fun existing(): AdbCore = checkNotNull(SharedAdbHostAdapter.current()) {
+    private fun core(context: Context) = ShizukuHostAdapter.core(context.applicationContext)
+    private fun existing(): ShizukuSession = checkNotNull(ShizukuHostAdapter.current()) {
         "ADB has not been initialized; independent transport fallback is forbidden"
     }
 
@@ -32,7 +32,7 @@ object AdbTransport {
         require(host == LOOPBACK && port == LEGACY_TCP_PORT) { "Only localhost TCP/5555 allowed" }
         val adb = core(context)
         check(adb.retry(auto = true) &&
-            adb.state.value.transport == AdbTransportMode.LOCAL_TCP_5555) {
+            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) {
             "No authorized TCP/5555 shell UID 2000"
         }
     }
@@ -45,7 +45,7 @@ object AdbTransport {
         val adb = core(context)
         // Do not tear down an already verified TCP connection just to revisit a TLS port.
         if (adb.state.value.connected &&
-            adb.state.value.transport == AdbTransportMode.LOCAL_TCP_5555) return@result
+            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) return@result
         check(adb.connectTls(port)) { "ADB TLS authorization failed" }
     }
 
@@ -56,10 +56,10 @@ object AdbTransport {
         require(port == LEGACY_TCP_PORT)
         val adb = existing()
         if (adb.state.value.connected &&
-            adb.state.value.transport == AdbTransportMode.LOCAL_TCP_5555) return@result
-        adb.setOption(AdbOption.TCP_5555, true)
+            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) return@result
+        adb.setOption(ShizukuOption.TCP_5555, true)
         check(adb.retry(auto = true) &&
-            adb.state.value.transport == AdbTransportMode.LOCAL_TCP_5555) {
+            adb.state.value.transport == ShizukuTransportMode.LOCAL_TCP_5555) {
             "TCP/5555 not verified after switching"
         }
     }
@@ -70,5 +70,5 @@ object AdbTransport {
 
     /** Ordinary cleanup retains authorization; only Quit persists manual Stop. */
     suspend fun disconnect() = close()
-    suspend fun close() { SharedAdbHostAdapter.current()?.disconnectIdle() }
+    suspend fun close() { ShizukuHostAdapter.current()?.disconnectIdle() }
 }

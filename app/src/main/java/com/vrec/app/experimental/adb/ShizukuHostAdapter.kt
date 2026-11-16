@@ -1,38 +1,38 @@
 package com.vrec.app.experimental.adb
 
 import android.content.Context
-import dev.n2k02.adb.core.AdbCore
-import dev.n2k02.adb.core.AdbCoreRegistry
-import dev.n2k02.adb.core.AdbHostHooks
-import dev.n2k02.adb.core.AdbOption
-import dev.n2k02.adb.core.AdbPreferenceStore
+import com.vrec.app.shizuku.ShizukuSession
+import com.vrec.app.shizuku.ShizukuSessionRegistry
+import com.vrec.app.shizuku.ShizukuHostHooks
+import com.vrec.app.shizuku.ShizukuOption
+import com.vrec.app.shizuku.ShizukuPreferences
 
 /**
  * Migration adapter. Preserves VRec's authorization files and boot-scoped choices.
  * Do not initialize a second live ADB connection alongside the legacy engine.
  * The calling service must retire legacy transport before adopting this instance.
  */
-internal object SharedAdbHostAdapter {
-    @Volatile private var active: AdbCore? = null
+internal object ShizukuHostAdapter {
+    @Volatile private var active: ShizukuSession? = null
 
-    fun core(context: Context): AdbCore = active ?: synchronized(this) {
+    fun core(context: Context): ShizukuSession = active ?: synchronized(this) {
         active ?: create(context.applicationContext).also {
             active = it
-            AdbCoreRegistry.install(it)
+            ShizukuSessionRegistry.install(it)
         }
     }
 
-    fun current(): AdbCore? = active
+    fun current(): ShizukuSession? = active
 
     suspend fun shutdown() {
         val old = synchronized(this) { active.also { active = null } }
-        old?.let { AdbCoreRegistry.uninstall(it); it.quit() }
+        old?.let { ShizukuSessionRegistry.uninstall(it); it.quit() }
     }
 
-    fun create(context: Context): AdbCore {
+    fun create(context: Context): ShizukuSession {
         val app = context.applicationContext
-        return AdbCore(app, Choices(app),
-            object : AdbHostHooks {
+        return ShizukuSession(app, Choices(app),
+            object : ShizukuHostHooks {
                 override suspend fun onRestoreAfterRestartChanged(enabled: Boolean) {
                     if (enabled) AdbSelfRecovery.grantSecureSettings(app)
                     else AdbSelfRecovery.revokeSecureSettings(app)
@@ -41,25 +41,25 @@ internal object SharedAdbHostAdapter {
         )
     }
 
-    private class Choices(private val app: Context) : AdbPreferenceStore {
+    private class Choices(private val app: Context) : ShizukuPreferences {
         private val timestamps = app.getSharedPreferences("vrec_adb_user_choices", Context.MODE_PRIVATE)
-        override fun enabled(option: AdbOption) = when (option) {
-            AdbOption.AUTO_PAIR -> AdbUserChoices.autoPairCode(app)
-            AdbOption.WATCHDOG -> AdbUserChoices.connectionWatchdog(app)
-            AdbOption.START_ON_BOOT -> AdbUserChoices.startOnBoot(app)
-            AdbOption.RESTORE_AFTER_RESTART -> AdbUserChoices.restoreAfterRestart(app)
-            AdbOption.TCP_5555 -> AdbUserChoices.tcpMode(app)
+        override fun enabled(option: ShizukuOption) = when (option) {
+            ShizukuOption.AUTO_PAIR -> AdbUserChoices.autoPairCode(app)
+            ShizukuOption.WATCHDOG -> AdbUserChoices.connectionWatchdog(app)
+            ShizukuOption.START_ON_BOOT -> AdbUserChoices.startOnBoot(app)
+            ShizukuOption.RESTORE_AFTER_RESTART -> AdbUserChoices.restoreAfterRestart(app)
+            ShizukuOption.TCP_5555 -> AdbUserChoices.tcpMode(app)
         }
-        override fun setEnabled(option: AdbOption, enabled: Boolean) {
+        override fun setEnabled(option: ShizukuOption, enabled: Boolean) {
             when (option) {
-                AdbOption.AUTO_PAIR -> AdbUserChoices.setAutoPairCode(app, enabled)
-                AdbOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)
-                AdbOption.START_ON_BOOT -> {
+                ShizukuOption.AUTO_PAIR -> AdbUserChoices.setAutoPairCode(app, enabled)
+                ShizukuOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)
+                ShizukuOption.START_ON_BOOT -> {
                     AdbUserChoices.setStartOnBoot(app, enabled)
                     AdbLifecycle.configureWatchdog(app, AdbUserChoices.connectionWatchdog(app))
                 }
-                AdbOption.RESTORE_AFTER_RESTART -> AdbUserChoices.setRestoreAfterRestart(app, enabled)
-                AdbOption.TCP_5555 -> AdbUserChoices.setTcpMode(app, enabled)
+                ShizukuOption.RESTORE_AFTER_RESTART -> AdbUserChoices.setRestoreAfterRestart(app, enabled)
+                ShizukuOption.TCP_5555 -> AdbUserChoices.setTcpMode(app, enabled)
             }
         }
         override fun manuallyStopped() = AdbUserChoices.manuallyStopped(app)

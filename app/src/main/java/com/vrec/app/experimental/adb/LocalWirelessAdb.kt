@@ -3,10 +3,10 @@ package com.vrec.app.experimental.adb
 import android.content.Context
 import android.os.Build
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
-import dev.n2k02.adb.core.AdbCore
-import dev.n2k02.adb.core.AdbPhase
-import dev.n2k02.adb.core.AdbState
-import dev.n2k02.adb.core.AdbTransportMode
+import com.vrec.app.shizuku.ShizukuSession
+import com.vrec.app.shizuku.ShizukuPhase
+import com.vrec.app.shizuku.ShizukuState
+import com.vrec.app.shizuku.ShizukuTransportMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,21 +48,21 @@ object LocalWirelessAdb {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var observing: Job? = null
     private var owning = false
-    private var observedCore: AdbCore? = null
+    private var observedCore: ShizukuSession? = null
 
-    private fun snapshot(s: AdbState): State = State(
+    private fun snapshot(s: ShizukuState): State = State(
         phase = when (s.phase) {
-            AdbPhase.IDLE, AdbPhase.STOPPED -> Phase.IDLE
-            AdbPhase.SEARCHING -> Phase.SEARCHING
-            AdbPhase.PAIRING -> Phase.PAIRING
-            AdbPhase.CONNECTING -> Phase.CONNECTING
-            AdbPhase.VERIFIED -> Phase.READY
-            AdbPhase.NEEDS_SETUP -> Phase.RECOVERY_REQUIRED
+            ShizukuPhase.IDLE, ShizukuPhase.STOPPED -> Phase.IDLE
+            ShizukuPhase.SEARCHING -> Phase.SEARCHING
+            ShizukuPhase.PAIRING -> Phase.PAIRING
+            ShizukuPhase.CONNECTING -> Phase.CONNECTING
+            ShizukuPhase.VERIFIED -> Phase.READY
+            ShizukuPhase.NEEDS_SETUP -> Phase.RECOVERY_REQUIRED
         },
         pairingPort = s.pairingPort,
         connectPort = s.connectionPort,
         scanning = s.scanning,
-        pairing = s.phase == AdbPhase.PAIRING,
+        pairing = s.phase == ShizukuPhase.PAIRING,
         message = s.message,
         paired = s.connected || s.lastVerifiedAt > 0L,
     )
@@ -70,7 +70,7 @@ object LocalWirelessAdb {
     @Synchronized fun start(context: Context, userInitiated: Boolean = false) {
         val app = context.applicationContext
         if (AdbLifecycle.quitting || AdbUserChoices.manuallyStopped(app)) return
-        val adb = SharedAdbHostAdapter.core(app)
+        val adb = ShizukuHostAdapter.core(app)
         if (observedCore !== adb) {
             observing?.cancel()
             observedCore = adb
@@ -116,7 +116,7 @@ object LocalWirelessAdb {
         if (AdbLifecycle.quitting ||
             com.vrec.app.calls.CallMonitor.hasLiveCall() ||
             com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value) return
-        scope.launch { SharedAdbHostAdapter.core(context).retry(auto = true) }
+        scope.launch { ShizukuHostAdapter.core(context).retry(auto = true) }
     }
 
     fun openSettings(context: Context) {
