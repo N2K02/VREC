@@ -41,9 +41,9 @@ class AdbSessionKeyLifecycleTest {
             .first { it.isFile }.readText()
         assertTrue(transport.contains("ShizukuHostAdapter.current()?.disconnectIdle()"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
-        assertTrue(adapter.contains("AdbIdentity.getOrCreate(ctx)"))
-        assertTrue(adapter.contains("CoreIdentity(existing.privateKey, existing.certificate)"))
-        assertTrue(adapter.contains("LibAdbWire(app, identity"))
+        assertTrue(adapter.contains("ShizukuSession("))
+        assertTrue(adapter.contains("ShizukuSessionRegistry.install(it)"))
+        assertFalse(adapter.contains("LibAdbWire"))
         assertFalse(transport.contains("AbsAdbConnectionManager"))
         assertFalse(transport.contains("manager?.close()"))
     }

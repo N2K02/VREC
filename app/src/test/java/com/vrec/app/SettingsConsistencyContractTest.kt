@@ -31,7 +31,7 @@ class SettingsConsistencyContractTest {
         assertTrue("ADB preferences must be under their own submenu",
             source.contains("if (section == \"ADB connection\") {"))
         assertTrue("ADB Settings must use the shared core",
-            source.contains("com.vrec.app.shizuku.AdbConnectionSettingsPage("))
+            source.contains("ShizukuSettingsPage()"))
         assertTrue("Old ADB setting cards must be removed",
             !source.contains("private fun AdbPairingRecoveryChoices()") &&
             !source.contains("private fun AdbSecurityChoices()"))

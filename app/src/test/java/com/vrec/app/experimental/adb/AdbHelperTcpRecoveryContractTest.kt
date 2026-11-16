@@ -12,9 +12,9 @@ class AdbHelperTcpRecoveryContractTest {
     @Test fun wirelessTcpPromotesTransportBeforeAnyHelperStartup() {
         val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         val recorder = source("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
-        assertTrue(adapter.contains("adb.setOption(AdbOption.TCP_5555, true)"))
-        assertTrue(adapter.contains("adb.retry(auto = true)"))
-        assertTrue(adapter.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertFalse(adapter.contains("adb.setOption("))
+        assertTrue(adapter.contains("ShizukuHostAdapter.core(context.applicationContext)"))
+        assertFalse(adapter.contains("ShizukuTransportMode.LOCAL_TCP_5555"))
         assertTrue(recorder.contains("deferHelperUntilTcp"))
         assertTrue(adapter.contains("execVerified(command, timeoutMs)"))
     }

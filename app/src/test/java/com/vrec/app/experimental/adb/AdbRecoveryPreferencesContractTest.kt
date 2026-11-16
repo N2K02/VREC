@@ -84,7 +84,7 @@ class AdbRecoveryPreferencesContractTest {
         val settings = source("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
         val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         assertTrue(settings.contains("if (section == \"ADB connection\")"))
-        assertTrue(settings.contains("com.vrec.app.shizuku.AdbConnectionSettingsPage("))
+        assertTrue(settings.contains("ShizukuSettingsPage()"))
         assertFalse(settings.contains("com.vrec.app.shizuku.AdbDiagnosticsPage(shared)"))
         assertTrue(adapter.contains("ShizukuOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)"))
         assertTrue(adapter.contains("ShizukuOption.START_ON_BOOT -> {"))

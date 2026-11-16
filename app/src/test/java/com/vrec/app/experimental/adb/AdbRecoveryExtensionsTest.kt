@@ -51,16 +51,16 @@ class AdbRecoveryExtensionsTest {
         assertTrue(wireless.contains("ShizukuHostAdapter.core(app)"))
         assertTrue(wireless.contains("adb.acquireService()"))
         assertTrue(wireless.contains("adb.state.collect"))
-        assertTrue(adapter.contains("LocalAdbDiscovery(app)"))
-        assertTrue(transport.contains("adb.connectTls(port)"))
+        assertTrue(adapter.contains("ShizukuSession("))
+        assertTrue(transport.contains("core(context).retry(auto = true)"))
         assertFalse(wireless.contains("NsdManager"))
     }
 
     @Test fun tcpSwitchTreatsStreamResetAsUncertainUntilNewUidIsVerified() {
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
-        assertTrue(transport.contains("adb.setOption(ShizukuOption.TCP_5555, true)"))
-        assertTrue(transport.contains("adb.retry(auto = true)"))
-        assertTrue(transport.contains("ShizukuTransportMode.LOCAL_TCP_5555"))
+        assertFalse(transport.contains("adb.setOption("))
+        assertTrue(transport.contains("ShizukuHostAdapter"))
+        assertFalse(transport.contains("ShizukuTransportMode.LOCAL_TCP_5555"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
         assertFalse(transport.contains("mgr.openStream("))
     }
@@ -93,11 +93,11 @@ class AdbRecoveryExtensionsTest {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         assertTrue(choices.contains("prefs(context).getBoolean(AUTO_PAIR, true)"))
-        assertTrue(service.contains("PairingCodeUiPolicy.isSettingsPackage("))
-        assertTrue(service.contains("AdbPairingCodePolicy.pairingPort(labels)"))
-        assertTrue(service.contains("LocalWirelessAdb.pair(applicationContext, code, pairingPort)"))
-        assertTrue(wireless.contains("adb.pair(port, code)"))
-        assertTrue(ui.contains("AdbHomeSetupPage("))
+        assertFalse(service.contains("PairingCodeUiPolicy.isSettingsPackage("))
+        assertFalse(service.contains("AdbPairingCodePolicy.pairingPort(labels)"))
+        assertFalse(service.contains("LocalWirelessAdb.pair(applicationContext, code, pairingPort)"))
+        assertTrue(wireless.contains("ShizukuHostAdapter.core(app)"))
+        assertTrue(ui.contains("ShizukuSettingsPage()"))
         assertFalse(ui.contains("OutlinedTextField"))
         assertFalse(wireless.contains("RemoteInput"))
     }
