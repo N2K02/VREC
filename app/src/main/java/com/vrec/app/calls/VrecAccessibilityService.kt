@@ -106,7 +106,7 @@ class VrecAccessibilityService : AccessibilityService() {
             }
         }
         val code = PairingCodeUiPolicy.extractCode(labels) ?: return false
-        val visiblePort = dev.n2k02.adb.core.AdbPairingCodePolicy.pairingPort(labels)
+        val visiblePort: Int? = null // No wireless ADB pairing: Shizuku-only transport
         val pairingPort = visiblePort ?: state.pairingPort
         if (pairingPort == null) {
             // The user may open Android's pairing-code dialog directly from
