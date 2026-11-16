@@ -42,7 +42,7 @@ class AdbUiRecoveryContractTest {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(choices.contains("getBoolean(TCP_MODE, true)"))
         assertTrue(adapter.contains("ShizukuOption.TCP_5555 -> AdbUserChoices.tcpMode(app)"))
-        assertTrue(ui.contains("AdbHomeSetupPage("))
+        assertTrue(ui.contains("ShizukuSettingsPage()"))
         assertTrue(wireless.contains("CallMonitor.hasLiveCall()"))
         assertFalse(ui.contains("Enter pairing code"))
     }

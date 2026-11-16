@@ -16,7 +16,7 @@ class AdbHomeNavigationContractTest {
         assertFalse(settings.contains("AdbSetupProgressCard("))
         assertFalse(settings.contains("ExperimentalRecorderCard()"))
         assertFalse(settings.contains("TelecomAdbInstructionCard("))
-        assertTrue(settings.contains("AdbConnectionSettingsPage("))
+        assertTrue(settings.contains("ShizukuSettingsPage()"))
         assertFalse(settings.contains("AdbDiagnosticsPage(shared)"))
         assertFalse(settings.contains("onSectionChange(\"Experimental\")"))
         assertFalse(settings.contains("SettingCard(\"Enhanced SIM capture source\")"))

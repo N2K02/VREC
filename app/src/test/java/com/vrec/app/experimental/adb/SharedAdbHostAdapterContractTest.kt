@@ -10,11 +10,12 @@ class SharedAdbHostAdapterContractTest {
         val settings = root.resolve("../settings.gradle.kts").readText()
         val build = root.resolve("build.gradle.kts").readText()
         val src = root.resolve("src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt").readText()
-        assertTrue(settings.contains("n2k02AdbCoreLibrary"))
-        assertTrue(build.contains("dev.n2k02:adb-core:0.1.8"))
-        assertTrue(src.contains("AdbIdentity.getOrCreate(ctx)"))
+        assertTrue(!settings.contains("n2k02AdbCoreLibrary"))
+        assertTrue(!build.contains("dev.n2k02:adb-core:"))
+        assertTrue(build.contains("dev.rikka.shizuku:api:13.1.5"))
+        assertTrue(src.contains("ShizukuSession("))
         assertTrue(src.contains("AdbUserChoices.manuallyStopped(app)"))
         assertTrue(src.contains("AdbUserChoices.lastVerifiedPort(app)"))
-        assertTrue(src.contains("LibAdbWire"))
+        assertTrue(!src.contains("LibAdbWire"))
     }
 }

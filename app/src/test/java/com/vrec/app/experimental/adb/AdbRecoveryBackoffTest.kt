@@ -63,7 +63,7 @@ class BackgroundRecoveryContractTest {
         val adapter = read("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         assertTrue(wireless.contains("adb.acquireService()"))
         assertTrue(wireless.contains("observedCore?.releaseService()"))
-        assertTrue(adapter.contains("LocalAdbDiscovery(app)"))
+        assertTrue(adapter.contains("ShizukuSession("))
         assertFalse(wireless.contains("emptySearches"))
         assertFalse(wireless.contains("MAX_EMPTY_SEARCHES"))
         assertFalse(wireless.contains("NsdManager"))
