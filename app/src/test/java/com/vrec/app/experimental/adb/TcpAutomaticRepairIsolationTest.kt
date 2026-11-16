@@ -19,8 +19,8 @@ class TcpAutomaticRepairIsolationTest {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(wireless.contains("ShizukuHostAdapter.core(app)"))
-        assertTrue(transport.contains("adb.retry(auto = true)"))
-        assertTrue(transport.contains("ShizukuTransportMode.LOCAL_TCP_5555"))
+        assertTrue(transport.contains("core(context).retry(auto = true)"))
+        assertFalse(transport.contains("ShizukuTransportMode.LOCAL_TCP_5555"))
         assertFalse(wireless.contains("reconnectTcp(context, automatic = false)"))
     }
 
