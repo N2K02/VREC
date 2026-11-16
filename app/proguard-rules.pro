@@ -14,3 +14,6 @@
 -keep class * extends androidx.work.InputMerger {
     <init>();
 }
+
+# Shizuku starts this user service by its class name in the shell process.
+-keep class com.vrec.app.shizuku.ShizukuShellService { public <init>(); *; }
