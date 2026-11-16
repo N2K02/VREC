@@ -82,12 +82,12 @@ class AdbRecoveryPreferencesContractTest {
 
     @Test fun switchesAreDelegatedToTheSharedAdbSettingsPage() {
         val settings = source("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
-        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         assertTrue(settings.contains("if (section == \"ADB connection\")"))
-        assertTrue(settings.contains("dev.n2k02.adb.core.AdbConnectionSettingsPage("))
-        assertFalse(settings.contains("dev.n2k02.adb.core.AdbDiagnosticsPage(shared)"))
-        assertTrue(adapter.contains("AdbOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)"))
-        assertTrue(adapter.contains("AdbOption.START_ON_BOOT -> {"))
+        assertTrue(settings.contains("com.vrec.app.shizuku.AdbConnectionSettingsPage("))
+        assertFalse(settings.contains("com.vrec.app.shizuku.AdbDiagnosticsPage(shared)"))
+        assertTrue(adapter.contains("ShizukuOption.WATCHDOG -> AdbLifecycle.configureWatchdog(app, enabled)"))
+        assertTrue(adapter.contains("ShizukuOption.START_ON_BOOT -> {"))
         assertTrue(adapter.contains("AdbUserChoices.setStartOnBoot(app, enabled)"))
         assertTrue(adapter.contains("onRestoreAfterRestartChanged(enabled: Boolean)"))
         assertFalse(settings.contains("AdbSecurityChoices()"))

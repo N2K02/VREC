@@ -46,9 +46,9 @@ class AdbRecoveryExtensionsTest {
 
     @Test fun discoveryKeepsWatchingUntilAuthorizedTransportSucceeds() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
-        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(wireless.contains("ShizukuHostAdapter.core(app)"))
         assertTrue(wireless.contains("adb.acquireService()"))
         assertTrue(wireless.contains("adb.state.collect"))
         assertTrue(adapter.contains("LocalAdbDiscovery(app)"))
@@ -58,9 +58,9 @@ class AdbRecoveryExtensionsTest {
 
     @Test fun tcpSwitchTreatsStreamResetAsUncertainUntilNewUidIsVerified() {
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
-        assertTrue(transport.contains("adb.setOption(AdbOption.TCP_5555, true)"))
+        assertTrue(transport.contains("adb.setOption(ShizukuOption.TCP_5555, true)"))
         assertTrue(transport.contains("adb.retry(auto = true)"))
-        assertTrue(transport.contains("AdbTransportMode.LOCAL_TCP_5555"))
+        assertTrue(transport.contains("ShizukuTransportMode.LOCAL_TCP_5555"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
         assertFalse(transport.contains("mgr.openStream("))
     }

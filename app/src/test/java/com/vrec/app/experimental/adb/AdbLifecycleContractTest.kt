@@ -21,7 +21,7 @@ class AdbLifecycleContractTest {
         assertTrue(lifecycle.contains("unregisterNetworkCallback"))
         assertTrue(lifecycle.contains("LocalWirelessAdb.shutdown(app)"))
         assertTrue(lifecycle.contains("transportMutex.withLock { AdbTransport.close() }"))
-        assertTrue(lifecycle.contains("SharedAdbHostAdapter.shutdown()"))
+        assertTrue(lifecycle.contains("ShizukuHostAdapter.shutdown()"))
         assertTrue(lifecycle.contains("withContext(NonCancellable + Dispatchers.IO)"))
         assertTrue(wireless.contains("observing?.cancel()"))
         assertTrue(wireless.contains("observedCore?.releaseService()"))

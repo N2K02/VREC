@@ -65,7 +65,7 @@ class AdbStartupCancellationRegressionTest {
     @Test fun queuedWirelessRepairCannotAcceptDuplicateStart() {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val foreground = source("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
-        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(wireless.contains("ShizukuHostAdapter.core(app)"))
         assertTrue(wireless.contains("if (!owning)"))
         assertTrue(wireless.contains("adb.acquireService()"))
         assertTrue(wireless.contains("sharedCore") || wireless.contains("adb.retry(auto = false)"))
