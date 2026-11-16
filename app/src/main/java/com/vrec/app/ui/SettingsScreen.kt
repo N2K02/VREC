@@ -255,24 +255,7 @@ fun SettingsScreen(
 
         if (section == "Shizuku") ShizukuSettingsPage()
 
-        if (section == "ADB connection") {
-            val shared = remember(context.applicationContext) {
-                com.vrec.app.experimental.adb.SharedAdbHostAdapter.core(context)
-            }
-            dev.n2k02.adb.core.AdbPageLifecycle(shared)
-            dev.n2k02.adb.core.AdbConnectionSettingsPage(
-                    adb = shared,
-                    accessibilityEnabled = remember(resumeTick) {
-                        VrecAccessibilityService.isEnabled(context)
-                    },
-                    onOpenAccessibility = {
-                        context.startActivity(
-                            Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    },
-                )
-        }
+        if (section == "ADB connection") ShizukuSettingsPage()
 
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
