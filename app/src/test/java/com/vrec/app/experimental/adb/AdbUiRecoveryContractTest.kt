@@ -29,19 +29,19 @@ class AdbUiRecoveryContractTest {
         val transport = source("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
         assertTrue(lifecycle.contains("transportMutex.withLock { block() }"))
         assertTrue(lifecycle.contains("recoveryMutex.withLock {"))
-        assertTrue(wireless.contains("SharedAdbHostAdapter.core(app)"))
+        assertTrue(wireless.contains("ShizukuHostAdapter.core(app)"))
         assertTrue(wireless.contains("adb.state.collect"))
-        assertTrue(transport.contains("SharedAdbHostAdapter.current()"))
+        assertTrue(transport.contains("ShizukuHostAdapter.current()"))
         assertFalse(wireless.contains("NsdManager"))
     }
 
     @Test fun tcpSwitchIsDefaultWithUserOptOutAndNetworkWarning() {
         val ui = source("app/src/main/java/com/vrec/app/ui/WirelessAdbSetupCard.kt")
         val choices = source("app/src/main/java/com/vrec/app/experimental/adb/AdbUserChoices.kt")
-        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        val adapter = source("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         assertTrue(choices.contains("getBoolean(TCP_MODE, true)"))
-        assertTrue(adapter.contains("AdbOption.TCP_5555 -> AdbUserChoices.tcpMode(app)"))
+        assertTrue(adapter.contains("ShizukuOption.TCP_5555 -> AdbUserChoices.tcpMode(app)"))
         assertTrue(ui.contains("AdbHomeSetupPage("))
         assertTrue(wireless.contains("CallMonitor.hasLiveCall()"))
         assertFalse(ui.contains("Enter pairing code"))

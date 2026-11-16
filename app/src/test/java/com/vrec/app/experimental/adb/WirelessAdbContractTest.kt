@@ -12,7 +12,7 @@ class WirelessAdbContractTest {
 
     @Test fun wirelessHostIsLoopbackOnlyAndShellUidIsVerified() {
         val transport = read("app/src/main/java/com/vrec/app/experimental/adb/AdbTransport.kt")
-        val adapter = read("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        val adapter = read("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         val controller = read("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
         assertTrue(transport.contains("const val LOOPBACK = \"127.0.0.1\""))
         assertTrue(transport.contains("require(host == LOOPBACK && port == LEGACY_TCP_PORT)"))

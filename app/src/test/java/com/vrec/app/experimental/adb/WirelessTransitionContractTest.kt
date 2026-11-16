@@ -13,7 +13,7 @@ class WirelessTransitionContractTest {
         .first { it.isFile }.readText()
 
     @Test fun everyConnectGoesThroughTheSingleFlightLock() {
-        assertTrue(src.contains("val adb = SharedAdbHostAdapter.core(app)"))
+        assertTrue(src.contains("val adb = ShizukuHostAdapter.core(app)"))
         assertTrue(src.contains("if (!owning)"))
         assertTrue(src.contains("adb.acquireService()"))
         assertTrue(src.contains("adb.state.collect"))
@@ -30,8 +30,8 @@ class WirelessTransitionContractTest {
 
     @Test fun failuresEndInRecoveryRequiredWhichBlocksAutoConnect() {
         assertTrue(src.contains("RECOVERY_REQUIRED"))
-        assertTrue(src.contains("AdbPhase.NEEDS_SETUP -> Phase.RECOVERY_REQUIRED"))
-        assertTrue(src.contains("s.phase == AdbPhase.PAIRING"))
+        assertTrue(src.contains("ShizukuPhase.NEEDS_SETUP -> Phase.RECOVERY_REQUIRED"))
+        assertTrue(src.contains("s.phase == ShizukuPhase.PAIRING"))
         assertTrue(src.contains("s.connected"))
         assertFalse(src.contains("private val transition = Mutex()"))
     }

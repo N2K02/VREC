@@ -60,7 +60,7 @@ class BackgroundRecoveryContractTest {
 
     @Test fun automaticDiscoveryIsBoundedAndPausesAfterRepeatedEmptySearches() {
         val wireless = read("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
-        val adapter = read("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt")
+        val adapter = read("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt")
         assertTrue(wireless.contains("adb.acquireService()"))
         assertTrue(wireless.contains("observedCore?.releaseService()"))
         assertTrue(adapter.contains("LocalAdbDiscovery(app)"))

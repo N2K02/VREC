@@ -22,7 +22,7 @@ class AdbBrokenStreamRecoveryTest {
         val src = transportSource()
         assertTrue(src.contains("catch (cancelled: CancellationException)"))
         assertTrue(src.contains("throw cancelled"))
-        assertTrue(src.contains("SharedAdbHostAdapter.current()?.disconnectIdle()"))
+        assertTrue(src.contains("ShizukuHostAdapter.current()?.disconnectIdle()"))
         assertFalse(src.contains("AbsAdbConnectionManager"))
     }
 

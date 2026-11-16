@@ -36,10 +36,10 @@ class AdbSessionKeyLifecycleTest {
 
     @Test fun timeoutAndShutdownRetireManagersWithoutDestroyingCachedKey() {
         val transport = code()
-        val adapter = listOf(File("app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt"),
-            File("../app/src/main/java/com/vrec/app/experimental/adb/SharedAdbHostAdapter.kt"))
+        val adapter = listOf(File("app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt"),
+            File("../app/src/main/java/com/vrec/app/experimental/adb/ShizukuHostAdapter.kt"))
             .first { it.isFile }.readText()
-        assertTrue(transport.contains("SharedAdbHostAdapter.current()?.disconnectIdle()"))
+        assertTrue(transport.contains("ShizukuHostAdapter.current()?.disconnectIdle()"))
         assertTrue(transport.contains("execVerified(command, timeoutMs)"))
         assertTrue(adapter.contains("AdbIdentity.getOrCreate(ctx)"))
         assertTrue(adapter.contains("CoreIdentity(existing.privateKey, existing.certificate)"))
