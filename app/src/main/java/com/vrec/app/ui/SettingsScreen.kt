@@ -121,7 +121,7 @@ fun SettingsScreen(
                 Triple("Recording", "Automatic recording and silent files", Icons.Rounded.Mic),
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
-                Triple("ADB", "LocalADB server, authorization and shell status", Icons.Rounded.Settings),
+                Triple("Shizuku", "LocalADB server, authorization and shell status", Icons.Rounded.Settings),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -252,9 +252,8 @@ fun SettingsScreen(
             }
         }
 
-        if (section == "ADB") ShizukuSettingsPage()
+        if (section == "Shizuku") ShizukuSettingsPage()
 
-        if (section == "ADB connection") ShizukuSettingsPage()
 
         if (section == "VoIP") SettingCard("VoIP") {
             ToggleRow(
