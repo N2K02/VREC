@@ -17,19 +17,19 @@ class SettingsConsistencyContractTest {
         assertTrue(!menu.contains("RecordingMethodOption("))
         assertTrue(!menu.contains("Permissions & setup"))
         assertTrue("ADB connection submenu missing", menu.contains(
-            "Triple(\"ADB connection\", \"Automatic pairing, reboot recovery and network access\""))
+            "Triple(\"ADB\", \"LocalADB server, authorization and shell status\""))
         assertTrue("Updates footer missing", menu.contains("headlineContent = { Text(\"About & updates\") }"))
         val divider = menu.indexOf("HorizontalDivider()")
         val update = menu.indexOf("headlineContent = { Text(\"About & updates\") }")
         assertTrue("Divider must separate settings and updates", divider >= 0 && update > divider)
         assertTrue("ADB connection belongs before the update footer",
-            menu.indexOf("Triple(\"ADB connection\"") in 0 until divider)
+            menu.indexOf("Triple(\"ADB\"") in 0 until divider)
         assertTrue("Redundant ADB diagnostics submenu must stay removed",
             !menu.contains("Triple(\"ADB diagnostics\""))
         assertTrue("ADB diagnostics page must not be duplicated in Settings",
             !source.contains("AdbDiagnosticsPage(shared)"))
         assertTrue("ADB preferences must be under their own submenu",
-            source.contains("if (section == \"ADB connection\") {"))
+            source.contains("if (section == \"ADB\") ShizukuSettingsPage()"))
         assertTrue("ADB Settings must use the shared core",
             source.contains("ShizukuSettingsPage()"))
         assertTrue("Old ADB setting cards must be removed",
