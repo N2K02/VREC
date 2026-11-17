@@ -108,9 +108,6 @@ internal fun ShizukuHomeCard(onManageAdb: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text("ADB access", style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold)
-                    Text("Powered by LocalADB · Shizuku",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Surface(
                     shape = RoundedCornerShape(50),
