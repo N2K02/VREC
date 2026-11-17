@@ -43,7 +43,7 @@ class HomeDashboardVisualContractTest {
         assertTrue(setup.contains("ShizukuHomeStatus("))
         assertTrue(setup.contains("HomeAccessMetric("))
         assertTrue(access.contains("HomePanelStyle.border()"))
-        assertTrue(setup.contains("HomePanelStyle.border()"))
+        assertTrue(setup.contains("HomePanelStyle.border(highlight = state.ready)"))
         assertTrue(access.contains("permissions.chunked(2)"))
         assertTrue(access.contains("LinearProgressIndicator("))
         assertTrue(adb.contains("Stat(\"Connection\""))
