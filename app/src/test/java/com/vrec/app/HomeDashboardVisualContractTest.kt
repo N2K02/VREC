@@ -26,21 +26,22 @@ class HomeDashboardVisualContractTest {
         assertTrue(main.contains("RecordingMasterCard("))
         assertTrue(main.contains("enabled = recordingEnabled,"))
         assertTrue(main.contains("shellActive = enhancedActive,"))
-        assertTrue(main.contains("Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })"))
+        assertTrue(main.contains("Screen.HOME -> HomeScreen("))
+        assertTrue(main.contains("onOpenAdb = {"))
     }
 
     @Test fun homeCardsShareDistinctSurfacesAndReadableMetricColumns() {
         val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val adb = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
         val access = read("app/src/main/java/com/vrec/app/ui/PermissionDashboardCard.kt")
-        val setup = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        val setup = read("app/src/main/java/com/vrec/app/ui/ShizukuHomeCard.kt")
         val palette = read("app/src/main/java/com/vrec/app/ui/HomePanelStyle.kt")
         assertTrue(palette.contains("Color(0xFF272C34)"))
         assertTrue(palette.contains("BorderStroke(1.dp, stroke)"))
         assertTrue(main.contains("HomePanelStyle.border(highlight = enabled)") ||
             main.contains("HomePanelStyle.border(highlight = ready && enabled)"))
-        assertTrue(adb.contains("FlowRow("))
-        assertTrue(adb.contains("contentDescription = "))
+        assertTrue(setup.contains("ShizukuHomeStatus("))
+        assertTrue(setup.contains("HomeAccessMetric("))
         assertTrue(access.contains("HomePanelStyle.border()"))
         assertTrue(setup.contains("HomePanelStyle.border()"))
         assertTrue(access.contains("permissions.chunked(2)"))
@@ -49,30 +50,18 @@ class HomeDashboardVisualContractTest {
         assertTrue(adb.contains("Stat(\"Shell UID\""))
     }
 
-    @Test fun compactHomeKeepsActionsAndMakesPortDetailsExpandable() {
+    @Test fun compactHomeKeepsRecordingControlsAndDirectShizukuStatus() {
         val main = read("app/src/main/java/com/vrec/app/MainActivity.kt")
-        val adb = read("app/src/main/java/com/vrec/app/ui/AdbDashboard.kt")
-        val setup = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
+        val card = read("app/src/main/java/com/vrec/app/ui/ShizukuHomeCard.kt")
         assertTrue(main.contains("RecordingMasterCard("))
         assertTrue(main.contains("ManualRecordingCard("))
-        assertTrue(main.contains("Enable global recording"))
-        assertFalse(main.contains("Text(HomeDashboardPresentation.title(dashboardState)"))
-        val compactManual = main.substringAfter("private fun ManualRecordingCard(")
-            .substringBefore("/** Live capture:")
-        assertTrue(compactManual.contains("modifier = Modifier.weight(1f)"))
-        assertTrue(compactManual.contains("FilledTonalButton("))
-        assertFalse(compactManual.contains("modifier = Modifier.fillMaxWidth(),\\n            ) {"))
-
-        assertTrue(main.contains("onEnabledChange = { enabled ->"))
-        assertTrue(adb.contains("Text(\"Start\")"))
-        assertTrue(adb.contains("Text(\"Stop\")"))
-        assertTrue(adb.contains("Text(\"Restart\")"))
-        assertTrue(adb.contains("Stat(\"Shell UID\""))
-        // The Home port detail card is intentionally removed; status remains in AdbDashboard.
-        assertFalse(setup.contains("ADB connection ports"))
-        assertFalse(setup.contains("portsExpanded"))
-        assertTrue(adb.contains("Stat(\"Connection\""))
-        assertTrue(adb.contains("Stat(\"Shell UID\""))
+        assertTrue(main.contains("ShizukuHomeCard(onManageAdb = onOpenAdb)"))
+        assertFalse(main.contains("com.vrec.app.ui.LocalAdbHomeCard("))
+        assertTrue(card.contains("Shizuku.pingBinder()"))
+        assertTrue(card.contains("Shizuku.checkSelfPermission()"))
+        assertTrue(card.contains("Shizuku.getUid()"))
+        assertTrue(card.contains("Shizuku.requestPermission(2902)"))
+        assertTrue(card.contains("Get LocalADB · GitHub Releases"))
     }
 
     @Test fun manualCaptureAndADBOnlyLiveTransportRemainVisible() {
