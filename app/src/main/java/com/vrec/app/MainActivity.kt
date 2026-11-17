@@ -336,7 +336,14 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
     ) { padding ->
         Surface(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })
+                Screen.HOME -> HomeScreen(
+                    onOpenRecordings = { navigateTo(Screen.RECORDINGS) },
+                    onOpenAdb = {
+                        screen = Screen.SETTINGS
+                        settingsSection = "ADB"
+                        returnToSettings = false
+                    },
+                )
                 Screen.RECORDINGS -> androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { RecordingsList() }
@@ -474,7 +481,7 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 }
 
 @Composable
-private fun HomeScreen(onOpenRecordings: () -> Unit) {
+private fun HomeScreen(onOpenRecordings: () -> Unit, onOpenAdb: () -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
     val recState by RecordingService.state.collectAsState()
@@ -557,10 +564,7 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
         Text("Connection & access", style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        com.vrec.app.ui.LocalAdbHomeCard(
-            recordingActive = recState is RecordingService.State.Recording || enhancedActive,
-            standardRecording = false,
-        )
+        com.vrec.app.ui.ShizukuHomeCard(onManageAdb = onOpenAdb)
         com.vrec.app.ui.PermissionDashboardCard()
         if (recordingEnabled && !ready) {
             Surface(
@@ -574,7 +578,7 @@ private fun HomeScreen(onOpenRecordings: () -> Unit) {
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error)
-                    Text("The ADB shell helper is not ready. Calls will not be recorded until enhanced capture is restored. Reconnect ADB and check System Status.",
+                    Text("The recording helper is not ready. Calls cannot be recorded until capture is restored. Check ADB permission and recorder status.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
