@@ -22,28 +22,21 @@ class AdbHomeNavigationContractTest {
         assertFalse(settings.contains("SettingCard(\"Enhanced SIM capture source\")"))
     }
 
-    @Test fun homeHoldsSoleSetupButtonAndExpandableDirections() {
+    @Test fun homeRoutesToOneShizukuAccessPageWithoutLegacySetupWizard() {
         val source = read("app/src/main/java/com/vrec/app/MainActivity.kt")
         val home = source.substringAfter("private fun HomeScreen(")
             .substringBefore("private fun RecordingMasterCard(")
         assertTrue(home.contains("Recording dashboard"))
-        assertTrue(source.contains("com.vrec.app.ui.LocalAdbHomeCard("))
-        assertFalse(home.contains("onOpenExperimental"))
-        assertTrue(source.contains("Screen.HOME -> HomeScreen(onOpenRecordings = { navigateTo(Screen.RECORDINGS) })"))
-        val card = read("app/src/main/java/com/vrec/app/ui/LocalAdbHomeCard.kt")
-        assertTrue(card.contains("AdbForegroundSetup.begin(context)"))
-        val foreground = read("app/src/main/java/com/vrec/app/experimental/adb/AdbForegroundSetup.kt")
-        assertTrue(foreground.contains("LocalAdbMiddleware.setup(app, userInitiated = true)"))
-        assertFalse(card.contains("LocalWirelessAdb.start(context)"))
-        assertTrue(foreground.contains("ExperimentalRecording.tcpPortListening()"))
-        assertTrue(card.contains("WirelessAdbSetupCard()"))
-        assertTrue(card.contains("instructionsExpanded = !instructionsExpanded"))
-        assertTrue(card.contains("USB host instructions (when Wireless debugging is unavailable)"))
-        assertTrue(card.contains("Text(\"USB debugging\""))
-        assertTrue(card.contains("needsUsbBootstrap"))
-        assertTrue(card.contains("First complete the external USB bootstrap steps"))
-        assertFalse(card.contains("One-time USB setup"))
-        assertTrue(card.contains("Wireless debugging"))
+        assertTrue(home.contains("ShizukuHomeCard(onManageAdb = onOpenAdb)"))
+        assertFalse(home.contains("LocalAdbHomeCard("))
+        assertTrue(source.contains("settingsSection = \"ADB\""))
+        assertTrue(source.contains("Screen.HOME -> HomeScreen("))
+        val card = read("app/src/main/java/com/vrec/app/ui/ShizukuHomeCard.kt")
+        assertTrue(card.contains("Shizuku.pingBinder()"))
+        assertTrue(card.contains("Shizuku.checkSelfPermission()"))
+        assertTrue(card.contains("Shizuku.getUid()"))
+        assertFalse(card.contains("WirelessAdbSetupCard()"))
+        assertFalse(card.contains("adb tcpip 5555"))
     }
 
     @Test fun verifiedUidAndHelperAreDistinctSignals() {
