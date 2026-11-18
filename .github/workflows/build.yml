@@ -25,7 +25,7 @@ permissions:
 
 # Serialize releases so two quick pushes cannot choose the same version.
 concurrency:
-  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.number) || 'main' }}
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -65,7 +65,7 @@ jobs:
           # A lookup error aborts the build instead of silently reusing an older version.
           public_last=$(bash .github/scripts/latest-public-version.sh vrec)
           track_last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName -q '.[].tagName' | sed -nE 's/^shizuku-v([0-9]+[.][0-9])$/v\1/p' | sort -V | tail -1 || true)
-          last=$(printf '%s\n%s\n' "$local_last" "$public_last" "$track_last" | sort -V | tail -1)
+          last=$(printf '%s\n%s\n%s\n' "$local_last" "$public_last" "$track_last" | sort -V | tail -1)
           if [ -n "$REQUESTED" ]; then
             echo "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]$' || { echo "::error::Version must look like 1.0"; exit 1; }
             ver="$REQUESTED"
