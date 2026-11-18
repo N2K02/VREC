@@ -40,7 +40,7 @@ internal object LiveUpdater {
             repository = "N2K02/VREC",
             packageName = app.packageName,
             installedVersionCode = versionCode(),
-            experimentalEnabled = experimentalEnabled.value,
+            experimentalEnabled = experimentalEnabled.value, releaseTrack = "adb",
         ),
         offerPreferences = prefs(),
     )
