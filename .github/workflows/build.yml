@@ -93,10 +93,10 @@ jobs:
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             echo "VERSION_SUFFIX=-experimental.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-            echo "APK_NAME=VREC-ADB-$ver-experimental.$GITHUB_RUN_NUMBER.apk" >> "$GITHUB_ENV"
+            echo "APK_NAME=VREC-ADB-$ver-experimental.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           else
             echo "VERSION_SUFFIX=" >> "$GITHUB_ENV"
-            echo "APK_NAME=VREC-ADB-$ver.apk" >> "$GITHUB_ENV"
+            echo "APK_NAME=VREC-ADB-$ver" >> "$GITHUB_ENV"
           fi
           echo "Version: $ver (previous: ${last:-none})"
 
@@ -131,7 +131,7 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/experimental_naming.py --self-test
           python3 .github/scripts/experimental_naming.py "$GITHUB_REPOSITORY" "$APP" "$GITHUB_RUN_NUMBER" "$PR_NUMBER"
-          echo "APK_NAME=VREC-ADB-$VERSION-experimental.$GITHUB_RUN_NUMBER.apk" >> "$GITHUB_ENV"
+          echo "APK_NAME=VREC-ADB-$VERSION-experimental.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Restore encrypted signing keystore
         env:
           SIGNING_KEYSTORE_ENC_BASE64: ${{ secrets.SIGNING_KEYSTORE_ENC_BASE64 }}
@@ -199,7 +199,7 @@ jobs:
           target_commitish: ${{ env.BUILD_COMMIT }}
           name: ${{ env.APP }} ${{ env.VERSION }}
           body_path: release-notes.md
-          files: ${{ env.APK_NAME }}
+          files: ${{ env.APK_NAME }}.apk
           make_latest: false
 
       - name: Publish signed experimental APK to source PR release
