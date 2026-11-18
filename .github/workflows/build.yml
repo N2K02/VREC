@@ -2,14 +2,14 @@ name: Build VREC APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [main-shizuku]
     # Documentation-only pushes don't change the APK, so they don't publish a release.
     paths-ignore:
       - '**.md'
       - '.gitignore'
       - '.github/workflows/ci.yml'
   pull_request:
-    branches: [ main, experimental/incall-unified-detection ]
+    branches: [main-shizuku]
     types: [opened, synchronize, reopened]
   pull_request_target:
     types: [closed]
@@ -25,16 +25,17 @@ permissions:
 
 # Serialize releases so two quick pushes cannot choose the same version.
 concurrency:
-  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.number) || 'main' }}
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 env:
   APP: VREC
+  RELEASE_TRACK: shizuku
   BUILD_COMMIT: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
 
 jobs:
   build:
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request_target' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && !contains(github.event.pull_request.title, '[skip ci]')))
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request_target' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main-shizuku' && github.event.pull_request.head.repo.full_name == github.repository && !contains(github.event.pull_request.title, '[skip ci]')))
     runs-on: ubuntu-latest
     env:
       N2K02_PACKAGES_TOKEN: ${{ secrets.N2K02_PACKAGES_TOKEN }}
@@ -63,7 +64,8 @@ jobs:
           # Query *all* matching public tag refs; the first 100 shared releases are not enough.
           # A lookup error aborts the build instead of silently reusing an older version.
           public_last=$(bash .github/scripts/latest-public-version.sh vrec)
-          last=$(printf '%s\n%s\n' "$local_last" "$public_last" | sort -V | tail -1)
+          track_last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName -q '.[].tagName' | sed -nE 's/^shizuku-v([0-9]+[.][0-9])$/v\1/p' | sort -V | tail -1 || true)
+          last=$(printf '%s\n%s\n%s\n' "$local_last" "$public_last" "$track_last" | sort -V | tail -1)
           if [ -n "$REQUESTED" ]; then
             echo "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]$' || { echo "::error::Version must look like 1.0"; exit 1; }
             ver="$REQUESTED"
@@ -91,8 +93,10 @@ jobs:
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             echo "VERSION_SUFFIX=-experimental.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+            echo "APK_NAME=VREC-SHIZUKU-$ver-experimental.$GITHUB_RUN_NUMBER.apk" >> "$GITHUB_ENV"
           else
             echo "VERSION_SUFFIX=" >> "$GITHUB_ENV"
+            echo "APK_NAME=VREC-SHIZUKU-$ver.apk" >> "$GITHUB_ENV"
           fi
           echo "Version: $ver (previous: ${last:-none})"
 
@@ -127,6 +131,7 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/experimental_naming.py --self-test
           python3 .github/scripts/experimental_naming.py "$GITHUB_REPOSITORY" "$APP" "$GITHUB_RUN_NUMBER" "$PR_NUMBER"
+          echo "APK_NAME=VREC-SHIZUKU-$VERSION-experimental.$GITHUB_RUN_NUMBER.apk" >> "$GITHUB_ENV"
       - name: Restore encrypted signing keystore
         env:
           SIGNING_KEYSTORE_ENC_BASE64: ${{ secrets.SIGNING_KEYSTORE_ENC_BASE64 }}
@@ -190,12 +195,12 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ env.VERSION }}
+          tag_name: shizuku-v${{ env.VERSION }}
           target_commitish: ${{ env.BUILD_COMMIT }}
           name: ${{ env.APP }} ${{ env.VERSION }}
           body_path: release-notes.md
-          files: ${{ env.APP }}-${{ env.VERSION }}.apk
-          make_latest: true
+          files: ${{ env.APK_NAME }}
+          make_latest: false
 
       - name: Publish signed experimental APK to source PR release
         if: github.event_name == 'pull_request'
@@ -205,7 +210,7 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          TAG="experimental-pr-$PR_NUMBER-run-$GITHUB_RUN_NUMBER"
+          TAG="experimental-shizuku-pr-$PR_NUMBER-run-$GITHUB_RUN_NUMBER"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Experimental release $TAG already exists (workflow rerun); updating its APK."
             gh release upload "$TAG" "${APK_NAME:-$APP-$VERSION}.apk" --repo "$GITHUB_REPOSITORY" --clobber
