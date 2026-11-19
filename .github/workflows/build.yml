@@ -203,8 +203,10 @@ jobs:
           # Experimental APKs must exercise the same R8-minified variant as
           # production. Debug-only PR builds missed WorkDatabase_Impl startup
           # crashes caused by release shrinking.
-          ./gradlew --no-daemon testDebugUnitTest assembleRelease -PappVersion="$VERSION" -PappVersionCode="$VERSION_CODE" -PappVersionSuffix="$VERSION_SUFFIX"
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleRelease -PappVersion="$VERSION" -PappVersionCode="$VERSION_CODE" -PappVersionSuffix="$VERSION_SUFFIX"
           cp "app/build/outputs/apk/release/app-release.apk" "${APK_NAME:-$APP-$VERSION}.apk"
+          BT=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "${APK_NAME:-$APP-$VERSION}.apk"
 
       - name: Publish APK release
         if: github.event_name != 'pull_request'
