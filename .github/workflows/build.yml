@@ -130,8 +130,23 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/experimental_naming.py --self-test
-          python3 .github/scripts/experimental_naming.py "$GITHUB_REPOSITORY" "$APP" "$GITHUB_RUN_NUMBER" "$PR_NUMBER"
-          echo "APK_NAME=VREC-SHIZUKU-$VERSION-experimental.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          GITHUB_ENV="$RUNNER_TEMP/architecture-naming.env" python3 .github/scripts/experimental_naming.py "$GITHUB_REPOSITORY" "$APP" "$GITHUB_RUN_NUMBER" "$PR_NUMBER"
+          grep -v '^APK_NAME=' "$RUNNER_TEMP/architecture-naming.env" >> "$GITHUB_ENV"
+          base=$(sed -n 's/^VERSION=//p' "$RUNNER_TEMP/architecture-naming.env")
+          suffix=$(sed -n 's/^VERSION_SUFFIX=//p' "$RUNNER_TEMP/architecture-naming.env")
+          echo "APK_NAME=VREC-SHIZUKU-$base$suffix" >> "$GITHUB_ENV"
+      - name: Validate architecture-qualified APK filename
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$APP-${RELEASE_TRACK^^}-$VERSION"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            [[ "$VERSION_SUFFIX" =~ ^-experimental[.][0-9]+$ ]] || { echo "::error::Invalid experimental suffix"; exit 1; }
+            expected="$expected$VERSION_SUFFIX"
+          else
+            [[ -z "$VERSION_SUFFIX" ]] || { echo "::error::Stable APK has an experimental suffix"; exit 1; }
+          fi
+          [[ "$APK_NAME" == "$expected" ]] || { echo "::error::Wrong APK name: $APK_NAME (expected $expected)"; exit 1; }
       - name: Restore encrypted signing keystore
         env:
           SIGNING_KEYSTORE_ENC_BASE64: ${{ secrets.SIGNING_KEYSTORE_ENC_BASE64 }}
