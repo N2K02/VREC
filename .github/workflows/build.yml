@@ -237,6 +237,18 @@ jobs:
               --notes-file release-notes.md --prerelease --latest=false
           fi
 
+      - name: Preserve VREC test, lint and R8 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vrec-${{ env.RELEASE_TRACK }}-validation-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            app/build/intermediates/lint_intermediate_text_report/
+            app/build/outputs/mapping/release/mapping.txt
+
   download-index:
     needs: build
     if: github.event_name == 'push' || github.event_name == 'pull_request'
