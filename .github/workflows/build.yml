@@ -199,7 +199,7 @@ jobs:
           target_commitish: ${{ env.BUILD_COMMIT }}
           name: ${{ env.APP }} ${{ env.VERSION }}
           body_path: release-notes.md
-          files: ${{ env.APK_NAME }}.apk.apk
+          files: ${{ env.APK_NAME }}.apk
           make_latest: false
 
       - name: Publish signed experimental APK to source PR release
