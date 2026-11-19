@@ -216,6 +216,7 @@ jobs:
           body_path: release-notes.md
           files: ${{ env.APK_NAME }}.apk
           make_latest: false
+          overwrite_files: false
 
       - name: Publish signed experimental APK to source PR release
         if: github.event_name == 'pull_request'
@@ -228,10 +229,17 @@ jobs:
           TAG="experimental-shizuku-pr-$PR_NUMBER-run-$GITHUB_RUN_NUMBER"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Experimental release $TAG already exists (workflow rerun); updating its APK."
-            gh release upload "$TAG" "${APK_NAME:-$APP-$VERSION}.apk" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "${APK_NAME:-$APP-$VERSION}.apk"
           else
             gh release create "$TAG" "${APK_NAME:-$APP-$VERSION}.apk" \
               --repo "$GITHUB_REPOSITORY" --target "$PR_HEAD_SHA" \
               --title "$EXPERIMENTAL_TITLE" \
               --notes-file release-notes.md --prerelease --latest=false
           fi
+
+  download-index:
+    needs: build
+    if: github.event_name == 'pull_request_target' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    permissions:
+      contents: write
+    uses: N2K02/n2k02updater/.github/workflows/index-downloads.yml@ae58c3ce0196b1b30d214927dd529ce5d779febf
