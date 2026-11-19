@@ -131,8 +131,8 @@ object AppUpdater {
             if (manual) com.vrec.app.Log.i("Checking for updates (manual)")
             _state.value = State.Checking
             val result = runCatching {
-                val stable = latestRelease()
-                val experimental = if (_experimentalEnabled.value) runCatching { experimentalRelease() }.getOrNull() else null
+                val stable = trackedRelease(experimental = false)
+                val experimental = if (_experimentalEnabled.value) trackedRelease(experimental = true) else null
                 listOfNotNull(stable, experimental).maxByOrNull { it.versionCode }
             }
             prefs.edit().putLong("lastCheck", System.currentTimeMillis()).apply()
@@ -231,6 +231,51 @@ object AppUpdater {
     }
 
     // ---------------------------------------------------------------- GitHub
+
+    // Architecture is compiled into each release branch; never infer it from a preference.
+    private const val RELEASE_TRACK = "shizuku"
+
+    /** GitHub releases are filtered by BOTH architecture-tag and APK asset name. */
+    private suspend fun trackedRelease(experimental: Boolean): Release? = withContext(Dispatchers.IO) {
+        val connection = URL("https://api.github.com/repos/$repo/releases?per_page=100")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 15_000
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.setRequestProperty("User-Agent", "VREC-Android-Updater")
+            if (connection.responseCode != 200) throw IOException("Releases HTTP ${connection.responseCode}")
+            val releases = org.json.JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+            val tagPattern = if (experimental)
+                Regex("^experimental-${RELEASE_TRACK}-pr-[0-9]+-run-[0-9]+$", RegexOption.IGNORE_CASE)
+            else
+                Regex("^${RELEASE_TRACK}-v[0-9]+[.][0-9]+$", RegexOption.IGNORE_CASE)
+            val assetPattern = Regex("^VREC-${RELEASE_TRACK}-.+[.]apk$", RegexOption.IGNORE_CASE)
+            (0 until releases.length()).mapNotNull { index ->
+                val entry = releases.optJSONObject(index) ?: return@mapNotNull null
+                if (entry.optBoolean("draft") || entry.optBoolean("prerelease") != experimental) return@mapNotNull null
+                val tag = entry.optString("tag_name")
+                if (!tagPattern.matches(tag)) return@mapNotNull null
+                val body = entry.optString("body")
+                val code = Regex("(?im)^\\s*Version code:\\s*(\\d+)\\s*$")
+                    .find(body)?.groupValues?.get(1)?.toLongOrNull() ?: return@mapNotNull null
+                if (code <= installedVersionCode) return@mapNotNull null
+                val assets = entry.optJSONArray("assets") ?: return@mapNotNull null
+                val asset = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
+                    .firstOrNull { item ->
+                        assetPattern.matches(item.optString("name")) &&
+                            item.optString("browser_download_url").startsWith("https://github.com/$repo/releases/download/")
+                    } ?: return@mapNotNull null
+                val digest = asset.optString("digest").removePrefix("sha256:").lowercase()
+                    .takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+                Release(tag, entry.optString("name").ifBlank { tag }, code,
+                    whatsNew(body), asset.optString("browser_download_url"), asset.optString("name"),
+                    asset.optLong("size"), digest, entry.optString("html_url"))
+            }.maxByOrNull { it.versionCode }
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     private suspend fun latestRelease(): Release? = runCatching { publicStableRelease() }.getOrNull() ?: legacyLatestRelease()
 
