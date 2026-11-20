@@ -85,8 +85,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     // Apache-2.0 alternative of libadb; TLS pairing and X509 identity dependencies.
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.86")
-    implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.87")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.87")
     implementation("org.conscrypt:conscrypt-android:2.9.0")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
@@ -94,7 +94,7 @@ dependencies {
 
  // Opt-in compile-only shared library evaluation; no production runtime cutover.
 dependencies {
-    implementation("dev.n2k02:theme:0.1.14")
+    implementation("dev.n2k02:theme:0.1.15")
         implementation("dev.n2k02:updater:0.1.36")
     implementation("dev.n2k02:adb-core:0.1.7")
 }
