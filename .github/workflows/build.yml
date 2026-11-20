@@ -5,12 +5,17 @@ on:
     branches: [ main ]
     # Documentation-only pushes don't change the APK, so they don't publish a release.
     paths-ignore:
+      - '.github/workflows/apk-retention.yml'
+      - '.github/workflows/build.yml'
       - '**.md'
       - '.gitignore'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, experimental/incall-unified-detection ]
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '.github/workflows/apk-retention.yml'
+      - '.github/workflows/build.yml'
   pull_request_target:
     types: [closed]
   workflow_dispatch:
