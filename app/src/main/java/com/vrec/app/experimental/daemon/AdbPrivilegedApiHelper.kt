@@ -4,6 +4,7 @@ import android.content.Context
 import com.vrec.app.Prefs
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.AdbTransport
+import com.vrec.app.experimental.adb.AdbLifecycle
 import com.vrec.app.experimental.adb.AdbPermissionBootstrap
 import com.vrec.app.Log
 import com.vrec.app.recording.RecordingFailureNotice
@@ -49,6 +50,9 @@ object AdbPrivilegedApiHelper {
      * helper failure.
      */
     suspend fun startWithAdb(context: Context, manualRepair: Boolean = false): Result<Unit> = lock.withLock {
+        if (AdbLifecycle.quitting) {
+            return@withLock Result.failure(IllegalStateException("VRec is shutting down."))
+        }
         val app = context.applicationContext
         val connection = ExperimentalRecording.status.value
         if (!connection.connected || connection.shellUid != 2000 ||

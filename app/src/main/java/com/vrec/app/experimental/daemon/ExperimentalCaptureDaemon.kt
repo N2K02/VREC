@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import com.vrec.app.Prefs
 import android.media.MediaMuxer
 import android.util.Log
+import androidx.annotation.RequiresApi
 import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.recording.CallDirection
@@ -26,6 +27,7 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.DataInputStream
 import java.io.IOException
+import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
@@ -176,8 +178,8 @@ object ExperimentalCaptureDaemon {
      * any broad storage permission. Remove it immediately after shell copying.
      * No keys, pairing codes or call data are included in this static JAR.
      */
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun stageViaDownloads(context: Context): ShellStagedJar {
-        check(Build.VERSION.SDK_INT >= 29) { "MediaStore Downloads needs Android 10+" }
         val name = "vrec-shell-" + java.util.UUID.randomUUID().toString() + ".jar"
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -299,7 +301,8 @@ object ExperimentalCaptureDaemon {
             val appStage = runCatching { stage(context) }.getOrNull()
             val directReadable = appStage != null && shellCanRead(appStage)
             val stagingRoute = ShellJarStagingPolicy.choose(directReadable, Build.VERSION.SDK_INT)
-            val sharedStage = if (stagingRoute == ShellJarStagingPolicy.Route.MEDIASTORE_DOWNLOADS)
+            val sharedStage = if (stagingRoute == ShellJarStagingPolicy.Route.MEDIASTORE_DOWNLOADS &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                 stageViaDownloads(context) else null
             val staged = when (stagingRoute) {
                 ShellJarStagingPolicy.Route.APP_EXTERNAL -> appStage
@@ -385,14 +388,17 @@ object ExperimentalCaptureDaemon {
             val mode = requestedMode(context, enabled)
             val allowed = mode != 0
             val waitForAnswer = mode == 1 && requireOutgoingAnswer(context)
-            val modeReply = runCatching {
+            val modeResponse = runCatching {
                 open(context, 'E', byteArrayOf(
                     mode.toByte(),
                     if (waitForAnswer) 1 else 0,
                 )).use {
                     it.getInputStream().bufferedReader().readLine()?.trim()
                 }
-            }.getOrNull()
+            }
+            val modeFailure = modeResponse.exceptionOrNull()
+            if (modeFailure is CancellationException) throw modeFailure
+            val modeReply = modeResponse.getOrNull()
             // Preserve the proven two-way VOICE_CALL source on every start and reconnect.
             val selectedWireValue = SIM_VOICE_CALL_SOURCE
             var sourceTransportError: String? = null
@@ -437,10 +443,12 @@ object ExperimentalCaptureDaemon {
             }
             ready.value = verified
             if (!verified) {
-                val detail = verdict.detail +
+                val detail = if (modeFailure != null) {
+                    "Recording mode update failed: " + RecordingWatchHealth.unavailableDetail(modeFailure)
+                } else verdict.detail +
                     (sourceTransportError?.let { " (SIM command transport: $it)" } ?: "")
                 message.value = detail +
-                    ". The helper remains available for a safe retry; check diagnostics."
+                    ". Check System Status on Home."
                 com.vrec.app.Log.w("Shell capture setup: " + detail)
             } else if (verdict.source == CaptureSetupProtocol.Source.DEFERRED_DURING_CALL) {
                 message.value = verdict.detail
@@ -489,6 +497,21 @@ object ExperimentalCaptureDaemon {
     suspend fun captureSnapshot(context: Context): CaptureSnapshot =
         parseCaptureSnapshot(captureControl(context, 'I'))
 
+    internal enum class HelperPresence { RUNNING, ABSENT, UNKNOWN }
+
+    internal suspend fun helperPresence(context: Context): HelperPresence = withContext(Dispatchers.IO) {
+        val reply = runCatching {
+            open(context, 'P').use { it.getInputStream().bufferedReader().readLine()?.trim() }
+        }
+        val failure = reply.exceptionOrNull()
+        if (failure is CancellationException) throw failure
+        when {
+            failure is ConnectException -> HelperPresence.ABSENT
+            reply.getOrNull()?.startsWith("PONG 2") == true -> HelperPresence.RUNNING
+            else -> HelperPresence.UNKNOWN
+        }
+    }
+
     enum class QuitResult { STOPPED, BUSY, NOT_RUNNING, FAILED }
 
     /**
@@ -497,7 +520,11 @@ object ExperimentalCaptureDaemon {
      * needs a verified ADB session.
      */
     suspend fun quit(context: Context): QuitResult = withContext(Dispatchers.IO) {
-        if (!probe(context)) return@withContext QuitResult.NOT_RUNNING
+        when (helperPresence(context)) {
+            HelperPresence.ABSENT -> return@withContext QuitResult.NOT_RUNNING
+            HelperPresence.UNKNOWN -> return@withContext QuitResult.FAILED
+            HelperPresence.RUNNING -> Unit
+        }
         val reply = runCatching {
             open(context, 'Q').use { it.getInputStream().bufferedReader().readLine()?.trim() }
         }.getOrNull()
@@ -505,7 +532,12 @@ object ExperimentalCaptureDaemon {
             "BUSY" -> QuitResult.BUSY
             "BYE" -> {
                 var gone = false
-                repeat(10) { if (!gone) { delay(200); gone = !probe(context) } }
+                repeat(10) {
+                    if (!gone) {
+                        delay(200)
+                        gone = helperPresence(context) == HelperPresence.ABSENT
+                    }
+                }
                 if (gone) {
                     message.value = "Recording helper stopped."
                     QuitResult.STOPPED
@@ -576,16 +608,22 @@ object ExperimentalCaptureDaemon {
 
     /** An authenticated, read-only recorder health inspection. Never disrupt an ongoing call. */
     suspend fun watchHealth(context: Context, auditCallHistory: Boolean = true): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val snapshot = runCatching {
+        val report = runCatching {
             open(context, 'W').use { socket ->
-                RecordingWatchHealth.parse(
-                    socket.getInputStream().bufferedReader().readLine().orEmpty()
-                )
+                socket.getInputStream().bufferedReader().readLine().orEmpty()
             }
-        }.getOrNull()
+        }
+        val failure = report.exceptionOrNull()
+        if (failure is CancellationException) throw failure
+        val snapshot = report.getOrNull()?.let(RecordingWatchHealth::parse)
+        if (snapshot == null) {
+            val detail = RecordingWatchHealth.unavailableDetail(failure)
+            if (auditCallHistory) com.vrec.app.Log.w("Call watcher: $detail", failure)
+            return@withContext false to "$detail; call log coverage not checked"
+        }
         val mode = requestedMode(context, Prefs.recordingEnabled(context))
         val watcherHealthy = RecordingWatchHealth.healthy(snapshot, mode)
-        val missed = if (auditCallHistory && snapshot != null && watcherHealthy && !snapshot.inCall) {
+        val missed = if (auditCallHistory && watcherHealthy && !snapshot.inCall) {
             val starts = com.vrec.app.calls.MissedCallWatchAudit.recentCellularCalls(
                 context, snapshot.startedAt
             )

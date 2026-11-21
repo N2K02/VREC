@@ -49,6 +49,11 @@ object AdbLifecycle {
     /** Serialize all ADB transport changes, including foreground and wireless setup. */
     suspend fun <T> coordinateSetup(block: suspend () -> T): T = transportMutex.withLock { block() }
 
+    /** Block new helper startup once the shutdown preflight succeeds. */
+    suspend fun prepareQuit(stopHelper: suspend () -> Boolean): Boolean = transportMutex.withLock {
+        stopHelper().also { if (it) quitting = true }
+    }
+
     /** Idempotent. Called at process start and when VRec is opened after Quit. */
     @Synchronized fun startBackground(context: Context) {
         val app = context.applicationContext
