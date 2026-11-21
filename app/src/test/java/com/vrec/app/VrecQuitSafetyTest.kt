@@ -1,5 +1,6 @@
 package com.vrec.app
 
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.HelperPresence
 import com.vrec.app.recording.RecordingService
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -8,10 +9,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VrecQuitSafetyTest {
-    @Test fun unreachablePreviouslyAuthorizedHelperCannotBeTreatedAsIdle() {
-        org.junit.Assert.assertFalse(VrecQuitSafety.canQuitWithoutHelper(true, false))
-        org.junit.Assert.assertFalse(VrecQuitSafety.canQuitWithoutHelper(false, true))
-        org.junit.Assert.assertTrue(VrecQuitSafety.canQuitWithoutHelper(false, false))
+    @Test fun onlyAnAbsentHelperAllowsQuitWithoutAnAcknowledgement() {
+        assertFalse(VrecQuitSafety.canQuitWithoutHelper(HelperPresence.UNKNOWN))
+        assertFalse(VrecQuitSafety.canQuitWithoutHelper(HelperPresence.RUNNING))
+        assertTrue(VrecQuitSafety.canQuitWithoutHelper(HelperPresence.ABSENT))
     }
 
     @Test fun activeRecordingAndShellAreNeverEligibleForQuit() {

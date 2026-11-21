@@ -1,5 +1,7 @@
 package com.vrec.app.experimental.daemon
 
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -26,5 +28,10 @@ class RecordingWatchHealthTest {
     }
     @Test fun activeCallWithRecordingIsNotFlagged() {
         assertTrue(RecordingWatchHealth.healthy(RecordingWatchHealth.parse(valid.replace("call=0", "call=1").replace("recording=0", "recording=95")), 1))
+    }
+    @Test fun transportFailureAndInvalidReportsHaveDistinctMessages() {
+        assertTrue(RecordingWatchHealth.unavailableDetail(ConnectException()).contains("stopped"))
+        assertTrue(RecordingWatchHealth.unavailableDetail(SocketTimeoutException()).contains("did not respond"))
+        assertTrue(RecordingWatchHealth.unavailableDetail(null).contains("no compatible watch report"))
     }
 }

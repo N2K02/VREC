@@ -75,7 +75,7 @@ internal object CaptureSetupProtocol {
             return Verdict(
                 ready = false, source = Source.UNCONFIRMED,
                 incompatible = !modeReply.isNullOrBlank(),
-                detail = if (modeReply.isNullOrBlank()) "Recording mode acknowledgement timed out"
+                detail = if (modeReply.isNullOrBlank()) "Recording mode acknowledgement missing"
                     else "Recording mode acknowledgement was incompatible",
             )
         }

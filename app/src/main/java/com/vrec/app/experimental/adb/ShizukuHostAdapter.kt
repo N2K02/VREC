@@ -1,11 +1,14 @@
 package com.vrec.app.experimental.adb
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Process
 import com.vrec.app.shizuku.ShizukuSession
 import com.vrec.app.shizuku.ShizukuSessionRegistry
 import com.vrec.app.shizuku.ShizukuHostHooks
 import com.vrec.app.shizuku.ShizukuOption
 import com.vrec.app.shizuku.ShizukuPreferences
+import rikka.shizuku.Shizuku
 
 /**
  * Migration adapter. Preserves VRec's authorization files and boot-scoped choices.
@@ -23,6 +26,11 @@ internal object ShizukuHostAdapter {
     }
 
     fun current(): ShizukuSession? = active
+
+    fun hasShellAccess(): Boolean = runCatching {
+        Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED &&
+            Shizuku.getUid() == Process.SHELL_UID
+    }.getOrDefault(false)
 
     suspend fun shutdown() {
         val old = synchronized(this) { active.also { active = null } }

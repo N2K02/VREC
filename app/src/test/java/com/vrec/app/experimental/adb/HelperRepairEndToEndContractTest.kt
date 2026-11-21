@@ -23,9 +23,22 @@ class HelperRepairEndToEndContractTest {
         assertTrue(permissions.contains("AdbForegroundSetup.begin(context)"))
         assertTrue(start.contains("starting.compareAndSet(false, true)"))
         assertTrue(start.contains("AdbLifecycle.coordinateSetup {"))
-        assertTrue(start.contains("LocalAdbMiddleware.setup(app, userInitiated = true)"))
+        val shizuku = code("app/src/main/java/com/vrec/app/ui/ShizukuSettingsPage.kt")
+        assertTrue(shizuku.contains("AdbForegroundSetup.begin(context)"))
+        assertTrue(start.contains("ExperimentalRecording.connectShizuku(app, automatic = false)"))
         assertTrue(lifecycle.contains("AdbForegroundSetup.shutdown()"))
         assertFalse(home.contains("LocalAdbMiddleware.setup(context, userInitiated = false)"))
+    }
+
+    @Test fun shizukuStartsTheHelperAfterLiveShellVerification() {
+        val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        val shizuku = link.substringAfter("internal suspend fun connectShizuku(")
+            .substringBefore("suspend fun connect(context")
+        val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        assertTrue(shizuku.indexOf("session.retry(auto = automatic)") in
+            0 until shizuku.indexOf("startHelperTyped(app, manualRepair = !automatic)"))
+        assertTrue(recovery.contains("ExperimentalRecording.connectShizuku(app, automatic = true)"))
+        assertFalse(shizuku.contains("tcpPresent()"))
     }
 
     @Test fun manualRepairFlagReachesExistingHelperConfigurationAndGuardedRestart() {
