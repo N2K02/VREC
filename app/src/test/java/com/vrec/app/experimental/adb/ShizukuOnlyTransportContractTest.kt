@@ -2,6 +2,7 @@ package com.vrec.app.experimental.adb
 
 import java.io.File
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -39,5 +40,13 @@ class ShizukuOnlyTransportContractTest {
                 assertFalse("${file.path} imports the removed shared ADB core",
                     contents.contains("dev.n2k02.adb.core"))
             }
+    }
+    @Test fun userServiceProvidesRequiredProcessNameBeforeBinding() {
+        val bridge = File(root(), "app/src/main/java/com/vrec/app/shizuku/ShizukuSession.kt").readText()
+        val args = bridge.substringAfter("private val args = Shizuku.UserServiceArgs(")
+            .substringBefore("private val lock")
+        assertTrue(args.contains(".processNameSuffix(\"recorder_shell\")"))
+        assertTrue(args.contains(".daemon(false)"))
+        assertTrue(bridge.contains("Shizuku.bindUserService(args, connection)"))
     }
 }

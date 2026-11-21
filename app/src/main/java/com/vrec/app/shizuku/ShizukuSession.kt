@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.Parcel
 import android.os.Process
+import com.vrec.app.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +70,7 @@ private class ShizukuBridge(context: Context) {
     private val app = context.applicationContext
     private val args = Shizuku.UserServiceArgs(
         ComponentName(app, ShizukuShellService::class.java)
-    ).daemon(false)
+    ).processNameSuffix("recorder_shell").daemon(false)
     private val lock = Mutex()
     @Volatile private var binder: IBinder? = null
     @Volatile private var pending: CompletableDeferred<IBinder>? = null
@@ -88,28 +90,40 @@ private class ShizukuBridge(context: Context) {
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     }.getOrDefault(false)
 
-    suspend fun connect(): Boolean = lock.withLock {
-        if (!authorized()) return@withLock false
-        if (binder?.isBinderAlive != true) {
-            val deferred = CompletableDeferred<IBinder>()
-            pending = deferred
-            try {
-                Shizuku.bindUserService(args, connection)
+    suspend fun connect(): Result<Unit> = lock.withLock {
+        if (!authorized()) {
+            return@withLock Result.failure(
+                IllegalStateException("Start LocalADB Shizuku and grant VRec shell access.")
+            )
+        }
+        try {
+            if (binder?.isBinderAlive != true) {
+                val deferred = CompletableDeferred<IBinder>()
+                pending = deferred
+                try {
+                    Shizuku.bindUserService(args, connection)
+                } catch (failure: Exception) {
+                    throw IllegalStateException("Shizuku could not bind VRec’s shell service.", failure)
+                }
                 bound = true
                 val received = withTimeoutOrNull(12_000L) { deferred.await() }
-                if (received == null || !received.isBinderAlive) {
-                    disconnectLocked()
-                    return@withLock false
+                check(received?.isBinderAlive == true) {
+                    "Shizuku did not deliver a live shell service. Check LocalADB and retry."
                 }
-            } catch (_: Exception) {
-                disconnectLocked()
-                return@withLock false
-            } finally {
-                pending = null
             }
+            check(execute("id -u", 3_000L).trim() == "2000") {
+                "Shizuku did not verify VRec’s shell service as UID 2000."
+            }
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            disconnectLocked()
+            throw cancelled
+        } catch (failure: Exception) {
+            disconnectLocked()
+            Result.failure(failure)
+        } finally {
+            pending = null
         }
-        runCatching { execute("id -u", 3_000L).trim() == "2000" }
-            .getOrDefault(false).also { if (!it) disconnectLocked() }
     }
 
     suspend fun execute(command: String, timeoutMs: Long): String {
@@ -192,9 +206,11 @@ class ShizukuSession(
         _state.value = _state.value.copy(phase = ShizukuPhase.CONNECTING,
             message = "Connecting to LocalADB Shizuku…", verifiedUid = null,
             transport = ShizukuTransportMode.NONE)
-        if (!bridge.connect()) {
-            _state.value = _state.value.copy(phase = ShizukuPhase.NEEDS_SETUP,
-                message = "Start LocalADB Shizuku and grant this app access")
+        val failure = bridge.connect().exceptionOrNull()
+        if (failure != null) {
+            val detail = failure.message ?: "Shizuku shell verification failed."
+            _state.value = _state.value.copy(phase = ShizukuPhase.NEEDS_SETUP, message = detail)
+            Log.w("VRec Shizuku setup: $detail", failure.cause ?: failure)
             return@withLock false
         }
         val now = System.currentTimeMillis()

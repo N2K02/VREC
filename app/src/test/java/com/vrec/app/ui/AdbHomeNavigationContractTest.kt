@@ -51,7 +51,8 @@ class AdbHomeNavigationContractTest {
 
     @Test fun monitoringCannotReopenManualRetryPrompt() {
         val monitor = read("app/src/main/java/com/vrec/app/calls/CallMonitor.kt")
-        assertTrue(monitor.contains("LocalAdbMiddleware.setup(appContext)"))
+        assertTrue(monitor.contains("AdbLifecycle.requestRecovery(appContext, \"Recording enabled\")"))
+        assertFalse(monitor.contains("LocalAdbMiddleware.setup(appContext)"))
         val middleware = read("app/src/main/java/com/vrec/app/experimental/adb/LocalAdbMiddleware.kt")
         assertTrue(middleware.contains("userInitiated: Boolean = false"))
         assertTrue(middleware.contains("ExperimentalRecording.awaitingManualRetry"))
