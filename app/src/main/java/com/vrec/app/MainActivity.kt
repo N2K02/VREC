@@ -147,7 +147,11 @@ class MainActivity : ComponentActivity() {
         com.vrec.app.experimental.adb.AdbLifecycle.startBackground(applicationContext)
         setContent {
             VrecTheme {
-                App(openAdbSetup = openAdbSetup, onAdbSetupHandled = { openAdbSetup = false })
+                App(
+                    openAdbSetup = openAdbSetup,
+                    onAdbSetupHandled = { openAdbSetup = false },
+                    onQuit = { finishAndRemoveTask() },
+                )
             }
         }
     }
@@ -167,7 +171,11 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
+private fun App(
+    openAdbSetup: Boolean,
+    onAdbSetupHandled: () -> Unit,
+    onQuit: () -> Unit,
+) {
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     // Keep Settings subsection state at the navigation level, so both system
     // Back and the app-bar arrow can return to the Settings overview.
@@ -285,28 +293,33 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                 quitScope.launch {
                                     val app = quitContext.applicationContext
                                     try {
-                                        // A failed probe is unknown, not evidence of a stopped recorder.
-                                        val helperConnected = ExperimentalCaptureDaemon.probe(app)
-                                        val stopped = if (!helperConnected) {
-                                            VrecQuitSafety.canQuitWithoutHelper(
-                                                com.vrec.app.experimental.adb.ExperimentalRecording
-                                                    .recoveryAuthorization(app).allowed,
-                                                ExperimentalCaptureDaemon.ready.value)
-                                        } else {
+                                        val stopped = com.vrec.app.experimental.adb.AdbLifecycle.prepareQuit {
+                                            val presence = ExperimentalCaptureDaemon.helperPresence(app)
+                                            if (VrecQuitSafety.canQuitWithoutHelper(presence)) {
+                                                return@prepareQuit true
+                                            }
+                                            if (presence != ExperimentalCaptureDaemon.HelperPresence.RUNNING) {
+                                                return@prepareQuit false
+                                            }
                                             val previous = Prefs.recordingEnabled(app)
                                             Prefs.setRecordingEnabled(app, false)
-                                            val confirmed = VrecQuitSafety.sequence(
-                                                stopCapture = { ExperimentalCaptureDaemon.setMode(app, false) },
-                                                importCompleted = { ExperimentalCaptureDaemon.collect(app).isSuccess },
-                                                quitHelper = {
-                                                    ExperimentalCaptureDaemon.quit(app) ==
-                                                        ExperimentalCaptureDaemon.QuitResult.STOPPED
-                                                },
-                                            )
-                                            if (!confirmed) Prefs.setRecordingEnabled(app, previous)
-                                            confirmed
+                                            var confirmed = false
+                                            try {
+                                                confirmed = VrecQuitSafety.sequence(
+                                                    stopCapture = { ExperimentalCaptureDaemon.setMode(app, false) },
+                                                    importCompleted = { ExperimentalCaptureDaemon.collect(app).isSuccess },
+                                                    quitHelper = {
+                                                        ExperimentalCaptureDaemon.quit(app) ==
+                                                            ExperimentalCaptureDaemon.QuitResult.STOPPED
+                                                    },
+                                                )
+                                                confirmed
+                                            } finally {
+                                                if (!confirmed) Prefs.setRecordingEnabled(app, previous)
+                                            }
                                         }
                                         if (!stopped) {
+                                            Log.w("Quit deferred: could not confirm recorder shutdown")
                                             RecordingFailureNotice.warn(app,
                                                 "Safe shutdown was not confirmed. VRec remains open so recordings can be recovered.")
                                             return@launch
@@ -317,7 +330,7 @@ private fun App(openAdbSetup: Boolean, onAdbSetupHandled: () -> Unit) {
                                         LiveUpdater.controller.cancel()
                                         RecordingFailureNotice.dismiss(app)
                                         com.vrec.app.experimental.adb.AdbLifecycle.quit(app)
-                                        (quitContext as? ComponentActivity)?.finishAndRemoveTask()
+                                        onQuit()
                                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                         throw cancelled
                                     } catch (error: Exception) {

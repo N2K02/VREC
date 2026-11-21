@@ -136,8 +136,10 @@
         <!-- Android 12+ opt-in, non-UI observer; does not replace the user's dialer. -->
         <service
             android:name=".calls.VrecInCallService"
+            android:enabled="@bool/vrec_incall_service_enabled"
             android:exported="true"
-            android:permission="android.permission.BIND_INCALL_SERVICE">
+            android:permission="android.permission.BIND_INCALL_SERVICE"
+            tools:targetApi="s">
             <intent-filter>
                 <action android:name="android.telecom.InCallService" />
             </intent-filter>

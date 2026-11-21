@@ -1,5 +1,8 @@
 package com.vrec.app.experimental.daemon
 
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+
 /** Fail closed on malformed or stale daemon health data. No recording is started by this check. */
 internal object RecordingWatchHealth {
     data class Snapshot(
@@ -40,6 +43,13 @@ internal object RecordingWatchHealth {
             lastOffHookAt = number("lastoffhook") ?: return null,
         )
     }
+    fun unavailableDetail(failure: Throwable?): String = when (failure) {
+        is ConnectException -> "Recording helper is stopped. Tap Start under System Status on Home"
+        is SocketTimeoutException -> "Recording helper did not respond. Check System Status on Home"
+        null -> "Recording helper returned no compatible watch report. Check System Status on Home"
+        else -> "Recording helper connection failed (${failure.javaClass.simpleName}). Check System Status on Home"
+    }
+
     fun verdict(snapshot: Snapshot?, expectedMode: Int): String = when {
         snapshot == null -> "Recorder watch report unavailable or incompatible"
         !snapshot.watching -> "Recorder is running but not listening for calls"
