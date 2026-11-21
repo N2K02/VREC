@@ -247,27 +247,27 @@ object AppUpdater {
             if (connection.responseCode != 200) throw IOException("Releases HTTP ${connection.responseCode}")
             val releases = org.json.JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
             val tagPattern = if (experimental)
-                Regex("^experimental-${RELEASE_TRACK}-pr-[0-9]+-run-[0-9]+$", RegexOption.IGNORE_CASE)
+                Regex("^experimental-${RELEASE_TRACK}-pr-[0-9]+-run-[0-9]+$")
             else
-                Regex("^${RELEASE_TRACK}-v[0-9]+[.][0-9]+$", RegexOption.IGNORE_CASE)
-            val assetPattern = Regex("^VREC-${RELEASE_TRACK}-.+[.]apk$", RegexOption.IGNORE_CASE)
+                Regex("^${RELEASE_TRACK}-v([0-9]+[.][0-9]+)$")
             (0 until releases.length()).mapNotNull { index ->
                 val entry = releases.optJSONObject(index) ?: return@mapNotNull null
-                if (entry.optBoolean("draft") || entry.optBoolean("prerelease") != experimental) return@mapNotNull null
+                if (entry.opt("draft") != false || entry.opt("prerelease") != experimental) return@mapNotNull null
                 val tag = entry.optString("tag_name")
-                if (!tagPattern.matches(tag)) return@mapNotNull null
+                val tagMatch = tagPattern.matchEntire(tag) ?: return@mapNotNull null
+                val stableVersion = if (experimental) null else tagMatch.groupValues[1]
                 val body = entry.optString("body")
-                val code = Regex("(?im)^\\s*Version code:\\s*(\\d+)\\s*$")
-                    .find(body)?.groupValues?.get(1)?.toLongOrNull() ?: return@mapNotNull null
+                val code = TrackedUpdatePolicy.versionCode(body) ?: return@mapNotNull null
                 if (code <= installedVersionCode) return@mapNotNull null
                 val assets = entry.optJSONArray("assets") ?: return@mapNotNull null
                 val asset = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
-                    .firstOrNull { item ->
-                        assetPattern.matches(item.optString("name")) &&
-                            item.optString("browser_download_url").startsWith("https://github.com/$repo/releases/download/")
+                    .singleOrNull { item ->
+                        TrackedUpdatePolicy.matchesAsset(
+                            repo, tag, RELEASE_TRACK, stableVersion,
+                            item.optString("name"), item.optString("browser_download_url"),
+                        )
                     } ?: return@mapNotNull null
-                val digest = asset.optString("digest").removePrefix("sha256:").lowercase()
-                    .takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+                val digest = TrackedUpdatePolicy.digest(asset.optString("digest")) ?: return@mapNotNull null
                 Release(tag, entry.optString("name").ifBlank { tag }, code,
                     whatsNew(body), asset.optString("browser_download_url"), asset.optString("name"),
                     asset.optLong("size"), digest, entry.optString("html_url"))
@@ -460,15 +460,16 @@ object AppUpdater {
     /** Null if the APK is good to install, else what's wrong (in plain words). */
     private suspend fun verify(file: File, release: Release): String? = withContext(Dispatchers.IO) {
         if (release.apkSize > 0 && file.length() != release.apkSize) return@withContext "The download was incomplete. Please try again."
-        release.sha256?.let { expected ->
-            if (sha256(file) != expected) return@withContext "The download is damaged (checksum mismatch). Please try again."
-        }
+        val expected = release.sha256 ?: return@withContext "The update is missing its checksum."
+        if (sha256(file) != expected) return@withContext "The download is damaged (checksum mismatch). Please try again."
         val apk = archiveInfo(file) ?: return@withContext "The downloaded file isn't a valid app."
         if (apk.packageName != app.packageName) return@withContext "The downloaded file is a different app."
-        if (versionCodeOf(apk) <= installedVersionCode) return@withContext "The downloaded version isn't newer than this one."
-        val mine = signerDigests(packageInfo(app.packageName, signatures = true))
-        val theirs = signerDigests(apk)
-        if (mine.isNotEmpty() && theirs.isNotEmpty() && mine.intersect(theirs).isEmpty()) {
+        val code = versionCodeOf(apk)
+        if (code <= installedVersionCode) return@withContext "The downloaded version isn't newer than this one."
+        if (code != release.versionCode) return@withContext "The APK version does not match the release."
+        val mine = signingIdentity(packageInfo(app.packageName, signatures = true))
+        val theirs = signingIdentity(apk)
+        if (!TrackedUpdatePolicy.acceptsSigningUpdate(mine.current, theirs.current, theirs.history)) {
             return@withContext "This update is signed with a different key, so Android can't install it over the current app."
         }
         null
@@ -537,15 +538,16 @@ object AppUpdater {
         }
     }
 
+    private data class SigningIdentity(val current: List<String>, val history: List<String> = emptyList())
+
     @Suppress("DEPRECATION")
-    private fun signerDigests(info: PackageInfo): Set<String> {
-        val sigs = if (Build.VERSION.SDK_INT >= 28) {
-            val s = info.signingInfo ?: return emptySet()
-            if (s.hasMultipleSigners()) s.apkContentsSigners else s.signingCertificateHistory
+    private fun signingIdentity(info: PackageInfo): SigningIdentity =
+        if (Build.VERSION.SDK_INT >= 28) {
+            SigningIdentity(
+                info.signingInfo?.apkContentsSigners?.map { it.toCharsString() }.orEmpty(),
+                info.signingInfo?.signingCertificateHistory?.map { it.toCharsString() }.orEmpty(),
+            )
         } else {
-            info.signatures
-        } ?: return emptySet()
-        val md = MessageDigest.getInstance("SHA-256")
-        return sigs.map { sig -> md.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) } }.toSet()
-    }
+            SigningIdentity(info.signatures?.map { it.toCharsString() }.orEmpty())
+        }
 }

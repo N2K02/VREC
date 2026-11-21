@@ -28,6 +28,7 @@ class TcpAutomaticRepairIsolationTest {
         val wireless = source("app/src/main/java/com/vrec/app/experimental/adb/LocalWirelessAdb.kt")
         val promote = wireless.substringAfter("fun promoteVerifiedShellToTcp(")
             .substringBefore("fun openSettings(context: Context)")
+        assertTrue(promote.contains("ShizukuHostAdapter.current()?.state?.value?.connected == true"))
         assertTrue(promote.contains("retry(auto = true)"))
         assertTrue(promote.contains("CallMonitor.hasLiveCall()"))
         assertFalse(promote.contains("retry(auto = false)"))

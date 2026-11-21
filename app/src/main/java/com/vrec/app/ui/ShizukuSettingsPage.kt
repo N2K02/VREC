@@ -14,6 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.vrec.app.experimental.adb.AdbForegroundSetup
+import com.vrec.app.experimental.adb.ExperimentalRecording
+import com.vrec.app.experimental.adb.LocalAdbMiddleware
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import rikka.shizuku.Shizuku
 
 /** Identical Shizuku connection screen in N2K02 apps; no cached grant is trusted. */
@@ -46,6 +50,11 @@ fun ShizukuSettingsPage(modifier: Modifier = Modifier) {
     val allowed = state.second
     val uid = state.third
     val ready = connected && allowed && uid == Process.SHELL_UID
+    val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val helperSetupBusy by AdbForegroundSetup.busy.collectAsState()
+    val helperStatus by ExperimentalRecording.status.collectAsState()
+    val setupFailed by LocalAdbMiddleware.lastSetupFailed.collectAsState()
+    val setupMessage by LocalAdbMiddleware.message.collectAsState()
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Card(
             shape = RoundedCornerShape(28.dp),
@@ -106,9 +115,19 @@ fun ShizukuSettingsPage(modifier: Modifier = Modifier) {
                 OutlinedButton(onClick = { revision++ }, modifier = Modifier.fillMaxWidth()) {
                     Text("Refresh connection status")
                 }
-                Text("Access is granted separately to each app. Status does not guarantee a privileged feature is running.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Recording helper", style = MaterialTheme.typography.titleMedium)
+                StatusBadge(if (recorderReady) "READY" else "INACTIVE", recorderReady)
+                if (setupFailed || helperStatus.activeTransport == "Shizuku" || helperSetupBusy) {
+                    Text(if (setupFailed) setupMessage else helperStatus.message,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (ready) {
+                    FilledTonalButton(
+                        onClick = { AdbForegroundSetup.begin(context) },
+                        enabled = !helperSetupBusy && !helperStatus.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (recorderReady) "Repair recording helper" else "Start recording helper") }
+                }
             }
         }
     }

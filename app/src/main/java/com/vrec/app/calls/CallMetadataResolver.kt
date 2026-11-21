@@ -81,42 +81,47 @@ object CallMetadataResolver {
 
     fun fromNotification(context: Context, notification: Notification, thirdParty: Boolean = false): CallerMetadata? {
         val extras = notification.extras ?: return null
-        val person: Person? = runCatching {
-            if (Build.VERSION.SDK_INT >= 33)
-                extras.getParcelable(Notification.EXTRA_CALL_PERSON, Person::class.java)
-            else {
-                @Suppress("DEPRECATION")
-                extras.getParcelable< Person >(Notification.EXTRA_CALL_PERSON)
-            }
-        }.getOrNull()
+        val personDetails = if (Build.VERSION.SDK_INT >= 28) {
+            runCatching {
+                val person = if (Build.VERSION.SDK_INT >= 33) {
+                    extras.getParcelable(Notification.EXTRA_CALL_PERSON, Person::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    extras.getParcelable<Person>(Notification.EXTRA_CALL_PERSON)
+                }
+                person?.name?.toString() to person?.uri
+            }.getOrNull()
+        } else null
+        val personName = personDetails?.first
+        val personUri = personDetails?.second
         val compat = extras.getBundle("android.callPersonCompat")
-        val uriNumber = person?.uri?.takeIf { it.startsWith("tel:", true) }
-            ?.substring(4)
+        val uriNumber = personUri?.takeIf { it.startsWith("tel:", true) }?.substring(4)
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
             ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
         val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
-        val people = runCatching {
-            if (Build.VERSION.SDK_INT >= 28) {
-                if (Build.VERSION.SDK_INT >= 33)
+        val people = if (Build.VERSION.SDK_INT >= 28) {
+            runCatching {
+                val persons = if (Build.VERSION.SDK_INT >= 33) {
                     extras.getParcelableArrayList(Notification.EXTRA_PEOPLE_LIST, Person::class.java)
-                else {
+                } else {
                     @Suppress("DEPRECATION")
                     extras.getParcelableArrayList<Person>(Notification.EXTRA_PEOPLE_LIST)
                 }
-            } else null
-        }.getOrNull().orEmpty()
-        val names = listOf(person?.name?.toString(), compat?.getCharSequence("name")?.toString()) +
-            people.map { it.name?.toString() } + listOf(title, text, bigText)
-        val numbers = listOf(uriNumber, person?.name?.toString(),
+                persons.orEmpty().map { it.name?.toString() to it.uri }
+            }.getOrNull().orEmpty()
+        } else emptyList()
+        val names = listOf(personName, compat?.getCharSequence("name")?.toString()) +
+            people.map { it.first } + listOf(title, text, bigText)
+        val numbers = listOf(uriNumber, personName,
             compat?.getString("uri")?.takeIf { it.startsWith("tel:", true) },
             compat?.getCharSequence("name")?.toString()) +
-            people.flatMap { listOf(it.uri?.removePrefix("tel:"), it.name?.toString()) } +
+            people.flatMap { (name, uri) -> listOf(uri?.removePrefix("tel:"), name) } +
             listOf(title, text, bigText)
         val directNumbers = VoipIdentityPolicy.numbers(numbers.filterNotNull())
         val number = if (thirdParty) directNumbers.singleOrNull() else directNumbers.firstOrNull()
-        val appNames = listOf(title, person?.name?.toString(), compat?.getCharSequence("name")?.toString()) +
-            people.map { it.name?.toString() }
+        val appNames = listOf(title, personName, compat?.getCharSequence("name")?.toString()) +
+            people.map { it.first }
         val name = (if (thirdParty) appNames.firstNotNullOfOrNull(::cleanAppName)
             else names.firstNotNullOfOrNull(::cleanName))
             ?: if (number == null && names.any(::privateCallerLabel)) "Private number" else null

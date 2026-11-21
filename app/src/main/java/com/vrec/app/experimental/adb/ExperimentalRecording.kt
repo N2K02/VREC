@@ -135,6 +135,33 @@ object ExperimentalRecording {
                 ?: IllegalStateException("Android did not confirm advanced detection permission."))
     }
 
+    /** Verify the authorized Shizuku session before bootstrapping the detached recorder. */
+    internal suspend fun connectShizuku(context: Context, automatic: Boolean): Result<Unit> {
+        val app = context.applicationContext
+        if (AdbLifecycle.quitting || status.value.busy) {
+            return Result.failure(IllegalStateException("Recorder setup is unavailable right now."))
+        }
+        status.value = Status(busy = true, message = "Verifying Shizuku access…")
+        try {
+            val session = ShizukuHostAdapter.core(app)
+            if (!session.state.value.connected && !session.retry(auto = automatic)) {
+                val message = session.state.value.message
+                status.value = Status(message = message)
+                return Result.failure(IllegalStateException(message))
+            }
+            status.value = Status(busy = true, connected = true, shellUid = 2000,
+                activeTransport = "Shizuku", message = "Starting recording helper…")
+            val result = startHelperTyped(app, manualRepair = !automatic)
+            status.value = status.value.copy(message = result.fold(
+                onSuccess = { "Recording helper ready." },
+                onFailure = { it.message ?: "Recording helper could not start." },
+            ))
+            return result
+        } finally {
+            status.value = status.value.copy(busy = false)
+        }
+    }
+
     /** Connect only to USB-bootstrapped localhost TCP/5555, never external hosts. */
     suspend fun connect(context: Context, automatic: Boolean = false): Result<Int> {
         if (automatic && awaitingManualRetry)

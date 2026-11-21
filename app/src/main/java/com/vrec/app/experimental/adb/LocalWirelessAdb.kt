@@ -113,7 +113,8 @@ object LocalWirelessAdb {
     }
 
     fun promoteVerifiedShellToTcp(context: Context) {
-        if (AdbLifecycle.quitting ||
+        if (ShizukuHostAdapter.current()?.state?.value?.connected == true ||
+            AdbLifecycle.quitting ||
             com.vrec.app.calls.CallMonitor.hasLiveCall() ||
             com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value) return
         scope.launch { ShizukuHostAdapter.core(context).retry(auto = true) }

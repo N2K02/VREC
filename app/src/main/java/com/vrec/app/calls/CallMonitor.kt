@@ -13,7 +13,7 @@ import android.telecom.Call
 import android.telecom.TelecomManager
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.adb.ExperimentalRecording
-import com.vrec.app.experimental.adb.LocalAdbMiddleware
+import com.vrec.app.experimental.adb.AdbLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -946,14 +946,6 @@ object CallMonitor {
             // Read the CURRENT preference inside the serialized section; an
             // older Off coroutine cannot disable a newer On choice afterwards.
             masterModeMutex.withLock {
-                // The global Recording switch also attempts VRec's built-in local
-                // ADB setup when Enhanced ADB was chosen. No external Termux.
-                // If Android has never authorized adbd, explain the necessary
-                // system step; never treat the app UID as shell UID 2000.
-                if (Prefs.recordingEnabled(appContext) &&
-                    true) {
-                    LocalAdbMiddleware.setup(appContext)
-                }
                 var applied = false
                 repeat(3) { attempt ->
                     if (!applied) {
@@ -961,6 +953,9 @@ object CallMonitor {
                             Prefs.recordingEnabled(appContext))
                         if (!applied && attempt < 2) delay(400L)
                     }
+                }
+                if (!applied && Prefs.recordingEnabled(appContext)) {
+                    AdbLifecycle.requestRecovery(appContext, "Recording enabled")
                 }
                 if (!applied && ExperimentalCaptureDaemon.ready.value) {
                     ExperimentalCaptureDaemon.message.value =

@@ -14,6 +14,7 @@ import com.vrec.app.experimental.adb.AdbSelfRecovery.RestoreOutcome
 import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.adb.LocalWirelessAdb
+import com.vrec.app.experimental.adb.ShizukuHostAdapter
 import com.vrec.app.experimental.adb.adbFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -34,7 +35,7 @@ import java.util.Date
  */
 object AdbHelperAutoRecovery {
     enum class Outcome {
-        HELPER_RUNNING, RESTORED_TCP, RESTORED_WIRELESS,
+        HELPER_RUNNING, RESTORED_TCP, RESTORED_WIRELESS, RESTORED_SHIZUKU,
         /** Not applicable now: recording off, Quit, user Disconnect, busy, nothing authorized. */
         SKIPPED,
         BACKING_OFF,
@@ -46,6 +47,7 @@ object AdbHelperAutoRecovery {
     private val mutex = Mutex()
     private val tcpBackoff = AdbRecoveryBackoff()
     private val wirelessBackoff = AdbRecoveryBackoff()
+    private val shizukuBackoff = AdbRecoveryBackoff()
 
     /** Typed result of the last attempt, for tests and UI decisions. */
     val lastOutcome = MutableStateFlow<Outcome?>(null)
@@ -67,7 +69,8 @@ object AdbHelperAutoRecovery {
             val app = context.applicationContext
             val outcome = attempt(app)
             val transportHealthy = outcome == Outcome.HELPER_RUNNING ||
-                outcome == Outcome.RESTORED_TCP || outcome == Outcome.RESTORED_WIRELESS
+                outcome == Outcome.RESTORED_TCP || outcome == Outcome.RESTORED_WIRELESS ||
+                outcome == Outcome.RESTORED_SHIZUKU
             if (!transportHealthy) return@withLock false
             // A healthy socket alone does not mean the daemon still receives calls.
             // A watcher failure must be surfaced, not silently "repaired" during a call.
@@ -113,9 +116,26 @@ object AdbHelperAutoRecovery {
                 }
             }
             wirelessBackoff.onSuccess()
+            shizukuBackoff.onSuccess()
             lastOutcome.value = Outcome.HELPER_RUNNING
             return Outcome.HELPER_RUNNING
         }
+        if (ShizukuHostAdapter.hasShellAccess() && Prefs.recordingEnabled(app)) {
+            if (!shizukuBackoff.allowed(SystemClock.elapsedRealtime())) return Outcome.BACKING_OFF
+            val restored = AdbLifecycle.coordinateSetup {
+                ExperimentalRecording.connectShizuku(app, automatic = true)
+            }
+            if (restored.isSuccess) {
+                shizukuBackoff.onSuccess()
+                ExperimentalCaptureDaemon.collect(app)
+                record(Outcome.RESTORED_SHIZUKU, "Recording helper restored through Shizuku")
+                return Outcome.RESTORED_SHIZUKU
+            }
+            shizukuBackoff.onFailure(SystemClock.elapsedRealtime())
+            record(Outcome.FAILED, "Shizuku recording helper startup failed")
+            return Outcome.FAILED
+        }
+
         // Preserve the user's choices: recording OFF and a deliberate Disconnect
         // both stop automatic reconnection.
         val saved = ExperimentalRecording.recoveryAuthorization(app)
