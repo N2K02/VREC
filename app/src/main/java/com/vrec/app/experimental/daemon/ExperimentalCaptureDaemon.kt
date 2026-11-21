@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import com.vrec.app.Prefs
 import android.media.MediaMuxer
 import android.util.Log
+import androidx.annotation.RequiresApi
 import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.recording.CallDirection
@@ -177,8 +178,8 @@ object ExperimentalCaptureDaemon {
      * any broad storage permission. Remove it immediately after shell copying.
      * No keys, pairing codes or call data are included in this static JAR.
      */
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun stageViaDownloads(context: Context): ShellStagedJar {
-        check(Build.VERSION.SDK_INT >= 29) { "MediaStore Downloads needs Android 10+" }
         val name = "vrec-shell-" + java.util.UUID.randomUUID().toString() + ".jar"
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -300,7 +301,8 @@ object ExperimentalCaptureDaemon {
             val appStage = runCatching { stage(context) }.getOrNull()
             val directReadable = appStage != null && shellCanRead(appStage)
             val stagingRoute = ShellJarStagingPolicy.choose(directReadable, Build.VERSION.SDK_INT)
-            val sharedStage = if (stagingRoute == ShellJarStagingPolicy.Route.MEDIASTORE_DOWNLOADS)
+            val sharedStage = if (stagingRoute == ShellJarStagingPolicy.Route.MEDIASTORE_DOWNLOADS &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                 stageViaDownloads(context) else null
             val staged = when (stagingRoute) {
                 ShellJarStagingPolicy.Route.APP_EXTERNAL -> appStage
