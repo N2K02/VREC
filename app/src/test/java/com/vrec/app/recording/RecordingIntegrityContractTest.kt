@@ -31,10 +31,22 @@ class RecordingIntegrityContractTest {
         assertTrue(daemon.contains("check(RecordingStore.writeMeta("))
         assertTrue(daemon.contains("startedAtOverride = started"))
         assertTrue(daemon.contains("audioHealth = health"))
-        assertTrue(daemon.indexOf("check(RecordingStore.writeMeta(") <
-            daemon.indexOf("delete(context, name)", daemon.indexOf("check(RecordingStore.writeMeta(")))
+        val metadata = daemon.indexOf("check(RecordingStore.writeMeta(")
+        val publish = daemon.indexOf("check(temp.renameTo(dest))")
+        val removeShell = daemon.indexOf("delete(context, name)", metadata)
+        assertTrue(metadata in 0 until publish)
+        assertTrue(publish in 0 until removeShell)
         assertFalse(daemon.contains("sidecar.writeText("))
         assertTrue(daemon.contains("if (t is CancellationException) throw t"))
+    }
+
+    @Test fun muxerStopFailurePropagatesBeforeTheImportIsPublished() {
+        val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
+            .substringAfter("override fun close()")
+            .substringBefore("private companion object")
+        assertTrue(writer.contains("if (packets > 0) muxer.stop()"))
+        assertFalse(writer.contains("catch"))
+        assertTrue(writer.contains("finally"))
     }
 
     @Test fun failedCaptureAndStorageOperationsHaveVisibleWarnings() {
