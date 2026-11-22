@@ -757,18 +757,15 @@ object ExperimentalCaptureDaemon {
                     check(dest.isAbsolute && dest.parentFile?.isDirectory == true) {
                         "Recording directory unavailable"
                     }
+                    RecordingAudioPublisher.recover(dest, RecordingStore::hasValidMetadata)
                     if (dest.exists() && OggIntegrityVerifier.valid(dest) &&
                         RecordingStore.hasValidMetadata(dest)) {
                         // A previous import completed before the shell copy was removed.
                         delete(context, name)
                         continue
                     }
-                    // The fully validated/metadata-complete case already continued.
-                    // A corrupt Ogg with a valid old sidecar must also be replaced;
-                    // otherwise rename can fail or retain broken audio forever.
-                    if (dest.exists()) {
-                        check(dest.delete()) { "Cannot remove incomplete previous import" }
-                    }
+                    // Keep any existing recording until a replacement is fully
+                    // transferred and validated. Failure must not erase local audio.
                     if (temp.exists()) check(temp.delete()) { "Cannot replace partial import" }
                     stage = ImportBatchPolicy.Stage.AUDIO
                     var durationMs = 0L
@@ -833,7 +830,7 @@ object ExperimentalCaptureDaemon {
                         }
                     stage = ImportBatchPolicy.Stage.METADATA
                     check(RecordingStore.writeMeta(
-                        dest, direction, contactName ?: caller?.number ?:
+                        temp, direction, contactName ?: caller?.number ?:
                             ShellVoipLabels.forPackage(caller?.packageName ?: identity.appPackage), label,
                         silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
                             health?.contains("NO_AUDIO") == true,
@@ -856,8 +853,7 @@ object ExperimentalCaptureDaemon {
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     stage = ImportBatchPolicy.Stage.STORAGE
-                    check(temp.renameTo(dest)) { "Cannot finalize recording" }
-                    check(OggIntegrityVerifier.valid(dest)) { "Final recording integrity verification failed" }
+                    RecordingAudioPublisher.publish(temp, dest, RecordingStore::hasValidMetadata)
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
                     // Warn on suspicious VoIP channel levels, but never discard
@@ -889,10 +885,16 @@ object ExperimentalCaptureDaemon {
                         " file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
                     failures++
                     com.vrec.app.recording.RecordingFailureNotice.warn(
-                        context, ImportBatchPolicy.warning(stage), keepUntilDismissed = true)
+                        context,
+                        if (stage == ImportBatchPolicy.Stage.AUDIO) AudioImportDiagnostic.warning(t)
+                        else ImportBatchPolicy.warning(stage),
+                        keepUntilDismissed = true)
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
                 } finally {
-                    if (temp.isAbsolute) temp.delete()
+                    if (temp.isAbsolute) {
+                        temp.delete()
+                        File(temp.parentFile, temp.name + ".json").delete()
+                    }
                 }
             }
             message.value = ImportBatchPolicy.message(collected, failures)
