@@ -1,6 +1,6 @@
 package com.vrec.app.experimental.daemon
 
-import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -23,6 +23,8 @@ internal object OggIntegrityVerifier {
         var lastGranule = 0L
         var sawAudio = false
         var sawEos = false
+        var packetNumber = 0
+        val incompletePacket = ByteArrayOutputStream()
         while (true) {
             val header = ByteArray(27)
             val first = input.read()
@@ -32,14 +34,15 @@ internal object OggIntegrityVerifier {
             if (String(header, 0, 4, Charsets.US_ASCII) != "OggS" ||
                 header[4].toInt() != 0) return false
             val flags = header[5].toInt() and 255
-            if (flags and 0xF8 != 0 || flags and 0x01 != 0) return false
+            if (flags and 0xF8 != 0) return false
+            if ((flags and 0x01 != 0) != (incompletePacket.size() != 0)) return false
             if (pageIndex == 0 && flags and 0x02 == 0) return false
             if (pageIndex != 0 && flags and 0x02 != 0) return false
             val nextSerial = littleInt(header, 14)
             if (pageIndex == 0) serial = nextSerial
             if (nextSerial != serial || littleInt(header, 18) != pageIndex) return false
             val granule = littleLong(header, 6)
-            if (granule < lastGranule || granule < 0L) return false
+            if (granule != -1L && granule < lastGranule) return false
             val count = header[26].toInt() and 255
             if (count == 0) return false
             val lacing = ByteArray(count)
@@ -47,9 +50,6 @@ internal object OggIntegrityVerifier {
             val length = lacing.sumOf { it.toInt() and 255 }
             val payload = ByteArray(length)
             if (!readExactly(input, payload, 0, length)) return false
-            // Writer uses one complete packet per page; refuse continuations
-            // until multi-packet import can be validated explicitly.
-            if ((lacing.last().toInt() and 255) == 255) return false
             val packet = ByteArray(header.size + lacing.size + payload.size)
             System.arraycopy(header, 0, packet, 0, header.size)
             System.arraycopy(lacing, 0, packet, header.size, lacing.size)
@@ -57,26 +57,37 @@ internal object OggIntegrityVerifier {
             val claimed = littleInt(header, 22)
             packet.fill(0, 22, 26)
             if (checksum(packet) != claimed) return false
-            when (pageIndex) {
-                0 -> if (!payload.copyOfRange(0, minOf(8, payload.size))
-                    .contentEquals("OpusHead".toByteArray(Charsets.US_ASCII))) return false
-                1 -> if (!payload.copyOfRange(0, minOf(8, payload.size))
-                    .contentEquals("OpusTags".toByteArray(Charsets.US_ASCII))) return false
-                else -> {
-                    if (payload.isEmpty()) return false
-                    sawAudio = true
+            var offset = 0
+            for (segment in lacing) {
+                val size = segment.toInt() and 255
+                incompletePacket.write(payload, offset, size)
+                offset += size
+                if (size < 255) {
+                    val body = incompletePacket.toByteArray()
+                    incompletePacket.reset()
+                    when (packetNumber) {
+                        0 -> if (body.size < 19 ||
+                            !body.copyOfRange(0, 8).contentEquals(
+                                "OpusHead".toByteArray(Charsets.US_ASCII))) return false
+                        1 -> if (body.size < 16 ||
+                            !body.copyOfRange(0, 8).contentEquals(
+                                "OpusTags".toByteArray(Charsets.US_ASCII))) return false
+                        else -> if (body.isEmpty()) return false else sawAudio = true
+                    }
+                    packetNumber++
                 }
             }
             if (flags and 0x04 != 0) {
+                if (incompletePacket.size() != 0) return false
                 sawEos = true
                 // Reject trailing pages or garbage after the final EOS page.
                 if (input.read() != -1) return false
                 break
             }
             pageIndex++
-            lastGranule = granule
+            if (granule != -1L) lastGranule = granule
         }
-        return sawEos && sawAudio && pageIndex >= 2
+        return sawEos && sawAudio && packetNumber >= 3
     }
 
     private fun readExactly(input: InputStream, bytes: ByteArray, offset: Int, length: Int): Boolean {
