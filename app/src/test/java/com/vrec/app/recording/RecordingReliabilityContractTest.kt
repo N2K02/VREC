@@ -31,6 +31,13 @@ class RecordingReliabilityContractTest {
         assertTrue(collector.contains("will retry later"))
     }
 
+    @Test fun shellCleanupIsIdempotentAfterLostAcknowledgement() {
+        val shell = source("shellserver/src/com/vrec/app/shell/Main.java")
+        assertTrue(shell.contains("file != null && (!file.exists() || file.delete())"))
+        assertTrue(shell.contains("!name.equals(activeName())"))
+        assertTrue(shell.contains("if (ok) new File(REC_DIR, name + \".health\").delete()"))
+    }
+
     @Test fun longImportAvoidsRedundantAudioScanAndKeepsSource() {
         val publisher = source("app/src/main/java/com/vrec/app/experimental/daemon/RecordingAudioPublisher.kt")
         val collector = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
