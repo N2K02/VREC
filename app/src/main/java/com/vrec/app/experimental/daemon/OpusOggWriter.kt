@@ -1,5 +1,7 @@
 package com.vrec.app.experimental.daemon
 
+import android.os.Build
+import java.io.FileOutputStream
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -49,8 +51,13 @@ class OpusOggWriter(
 ) : AutoCloseable {
 
     private val head = OpusHead.parse(opusHead)
-    private val muxer = MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG)
-    private val track: Int
+    // Ogg output format is only available on Android 10 (API 29) and later.
+    // Keep the legacy output stream open: the caller owns the file descriptor.
+    private val legacy = if (Build.VERSION.SDK_INT < 29)
+        LegacyOpusOggMuxer(FileOutputStream(fd), opusHead) else null
+    private val muxer = if (Build.VERSION.SDK_INT >= 29)
+        MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG) else null
+    private var track: Int = -1
     private var started = false
 
     /** Packets written. Zero means the call produced nothing. The timestamp
@@ -62,17 +69,22 @@ class OpusOggWriter(
     init {
         Log.i(TAG, "ogg: channels=${head.channels} preSkip=${head.preSkip} rate=${head.inputRate} delay=${head.codecDelayNs}ns")
 
+        if (legacy != null) {
+            started = true
+            return
+        }
+        val androidMuxer = requireNotNull(muxer)
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, head.channels)
         format.setByteBuffer("csd-0", ByteBuffer.wrap(opusHead))
         format.setByteBuffer("csd-1", littleEndianLong(head.codecDelayNs))
         format.setByteBuffer("csd-2", littleEndianLong(SEEK_PRE_ROLL_NS))
 
         try {
-            track = muxer.addTrack(format)
-            muxer.start()
+            track = androidMuxer.addTrack(format)
+            androidMuxer.start()
             started = true
         } catch (failure: Exception) {
-            runCatching { muxer.release() }
+            runCatching { androidMuxer.release() }
             throw failure
         }
     }
@@ -101,6 +113,11 @@ class OpusOggWriter(
     fun write(data: ByteArray, @Suppress("UNUSED_PARAMETER") pts: Long) {
         if (!started) return
 
+        if (legacy != null) {
+            legacy.write(data)
+            packets++
+            return
+        }
         val ptsUs = packets * FRAME_US
 
         val info = MediaCodec.BufferInfo().apply {
@@ -109,7 +126,7 @@ class OpusOggWriter(
             presentationTimeUs = ptsUs
             flags = 0
         }
-        muxer.writeSampleData(track, ByteBuffer.wrap(data), info)
+        requireNotNull(muxer).writeSampleData(track, ByteBuffer.wrap(data), info)
         packets++
     }
 
@@ -127,10 +144,15 @@ class OpusOggWriter(
     override fun close() {
         if (!started) return
         started = false
+        if (legacy != null) {
+            legacy.close()
+            return
+        }
+        val androidMuxer = requireNotNull(muxer)
         try {
-            if (packets > 0) muxer.stop()
+            if (packets > 0) androidMuxer.stop()
         } finally {
-            runCatching { muxer.release() }
+            androidMuxer.release()
         }
     }
 
