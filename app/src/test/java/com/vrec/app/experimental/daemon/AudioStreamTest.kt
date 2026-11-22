@@ -34,6 +34,11 @@ class AudioStreamTest {
         }
     }
 
+    @Test fun helperUnavailableReplyIsDistinctFromOpus() {
+        AudioStream(FakeSocket("gone".toByteArray())).use { assertTrue(it.unavailable) }
+        AudioStream(FakeSocket(framed())).use { assertFalse(it.unavailable) }
+    }
+
     @Test fun cleanEndImmediatelyAfterCodecIsAllowed() {
         AudioStream(FakeSocket("opus".toByteArray())).use {
             assertNull(it.readPacket())

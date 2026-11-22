@@ -29,4 +29,10 @@ class ImportBatchPolicyTest {
         assertFalse(ImportBatchPolicy.shouldFailBatch(0, 0))
         assertEquals("Imported 3 enhanced recordings.", ImportBatchPolicy.message(3, 0))
     }
+
+    @Test fun importWarningDescribesStageAndPreservesOriginal() {
+        val warnings = ImportBatchPolicy.Stage.entries.map(ImportBatchPolicy::warning)
+        assertEquals(3, warnings.distinct().size)
+        assertTrue(warnings.all { it.contains("The original shell capture was kept for retry.") })
+    }
 }

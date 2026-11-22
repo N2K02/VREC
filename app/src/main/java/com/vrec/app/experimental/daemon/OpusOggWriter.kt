@@ -48,6 +48,7 @@ class OpusOggWriter(
     opusHead: ByteArray,
 ) : AutoCloseable {
 
+    private val head = OpusHead.parse(opusHead)
     private val muxer = MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG)
     private val track: Int
     private var started = false
@@ -59,7 +60,6 @@ class OpusOggWriter(
         private set
 
     init {
-        val head = OpusHead.parse(opusHead)
         Log.i(TAG, "ogg: channels=${head.channels} preSkip=${head.preSkip} rate=${head.inputRate} delay=${head.codecDelayNs}ns")
 
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, head.channels)
@@ -67,9 +67,14 @@ class OpusOggWriter(
         format.setByteBuffer("csd-1", littleEndianLong(head.codecDelayNs))
         format.setByteBuffer("csd-2", littleEndianLong(SEEK_PRE_ROLL_NS))
 
-        track = muxer.addTrack(format)
-        muxer.start()
-        started = true
+        try {
+            track = muxer.addTrack(format)
+            muxer.start()
+            started = true
+        } catch (failure: Exception) {
+            runCatching { muxer.release() }
+            throw failure
+        }
     }
 
     /**
@@ -120,34 +125,10 @@ class OpusOggWriter(
      * the muxer has to be stopped, not merely abandoned.
      */
     override fun close() {
-        finish()
-    }
-
-    /**
-     * Finalise the file, and say whether it worked. A muxer that could not
-     * finish - the storage filled up, typically - leaves a file no player can
-     * open; the saver must then keep the daemon's copy, not delete it as
-     * saved.
-     */
-    fun finish(): Boolean {
-        if (!started) {
-            runCatching { muxer.release() }
-            return true
-        }
+        if (!started) return
         started = false
-        return try {
-            if (packets > 0) {
-                muxer.stop()
-            } else {
-                // Stopping a muxer that was never written to throws. A call
-                // that produced no audio should leave no file rather than an
-                // exception and a zero-byte one.
-                Log.w(TAG, "ogg: no packets written, nothing to finalise")
-            }
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "ogg: could not finalise", t)
-            false
+        try {
+            if (packets > 0) muxer.stop()
         } finally {
             runCatching { muxer.release() }
         }

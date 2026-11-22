@@ -710,25 +710,27 @@ object ExperimentalCaptureDaemon {
                     " flowPresent=" + (!caller?.flowDirection.isNullOrBlank()) +
                     " mediaPresent=" + (!caller?.mediaType.isNullOrBlank()))
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
-                if (dest.exists() && dest.length() > 100L &&
-                    RecordingStore.hasValidMetadata(dest)) {
-                    // A completed import already has audio AND metadata.
-                    // Preserve the shell original if a prior import crashed
-                    // after publishing audio but before metadata was written.
-                    delete(context, name)
-                    continue
-                }
                 val temp = File(dest.parentFile, dest.name + ".tmp")
-                // Never leave a stale partial import as a valid recording.
-                if (dest.exists() && !RecordingStore.hasValidMetadata(dest)) {
-                    check(dest.delete()) { "Cannot remove incomplete previous import" }
-                }
-                temp.delete()
-                var packets = 0L
+                var stage = ImportBatchPolicy.Stage.STORAGE
                 try {
-                    open(context, 'F', nameBytes(name)).use { sock ->
+                    check(dest.isAbsolute && dest.parentFile?.isDirectory == true) {
+                        "Recording directory unavailable"
+                    }
+                    if (dest.exists() && dest.length() > 100L &&
+                        RecordingStore.hasValidMetadata(dest)) {
+                        // A previous import completed before the shell copy was removed.
+                        delete(context, name)
+                        continue
+                    }
+                    if (dest.exists() && !RecordingStore.hasValidMetadata(dest)) {
+                        check(dest.delete()) { "Cannot remove incomplete previous import" }
+                    }
+                    if (temp.exists()) check(temp.delete()) { "Cannot replace partial import" }
+                    stage = ImportBatchPolicy.Stage.AUDIO
+                    val packets = open(context, 'F', nameBytes(name)).use { sock ->
                         sock.soTimeout = 30_000
-                        AudioStream(sock).use { stream ->
+                        AudioStream(sock).use readStream@{ stream ->
+                            if (stream.unavailable) return@readStream null
                             check(stream.codecId.equals("opus", ignoreCase = true)) {
                                 "Expected Opus data, got " + stream.codecId
                             }
@@ -736,7 +738,6 @@ object ExperimentalCaptureDaemon {
                                 ?: error("No Opus stream configuration")
                             check(config.isConfig) { "Missing Opus config header" }
                             temp.outputStream().use { output ->
-                                // MediaMuxer can work from a FileDescriptor with full rights.
                                 OpusOggWriter(output.fd, config.data).use { muxer ->
                                     while (true) {
                                         val packet = stream.readPacket() ?: break
@@ -744,21 +745,24 @@ object ExperimentalCaptureDaemon {
                                             muxer.write(packet.data, packet.pts)
                                         }
                                     }
-                                    packets = muxer.packets
+                                    muxer.packets
                                 }
                             }
                         }
+                    }
+                    if (packets == null) {
+                        com.vrec.app.Log.i("Capture diagnostic: shell recording unavailable during fetch")
+                        continue
                     }
                     com.vrec.app.Log.i("Capture diagnostic: shell import packets=" + packets + " bytes=" + temp.length() + " file=" + name)
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
                     }
-                    check(temp.renameTo(dest)) { "Cannot finalize recording" }
                     val durationMs = packets * 20L
                     val voip = direction == CallDirection.VOIP
                     val health = recordingHealth(context, name)
                     if (ImportBatchPolicy.shouldDiscardSilent(Prefs.discardSilent(context), health)) {
-                        check(dest.delete()) { "Cannot discard confirmed silent audio" }
+                        check(temp.delete()) { "Cannot discard confirmed silent audio" }
                         if (caller != null) journal.consumeMatch(context, caller)
                         else journal.consume(context, started, identity.appPackage)
                         delete(context, name)
@@ -778,6 +782,7 @@ object ExperimentalCaptureDaemon {
                             com.vrec.app.calls.CallInfo.describe(context, number)
                                 ?.takeIf { it != number }
                         }
+                    stage = ImportBatchPolicy.Stage.METADATA
                     check(RecordingStore.writeMeta(
                         dest, direction, contactName ?: caller?.number ?:
                             ShellVoipLabels.forPackage(caller?.packageName ?: identity.appPackage), label,
@@ -801,6 +806,8 @@ object ExperimentalCaptureDaemon {
                         endedAtOverride = started + durationMs,
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
+                    stage = ImportBatchPolicy.Stage.STORAGE
+                    check(temp.renameTo(dest)) { "Cannot finalize recording" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
                     // Warn on suspicious VoIP channel levels, but never discard
@@ -828,14 +835,14 @@ object ExperimentalCaptureDaemon {
                     // recordings in the list. Preserve the shell original;
                     // only temporary app-side output is discarded.
                     Log.w(TAG, "Import failed for " + name, t)
-                    com.vrec.app.Log.w("Capture diagnostic: shell recording import failed file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
-                    temp.delete()
+                    com.vrec.app.Log.w("Capture diagnostic: shell recording import failed stage=" + stage.name +
+                        " file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
                     failures++
                     com.vrec.app.recording.RecordingFailureNotice.warn(
-                        context, "A recording could not be saved. Check free storage and Diagnostics; " +
-                            "the original shell capture was kept for retry.", keepUntilDismissed = true)
+                        context, ImportBatchPolicy.warning(stage), keepUntilDismissed = true)
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
-                    continue
+                } finally {
+                    if (temp.isAbsolute) temp.delete()
                 }
             }
             message.value = ImportBatchPolicy.message(collected, failures)
