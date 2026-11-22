@@ -143,6 +143,27 @@ fun SettingsScreen(
                 modifier = Modifier.clickable(onClick = onOpenUpdates),
             )
         } else {
+        if (section == "Logs") {
+            var logRefresh by remember { mutableIntStateOf(0) }
+            val events = remember(logRefresh) {
+                com.vrec.app.recording.RecordingDiagnosticEvents.snapshot()
+            }
+            RecordingSettingsCard("Recording events", Icons.Rounded.Article) {
+                Text("Recent recording status only. No numbers, names, audio or file paths are stored.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { logRefresh++ }) { Text("Refresh") }
+                    OutlinedButton(onClick = {
+                        com.vrec.app.recording.RecordingDiagnosticEvents.clear()
+                        logRefresh++
+                    }) { Text("Clear") }
+                }
+                if (events.isEmpty()) Text("No recording events in this session.")
+                else events.forEach { event ->
+                    Text(event, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
         if (section == "Recording") {
             RecordingSettingsCard("Recording behavior", Icons.Rounded.Tune) {
                 ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
