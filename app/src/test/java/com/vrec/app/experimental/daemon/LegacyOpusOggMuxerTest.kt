@@ -51,7 +51,7 @@ class LegacyOpusOggMuxerTest {
         val output = ByteArrayOutputStream()
         LegacyOpusOggMuxer(output, head, serial = 7).use { writer ->
             writer.write(byteArrayOf(1, 2, 3))
-            writer.write(byteArrayOf(4, 5))
+            writer.write(byteArrayOf(8, 5))
         }
         val pages = pages(output.toByteArray())
         assertEquals(4, pages.size)
@@ -62,7 +62,7 @@ class LegacyOpusOggMuxerTest {
         assertEquals(960L, pages[2].granule)
         assertEquals(4, pages[3].flags)
         assertEquals(1920L, pages[3].granule)
-        assertArrayEquals(byteArrayOf(4, 5), pages[3].payload)
+        assertArrayEquals(byteArrayOf(8, 5), pages[3].payload)
     }
 
     @Test fun exact255BytePacketHasTerminatingLacingByte() {
