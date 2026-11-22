@@ -44,7 +44,7 @@ internal object OggIntegrityVerifier {
             val granule = littleLong(header, 6)
             if (granule != -1L && granule < lastGranule) return false
             val count = header[26].toInt() and 255
-            if (count == 0) return false
+            // A legal final EOS page can have no lacing segments.
             val lacing = ByteArray(count)
             if (!readExactly(input, lacing, 0, count)) return false
             val length = lacing.sumOf { it.toInt() and 255 }
@@ -61,6 +61,8 @@ internal object OggIntegrityVerifier {
             for (segment in lacing) {
                 val size = segment.toInt() and 255
                 incompletePacket.write(payload, offset, size)
+                // Guard corrupted lacing across many continued pages.
+                if (incompletePacket.size() > 16 * 1024 * 1024) return false
                 offset += size
                 if (size < 255) {
                     val body = incompletePacket.toByteArray()
