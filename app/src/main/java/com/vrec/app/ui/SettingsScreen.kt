@@ -122,6 +122,7 @@ fun SettingsScreen(
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
                 Triple("ADB", "LocalADB server, authorization and shell status", Icons.Rounded.Settings),
+                Triple("Logs", "Privacy-safe recording events", Icons.Rounded.Article),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
