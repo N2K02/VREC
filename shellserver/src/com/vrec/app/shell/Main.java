@@ -2447,7 +2447,8 @@ public final class Main {
         if (command == COMMAND_DELETE) {
             String name = readName(client);
             File file = recFileFor(name);
-            // Missing file means a previous delete succeeded but its ACK was lost.\n            boolean ok = !name.equals(activeName()) && file != null && (!file.exists() || file.delete());
+            // Missing file means a previous delete succeeded but its ACK was lost.
+            boolean ok = !name.equals(activeName()) && file != null && (!file.exists() || file.delete());
             if (ok) new File(REC_DIR, name + ".health").delete();
             Ln.i("session: delete " + name + " -> " + ok);
             client.getOutputStream().write((ok ? "OK\n" : "NO\n").getBytes("UTF-8"));
