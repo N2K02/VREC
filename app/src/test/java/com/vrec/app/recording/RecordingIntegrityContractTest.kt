@@ -73,7 +73,7 @@ class RecordingIntegrityContractTest {
         assertTrue(publisher.contains("move(incomingMeta, sidecar)"))
         assertTrue(publisher.contains("it.fd.sync()"))
         assertTrue(daemon.contains("readLine()?.trim() == \"OK\""))
-        assertTrue(daemon.contains("Shell recording cleanup was not acknowledged"))
+        assertTrue(daemon.contains("Shell cleanup unconfirmed after bounded retries; saved audio remains intact"))
         assertTrue(validator.contains("checksum(packet) != claimed"))
         assertTrue(validator.contains("sawEos && sawAudio"))
     }
