@@ -21,6 +21,8 @@ class AudioStreamTest {
                 out.writeLong(123456L)
                 out.writeInt(packetData.size)
                 out.write(packetData)
+                out.writeBytes("VRECEND!")
+                out.writeInt(-1)
             }
         }.toByteArray()
 
@@ -34,9 +36,27 @@ class AudioStreamTest {
         }
     }
 
-    @Test fun cleanEndImmediatelyAfterCodecIsAllowed() {
+    @Test fun helperUnavailableReplyIsDistinctFromOpus() {
+        AudioStream(FakeSocket("gone".toByteArray())).use { assertTrue(it.unavailable) }
+        AudioStream(FakeSocket(framed())).use { assertFalse(it.unavailable) }
+    }
+
+    @Test fun missingCompletionTrailerIsRejectedEvenAtPacketBoundary() {
         AudioStream(FakeSocket("opus".toByteArray())).use {
-            assertNull(it.readPacket())
+            assertThrows(EOFException::class.java) { it.readPacket() }
+        }
+        AudioStream(FakeSocket(framed().copyOf(framed().size - 12))).use {
+            assertNotNull(it.readPacket())
+            assertThrows(EOFException::class.java) { it.readPacket() }
+        }
+    }
+
+    @Test fun invalidCompletionTrailerFailsClosed() {
+        val bytes = framed().clone()
+        bytes[bytes.lastIndex] = 0
+        AudioStream(FakeSocket(bytes)).use {
+            assertNotNull(it.readPacket())
+            assertThrows(IllegalStateException::class.java) { it.readPacket() }
         }
     }
 
@@ -48,7 +68,8 @@ class AudioStreamTest {
     }
 
     @Test fun partiallyWrittenPayloadMustFailImport() {
-        val truncated = framed().copyOf(framed().size - 1)
+        // Cut inside the Opus payload, not inside the new completion trailer.
+        val truncated = framed().copyOf(4 + 8 + 4 + 2)
         AudioStream(FakeSocket(truncated)).use {
             assertThrows(EOFException::class.java) { it.readPacket() }
         }

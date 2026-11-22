@@ -66,7 +66,7 @@ object ExperimentalCaptureDaemon {
     val adbPrivilegedApiHelper: AdbPrivilegedApiHelper = AdbPrivilegedApiHelper
 
 
-    private fun token(context: Context): String {
+    @Synchronized private fun token(context: Context): String {
         val prefs = context.getSharedPreferences("vrec_experimental_recorder", Context.MODE_PRIVATE)
         prefs.getString(TOKEN_KEY, null)?.let { return it }
         val raw = ByteArray(32).also(random::nextBytes)
@@ -104,8 +104,8 @@ object ExperimentalCaptureDaemon {
             val nonceB = ByteArray(16).also(input::readFully)
             val signature = ByteArray(32).also(input::readFully)
             val key = token(context).toByteArray(Charsets.UTF_8)
-            check(MessageDigest.isEqual(signature, mac(key, "vrec-daemon", nonceA, nonceB))) {
-                "A different process answered the capture socket."
+            if (!MessageDigest.isEqual(signature, mac(key, "vrec-daemon", nonceA, nonceB))) {
+                throw HelperAuthenticationException()
             }
             output.write(mac(key, "vrec-client", nonceA, nonceB))
             output.write(command.code)
@@ -118,25 +118,31 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    /** The authenticated PONG includes a build fingerprint on recent daemons. */
-    private suspend fun pingBanner(context: Context): String? = withContext(Dispatchers.IO) {
+    private val pongFormat = Regex("PONG 2(?: .+)?")
+
+    private suspend fun probeReply(context: Context): Result<String> = withContext(Dispatchers.IO) {
         try {
-            open(context, 'P').use {
-                it.getInputStream().bufferedReader().readLine()?.trim()
+            val reply = open(context, 'P').use {
+                it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
             }
+            check(pongFormat.matches(reply)) { "The recorder replied with an incompatible protocol." }
+            Result.success(reply)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            null
+        } catch (failure: Exception) {
+            Result.failure(failure)
         }
     }
+
+    /** The authenticated PONG includes a build fingerprint on recent daemons. */
+    private suspend fun pingBanner(context: Context): String? = probeReply(context).getOrNull()
 
     /**
      * A PONG proves that the process is alive and authenticated, NOT that
      * recording mode and SIM source configuration have been acknowledged.
      */
     suspend fun probe(context: Context): Boolean {
-        val result = pingBanner(context)?.startsWith("PONG 2") == true
+        val result = probeReply(context).isSuccess
         if (!result) ready.value = false
         return result
     }
@@ -153,7 +159,7 @@ object ExperimentalCaptureDaemon {
     /** Detect an obsolete daemon without sending newer commands it cannot answer. */
     internal suspend fun runningBuildStatus(context: Context): ShellHelperBuildPolicy.Decision {
         val banner = pingBanner(context)
-        if (banner?.startsWith("PONG 2") != true) {
+        if (banner == null) {
             return ShellHelperBuildPolicy.Decision.INCOMPATIBLE_PROTOCOL
         }
         return ShellHelperBuildPolicy.decide(banner, bundledBuild(context))
@@ -248,8 +254,13 @@ object ExperimentalCaptureDaemon {
 
     suspend fun ensureStarted(context: Context, manualRepair: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val runningBanner = pingBanner(context)
-            if (runningBanner?.startsWith("PONG 2") == true) {
+            val initialProbe = probeReply(context)
+            val runningBanner = initialProbe.getOrNull()
+            val failure = initialProbe.exceptionOrNull()
+            check(failure == null || failure is ConnectException) {
+                RecordingWatchHealth.unavailableDetail(failure)
+            }
+            if (runningBanner != null) {
                 val buildDecision = ShellHelperBuildPolicy.decide(runningBanner, bundledBuild(context))
                 if (buildDecision != ShellHelperBuildPolicy.Decision.STALE) {
                     if (confirmSetup(context)) {
@@ -293,7 +304,7 @@ object ExperimentalCaptureDaemon {
                 repeat(15) {
                     if (!exited) {
                         delay(250)
-                        exited = !probe(context)
+                        exited = helperPresence(context) == HelperPresence.ABSENT
                     }
                 }
                 check(exited) { "Old helper did not release its authenticated socket." }
@@ -325,7 +336,11 @@ object ExperimentalCaptureDaemon {
             } finally {
                 sharedStage?.cleanup?.invoke()
             }
-            val launch = "VREC_TOKEN=" + token(context) +
+            val launch = "umask 077; " +
+                "command -v setsid >/dev/null && command -v nohup >/dev/null && " +
+                "command -v app_process >/dev/null || { echo VREC_LAUNCH_TOOLS_MISSING; exit 1; }; " +
+                ": > " + LOG_PATH + " || { echo VREC_LAUNCH_LOG_UNAVAILABLE; exit 1; }; " +
+                "VREC_TOKEN=" + token(context) +
                 " VREC_MODE=" + requestedMode(context, Prefs.recordingEnabled(context)) +
                 " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
                 " VREC_TRACK=0 VREC_VOIP='" +
@@ -333,15 +348,24 @@ object ExperimentalCaptureDaemon {
                     "' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
-                " < /dev/null > " + LOG_PATH + " 2>&1 &"
-            runShell( launch)
-            var started = false
-            repeat(20) {
-                if (!started) {
-                    delay(350)
-                    if (probe(context)) started = true
+                " < /dev/null >> " + LOG_PATH + " 2>&1 & echo VREC_LAUNCH_QUEUED"
+            val launchOutput = runShell(launch).lineSequence().map(String::trim).toSet()
+            check("VREC_LAUNCH_QUEUED" in launchOutput) {
+                when {
+                    "VREC_LAUNCH_TOOLS_MISSING" in launchOutput -> "Recorder launch tools are unavailable in Android shell."
+                    "VREC_LAUNCH_LOG_UNAVAILABLE" in launchOutput -> "Android shell could not open the recorder log."
+                    else -> "Android shell did not confirm that the recorder launch was queued."
                 }
             }
+            val deadline = android.os.SystemClock.elapsedRealtime() + 10_000L
+            var started = false
+            do {
+                delay(350)
+                val status = probeReply(context)
+                val error = status.exceptionOrNull()
+                if (error is HelperAuthenticationException) throw error
+                started = status.isSuccess
+            } while (!started && android.os.SystemClock.elapsedRealtime() < deadline)
             if (!started) {
                 // The shell command can exit successfully even when the detached
                 // app_process immediately crashes. Classify the shell-side log
@@ -433,7 +457,7 @@ object ExperimentalCaptureDaemon {
                 open(context, 'V', packet).use {
                     it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
                 }
-            }.getOrDefault("") else ""
+            }.onFailure { if (it is CancellationException) throw it }.getOrDefault("") else ""
             voipArmed.value = requestedApps.isNotEmpty() &&
                 voipResult == "VOIP ${requestedApps.size} armed"
             voipMessage.value = when {
@@ -465,6 +489,7 @@ object ExperimentalCaptureDaemon {
                 it.getInputStream().bufferedReader().readLine()?.trim() ?: "UNAVAILABLE"
             }
         }.getOrElse { failure ->
+            if (failure is CancellationException) throw failure
             message.value = "Enhanced recording control failed: " + (failure.message ?: "helper unavailable")
             "UNAVAILABLE"
         }
@@ -500,14 +525,10 @@ object ExperimentalCaptureDaemon {
     internal enum class HelperPresence { RUNNING, ABSENT, UNKNOWN }
 
     internal suspend fun helperPresence(context: Context): HelperPresence = withContext(Dispatchers.IO) {
-        val reply = runCatching {
-            open(context, 'P').use { it.getInputStream().bufferedReader().readLine()?.trim() }
-        }
-        val failure = reply.exceptionOrNull()
-        if (failure is CancellationException) throw failure
+        val reply = probeReply(context)
         when {
-            failure is ConnectException -> HelperPresence.ABSENT
-            reply.getOrNull()?.startsWith("PONG 2") == true -> HelperPresence.RUNNING
+            reply.exceptionOrNull() is ConnectException -> HelperPresence.ABSENT
+            reply.isSuccess -> HelperPresence.RUNNING
             else -> HelperPresence.UNKNOWN
         }
     }
@@ -527,7 +548,7 @@ object ExperimentalCaptureDaemon {
         }
         val reply = runCatching {
             open(context, 'Q').use { it.getInputStream().bufferedReader().readLine()?.trim() }
-        }.getOrNull()
+        }.onFailure { if (it is CancellationException) throw it }.getOrNull()
         when (reply) {
             "BUSY" -> QuitResult.BUSY
             "BYE" -> {
@@ -559,7 +580,7 @@ object ExperimentalCaptureDaemon {
             sock.getInputStream().bufferedReader().readLine()?.trim()
                 ?.takeIf { it.isNotBlank() && it != "UNAVAILABLE" }?.take(600)
         }
-    }.getOrNull()
+    }.onFailure { if (it is CancellationException) throw it }.getOrNull()
 
     /** Daemon protocol returns complete, finished call files one filename per line. */
     suspend fun pending(context: Context): List<String> = withContext(Dispatchers.IO) {
@@ -603,8 +624,10 @@ object ExperimentalCaptureDaemon {
                         attrs["call"] == "1" && attrs["recording"] == "0" &&
                         attrs["mode"] == "0"
                 }
-            }.getOrDefault(false)
+            }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
         }
+
+    val watcherIssue = MutableStateFlow<String?>(null)
 
     /** An authenticated, read-only recorder health inspection. Never disrupt an ongoing call. */
     suspend fun watchHealth(context: Context, auditCallHistory: Boolean = true): Pair<Boolean, String> = withContext(Dispatchers.IO) {
@@ -617,13 +640,28 @@ object ExperimentalCaptureDaemon {
         if (failure is CancellationException) throw failure
         val snapshot = report.getOrNull()?.let(RecordingWatchHealth::parse)
         if (snapshot == null) {
+            // Never leave an optimistic VoIP armed indicator after the
+            // authenticated watcher becomes unavailable or malformed.
+            voipArmed.value = false
+            voipMessage.value = "VoIP watcher status unavailable; reconnect recorder to verify."
             val detail = RecordingWatchHealth.unavailableDetail(failure)
+            watcherIssue.value = detail
             if (auditCallHistory) com.vrec.app.Log.w("Call watcher: $detail", failure)
             return@withContext false to "$detail; call log coverage not checked"
         }
         val mode = requestedMode(context, Prefs.recordingEnabled(context))
-        val watcherHealthy = RecordingWatchHealth.healthy(snapshot, mode)
-        val missed = if (auditCallHistory && watcherHealthy && !snapshot.inCall) {
+        val simHealthy = RecordingWatchHealth.healthy(snapshot, mode)
+        val voipExpected = mode != 0 && EnhancedCapturePreferences.voipPackages(context).isNotEmpty()
+        // Treat the shell's WATCH reply as authoritative, not a cached
+        // acknowledgement from an earlier mode or process lifetime.
+        voipArmed.value = voipExpected && snapshot.voipArmed
+        if (voipExpected && !voipArmed.value) {
+            voipMessage.value = "VoIP watcher is not armed; check shell recorder diagnostics."
+        }
+        val issue = RecordingWatchHealth.issue(snapshot, mode, voipExpected)
+        watcherIssue.value = issue
+        val watcherHealthy = issue == null
+        val missed = if (auditCallHistory && simHealthy && !snapshot.inCall) {
             val starts = com.vrec.app.calls.MissedCallWatchAudit.recentCellularCalls(
                 context, snapshot.startedAt
             )
@@ -633,10 +671,13 @@ object ExperimentalCaptureDaemon {
                 )
             }
         } else null
+        if (missed == true) {
+            watcherIssue.value = "The call log contains a recent call not observed by the recorder"
+        }
         (watcherHealthy && missed != true) to when (missed) {
             true -> "The call log contains a recent call not observed by the recorder"
-            false -> RecordingWatchHealth.verdict(snapshot, mode) + "; no missing calls found"
-            null -> RecordingWatchHealth.verdict(snapshot, mode) + "; call log coverage not checked"
+            false -> (issue ?: RecordingWatchHealth.verdict(snapshot, mode)) + "; no missing calls found"
+            null -> (issue ?: RecordingWatchHealth.verdict(snapshot, mode)) + "; call log coverage not checked"
         }
     }
 
@@ -649,7 +690,7 @@ object ExperimentalCaptureDaemon {
                 open(context, 'C').use { socket ->
                     socket.getInputStream().bufferedReader().readLine()?.trim() == "ANSWER STARTED"
                 }
-            }.getOrDefault(false)
+            }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
         }
 
     /** Start a new shell segment during an independently confirmed active call.
@@ -669,7 +710,7 @@ object ExperimentalCaptureDaemon {
                     }
                     filename
                 }
-            }
+            }.onFailure { if (it is CancellationException) throw it }
         }
 
     /** Imports only fully muxed files and only deletes the shell copy on success. */
@@ -710,25 +751,31 @@ object ExperimentalCaptureDaemon {
                     " flowPresent=" + (!caller?.flowDirection.isNullOrBlank()) +
                     " mediaPresent=" + (!caller?.mediaType.isNullOrBlank()))
                 val dest = File(RecordingStore.dir(context), name.removeSuffix(".dat") + ".ogg")
-                if (dest.exists() && dest.length() > 100L &&
-                    RecordingStore.hasValidMetadata(dest)) {
-                    // A completed import already has audio AND metadata.
-                    // Preserve the shell original if a prior import crashed
-                    // after publishing audio but before metadata was written.
-                    delete(context, name)
-                    continue
-                }
                 val temp = File(dest.parentFile, dest.name + ".tmp")
-                // Never leave a stale partial import as a valid recording.
-                if (dest.exists() && !RecordingStore.hasValidMetadata(dest)) {
-                    check(dest.delete()) { "Cannot remove incomplete previous import" }
-                }
-                temp.delete()
-                var packets = 0L
+                var stage = ImportBatchPolicy.Stage.STORAGE
                 try {
-                    open(context, 'F', nameBytes(name)).use { sock ->
+                    check(dest.isAbsolute && dest.parentFile?.isDirectory == true) {
+                        "Recording directory unavailable"
+                    }
+                    if (dest.exists() && OggIntegrityVerifier.valid(dest) &&
+                        RecordingStore.hasValidMetadata(dest)) {
+                        // A previous import completed before the shell copy was removed.
+                        delete(context, name)
+                        continue
+                    }
+                    // The fully validated/metadata-complete case already continued.
+                    // A corrupt Ogg with a valid old sidecar must also be replaced;
+                    // otherwise rename can fail or retain broken audio forever.
+                    if (dest.exists()) {
+                        check(dest.delete()) { "Cannot remove incomplete previous import" }
+                    }
+                    if (temp.exists()) check(temp.delete()) { "Cannot replace partial import" }
+                    stage = ImportBatchPolicy.Stage.AUDIO
+                    var durationMs = 0L
+                    val packets = open(context, 'F', nameBytes(name)).use { sock ->
                         sock.soTimeout = 30_000
-                        AudioStream(sock).use { stream ->
+                        AudioStream(sock).use readStream@{ stream ->
+                            if (stream.unavailable) return@readStream null
                             check(stream.codecId.equals("opus", ignoreCase = true)) {
                                 "Expected Opus data, got " + stream.codecId
                             }
@@ -736,7 +783,6 @@ object ExperimentalCaptureDaemon {
                                 ?: error("No Opus stream configuration")
                             check(config.isConfig) { "Missing Opus config header" }
                             temp.outputStream().use { output ->
-                                // MediaMuxer can work from a FileDescriptor with full rights.
                                 OpusOggWriter(output.fd, config.data).use { muxer ->
                                     while (true) {
                                         val packet = stream.readPacket() ?: break
@@ -744,21 +790,28 @@ object ExperimentalCaptureDaemon {
                                             muxer.write(packet.data, packet.pts)
                                         }
                                     }
-                                    packets = muxer.packets
+                                    durationMs = (muxer.durationSeconds * 1000.0).toLong()
+                                    muxer.packets
                                 }
                             }
                         }
+                    }
+                    if (packets == null) {
+                        com.vrec.app.Log.i("Capture diagnostic: shell recording unavailable during fetch")
+                        continue
                     }
                     com.vrec.app.Log.i("Capture diagnostic: shell import packets=" + packets + " bytes=" + temp.length() + " file=" + name)
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
                     }
-                    check(temp.renameTo(dest)) { "Cannot finalize recording" }
-                    val durationMs = packets * 20L
+                    check(OggIntegrityVerifier.valid(temp)) {
+                        "Ogg pages failed CRC, packet, or end-of-stream validation"
+                    }
+                    require(durationMs > 0L) { "Invalid Opus packet duration" }
                     val voip = direction == CallDirection.VOIP
                     val health = recordingHealth(context, name)
                     if (ImportBatchPolicy.shouldDiscardSilent(Prefs.discardSilent(context), health)) {
-                        check(dest.delete()) { "Cannot discard confirmed silent audio" }
+                        check(temp.delete()) { "Cannot discard confirmed silent audio" }
                         if (caller != null) journal.consumeMatch(context, caller)
                         else journal.consume(context, started, identity.appPackage)
                         delete(context, name)
@@ -778,6 +831,7 @@ object ExperimentalCaptureDaemon {
                             com.vrec.app.calls.CallInfo.describe(context, number)
                                 ?.takeIf { it != number }
                         }
+                    stage = ImportBatchPolicy.Stage.METADATA
                     check(RecordingStore.writeMeta(
                         dest, direction, contactName ?: caller?.number ?:
                             ShellVoipLabels.forPackage(caller?.packageName ?: identity.appPackage), label,
@@ -801,6 +855,9 @@ object ExperimentalCaptureDaemon {
                         endedAtOverride = started + durationMs,
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
+                    stage = ImportBatchPolicy.Stage.STORAGE
+                    check(temp.renameTo(dest)) { "Cannot finalize recording" }
+                    check(OggIntegrityVerifier.valid(dest)) { "Final recording integrity verification failed" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
                     // Warn on suspicious VoIP channel levels, but never discard
@@ -828,14 +885,14 @@ object ExperimentalCaptureDaemon {
                     // recordings in the list. Preserve the shell original;
                     // only temporary app-side output is discarded.
                     Log.w(TAG, "Import failed for " + name, t)
-                    com.vrec.app.Log.w("Capture diagnostic: shell recording import failed file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
-                    temp.delete()
+                    com.vrec.app.Log.w("Capture diagnostic: shell recording import failed stage=" + stage.name +
+                        " file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
                     failures++
                     com.vrec.app.recording.RecordingFailureNotice.warn(
-                        context, "A recording could not be saved. Check free storage and Diagnostics; " +
-                            "the original shell capture was kept for retry.", keepUntilDismissed = true)
+                        context, ImportBatchPolicy.warning(stage), keepUntilDismissed = true)
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
-                    continue
+                } finally {
+                    if (temp.isAbsolute) temp.delete()
                 }
             }
             message.value = ImportBatchPolicy.message(collected, failures)
@@ -844,19 +901,36 @@ object ExperimentalCaptureDaemon {
             }
             collected
         }.onFailure {
+            if (it is CancellationException) throw it
             message.value = "Import failed: " + it.message
         }
         }
     }
 
-    private fun delete(context: Context, name: String) {
-        runCatching {
-            open(context, 'D', nameBytes(name)).use { it.getInputStream().read() }
+    private fun delete(context: Context, name: String): Boolean {
+        val removed = try {
+            open(context, 'D', nameBytes(name)).use { socket ->
+                socket.getInputStream().bufferedReader().readLine()?.trim() == "OK"
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            com.vrec.app.Log.w("Shell recording cleanup failed; original preserved for retry", failure)
+            false
         }
+        if (!removed) {
+            com.vrec.app.Log.w("Shell recording cleanup was not acknowledged; saved audio remains intact")
+            com.vrec.app.recording.RecordingFailureNotice.warn(
+                context, "Shell cleanup was not confirmed. The original recording remains pending for retry.")
+        }
+        return removed
     }
 
     suspend fun readLog(): String = withContext(Dispatchers.IO) {
         runCatching { runShell( "tail -n 80 " + LOG_PATH) }
-            .getOrElse { "Log unavailable: " + it.message }
+            .getOrElse {
+                if (it is CancellationException) throw it
+                "Log unavailable: " + it.message
+            }
     }
 }

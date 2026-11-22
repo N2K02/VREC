@@ -123,6 +123,22 @@ object AdbHelperAutoRecovery {
             ExperimentalRecording.status.value.busy) return Outcome.SKIPPED
         if (ExperimentalRecording.awaitingManualRetry) return Outcome.MANUAL_RETRY_REQUIRED
 
+        if (AdbTransport.isConnected) {
+            if (!wirelessBackoff.allowed(SystemClock.elapsedRealtime())) return Outcome.BACKING_OFF
+            val result = AdbLifecycle.coordinateSetup {
+                ExperimentalRecording.startOnConnectedAdb(app, automatic = true)
+            }
+            if (result.isSuccess) {
+                wirelessBackoff.onSuccess()
+                tcpBackoff.onSuccess()
+                record(Outcome.HELPER_RUNNING, "Recording helper restored over the verified ADB shell")
+                return Outcome.HELPER_RUNNING
+            }
+            wirelessBackoff.onFailure(SystemClock.elapsedRealtime())
+            record(Outcome.FAILED, "Verified ADB shell could not start the recording helper")
+            return Outcome.FAILED
+        }
+
         val now = SystemClock.elapsedRealtime()
         val tcpEligible = AdbRecoveryPolicy.shouldRetry(AdbRecoveryPolicy.Conditions(
             adbMethodSelected = true,
@@ -151,7 +167,6 @@ object AdbHelperAutoRecovery {
             }
         }
 
-        if (ExperimentalRecording.status.value.connected) return Outcome.SKIPPED
         if (!AdbSelfRecovery.canSelfRestore(app)) {
             // Not opted in to restore: never touch the setting, but if Wireless
             // debugging is already on and paired, a (throttled) search may reconnect.
