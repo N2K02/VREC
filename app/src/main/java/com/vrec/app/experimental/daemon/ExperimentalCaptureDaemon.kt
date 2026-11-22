@@ -756,7 +756,7 @@ object ExperimentalCaptureDaemon {
                     check(dest.isAbsolute && dest.parentFile?.isDirectory == true) {
                         "Recording directory unavailable"
                     }
-                    if (dest.exists() && dest.length() > 100L &&
+                    if (dest.exists() && OggIntegrityVerifier.valid(dest) &&
                         RecordingStore.hasValidMetadata(dest)) {
                         // A previous import completed before the shell copy was removed.
                         delete(context, name)
@@ -797,6 +797,9 @@ object ExperimentalCaptureDaemon {
                     com.vrec.app.Log.i("Capture diagnostic: shell import packets=" + packets + " bytes=" + temp.length() + " file=" + name)
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
+                    }
+                    check(OggIntegrityVerifier.valid(temp)) {
+                        "Ogg pages failed CRC, packet, or end-of-stream validation"
                     }
                     val durationMs = packets * 20L
                     val voip = direction == CallDirection.VOIP
@@ -848,6 +851,7 @@ object ExperimentalCaptureDaemon {
                     )) { "Cannot save recording metadata" }
                     stage = ImportBatchPolicy.Stage.STORAGE
                     check(temp.renameTo(dest)) { "Cannot finalize recording" }
+                    check(OggIntegrityVerifier.valid(dest)) { "Final recording integrity verification failed" }
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
                     // Warn on suspicious VoIP channel levels, but never discard
@@ -891,15 +895,29 @@ object ExperimentalCaptureDaemon {
             }
             collected
         }.onFailure {
+            if (it is CancellationException) throw it
             message.value = "Import failed: " + it.message
         }
         }
     }
 
-    private fun delete(context: Context, name: String) {
-        runCatching {
-            open(context, 'D', nameBytes(name)).use { it.getInputStream().read() }
+    private fun delete(context: Context, name: String): Boolean {
+        val removed = try {
+            open(context, 'D', nameBytes(name)).use { socket ->
+                socket.getInputStream().bufferedReader().readLine()?.trim() == "OK"
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            com.vrec.app.Log.w("Shell recording cleanup failed; original preserved for retry", failure)
+            false
         }
+        if (!removed) {
+            com.vrec.app.Log.w("Shell recording cleanup was not acknowledged; saved audio remains intact")
+            com.vrec.app.recording.RecordingFailureNotice.warn(
+                context, "Recording was saved, but shell cleanup was not confirmed. The original will be retried.")
+        }
+        return removed
     }
 
     suspend fun readLog(): String = withContext(Dispatchers.IO) {
