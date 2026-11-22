@@ -29,7 +29,7 @@ class RecordingIntegrityContractTest {
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
         assertTrue(daemon.contains("RecordingStore.hasValidMetadata(dest)"))
         assertTrue(daemon.contains("RecordingAudioPublisher.recover(dest, RecordingStore::hasValidMetadata)"))
-        assertTrue(daemon.contains("check(RecordingStore.writeMeta(\\n                        temp, direction"))
+        assertTrue(daemon.contains("check(RecordingStore.writeMeta(\n                        temp, direction"))
         assertTrue(daemon.contains("startedAtOverride = started"))
         assertTrue(daemon.contains("audioHealth = health"))
         val metadata = daemon.indexOf("check(RecordingStore.writeMeta(")
