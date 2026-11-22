@@ -763,7 +763,10 @@ object ExperimentalCaptureDaemon {
                         delete(context, name)
                         continue
                     }
-                    if (dest.exists() && !RecordingStore.hasValidMetadata(dest)) {
+                    // The fully validated/metadata-complete case already continued.
+                    // A corrupt Ogg with a valid old sidecar must also be replaced;
+                    // otherwise rename can fail or retain broken audio forever.
+                    if (dest.exists()) {
                         check(dest.delete()) { "Cannot remove incomplete previous import" }
                     }
                     if (temp.exists()) check(temp.delete()) { "Cannot replace partial import" }
