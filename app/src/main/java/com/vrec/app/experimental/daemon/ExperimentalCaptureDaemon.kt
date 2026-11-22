@@ -757,7 +757,7 @@ object ExperimentalCaptureDaemon {
                     check(dest.isAbsolute && dest.parentFile?.isDirectory == true) {
                         "Recording directory unavailable"
                     }
-                    RecordingAudioPublisher.recover(dest)
+                    RecordingAudioPublisher.recover(dest, RecordingStore::hasValidMetadata)
                     if (dest.exists() && OggIntegrityVerifier.valid(dest) &&
                         RecordingStore.hasValidMetadata(dest)) {
                         // A previous import completed before the shell copy was removed.
@@ -830,7 +830,7 @@ object ExperimentalCaptureDaemon {
                         }
                     stage = ImportBatchPolicy.Stage.METADATA
                     check(RecordingStore.writeMeta(
-                        dest, direction, contactName ?: caller?.number ?:
+                        temp, direction, contactName ?: caller?.number ?:
                             ShellVoipLabels.forPackage(caller?.packageName ?: identity.appPackage), label,
                         silent = health?.contains("BOTH_CHANNELS_QUIET") == true ||
                             health?.contains("NO_AUDIO") == true,
@@ -853,7 +853,7 @@ object ExperimentalCaptureDaemon {
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     stage = ImportBatchPolicy.Stage.STORAGE
-                    RecordingAudioPublisher.publish(temp, dest)
+                    RecordingAudioPublisher.publish(temp, dest, RecordingStore::hasValidMetadata)
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
                     // Warn on suspicious VoIP channel levels, but never discard
@@ -891,7 +891,10 @@ object ExperimentalCaptureDaemon {
                         keepUntilDismissed = true)
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
                 } finally {
-                    if (temp.isAbsolute) temp.delete()
+                    if (temp.isAbsolute) {
+                        temp.delete()
+                        File(temp.parentFile, temp.name + ".json").delete()
+                    }
                 }
             }
             message.value = ImportBatchPolicy.message(collected, failures)
