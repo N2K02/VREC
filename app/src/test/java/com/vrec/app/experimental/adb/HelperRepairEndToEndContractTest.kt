@@ -35,7 +35,7 @@ class HelperRepairEndToEndContractTest {
         val shizuku = link.substringAfter("internal suspend fun connectShizuku(")
             .substringBefore("suspend fun connect(context")
         val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(shizuku.indexOf("session.retry(auto = automatic)") in
+        assertTrue(shizuku.indexOf("!session.isConnected && !session.retry(auto = automatic)") in
             0 until shizuku.indexOf("startHelperTyped(app, manualRepair = !automatic)"))
         assertTrue(recovery.contains("ExperimentalRecording.connectShizuku(app, automatic = true)"))
         assertFalse(shizuku.contains("tcpPresent()"))
@@ -54,6 +54,24 @@ class HelperRepairEndToEndContractTest {
         assertTrue(daemon.contains("Existing shell helper is answering, but configuration could not be confirmed"))
     }
 
+    @Test fun startupDoesNotSpawnWhenAnExistingHelperCannotBeAuthenticated() {
+        val daemon = code("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        val startup = daemon.substringAfter("suspend fun ensureStarted(").substringBefore("suspend fun setMode(")
+        assertTrue(startup.indexOf("failure == null || failure is ConnectException") in
+            0 until startup.indexOf("runShell(launch)"))
+        assertTrue(startup.contains("helperPresence(context) == HelperPresence.ABSENT"))
+        assertTrue(startup.contains("VREC_LAUNCH_LOG_UNAVAILABLE"))
+    }
+
+    @Test fun callWatcherRetainsTheLegacyAndroidRegistration() {
+        val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
+        val register = shell.substringAfter("private static Runnable registerCallState(")
+            .substringBefore("private static final class ModernCallState")
+        assertTrue(register.contains("Build.VERSION.SDK_INT >= 31"))
+        assertTrue(register.contains("manager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)"))
+        assertTrue(register.contains("manager.listen(listener, PhoneStateListener.LISTEN_NONE)"))
+    }
+
     @Test fun oldDaemonIsDetectedBeforeIssuingItsUnknownSimCommand() {
         val daemon = code("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
         val manager = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
@@ -64,6 +82,27 @@ class HelperRepairEndToEndContractTest {
             daemon.indexOf("if (confirmSetup(context))"))
         assertTrue(manager.contains("runningBuildStatus(context.applicationContext)"))
         assertTrue(manager.contains("ShellHelperBuildPolicy.Decision.STALE"))
+    }
+
+    @Test fun shellCannotStopWhileAnsweringMachineIsStillRinging() {
+        val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
+        val quit = shell.substringAfter("if (command == COMMAND_QUIT)")
+            .substringBefore("if (command == COMMAND_RECORD)")
+        assertTrue(quit.contains("machine.state() != AnswerMachine.State.IDLE"))
+        assertFalse(quit.contains("machine.state() != AnswerMachine.State.RINGING"))
+    }
+
+    @Test fun shizukuRecoveryRespectsManualConsentAndDisconnect() {
+        val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        val shizuku = link.substringAfter("internal suspend fun connectShizuku(")
+            .substringBefore("suspend fun connect(context")
+        assertTrue(shizuku.contains("if (!automatic && result.isSuccess) rememberVerifiedShizuku(app)"))
+        assertTrue(link.contains(".putBoolean(AUTO_RECOVERY_KEY, true)"))
+        val recover = recovery.substringAfter("if (ExperimentalRecording.recoveryAuthorization(app).allowed &&")
+            .substringBefore("val restored = AdbLifecycle.coordinateSetup")
+        assertTrue(recover.contains("ShizukuHostAdapter.hasShellAccess()"))
+        assertTrue(recover.contains("!ExperimentalRecording.awaitingManualRetry"))
     }
 
     @Test fun shellRefusesReplacementDuringActiveCallOrAudioImport() {

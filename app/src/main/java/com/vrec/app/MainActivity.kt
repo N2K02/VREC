@@ -497,6 +497,7 @@ private fun VrecRecordingMiniBar(state: RecordingService.State, onOpen: () -> Un
 private fun HomeScreen(onOpenRecordings: () -> Unit, onOpenAdb: () -> Unit) {
     val context = LocalContext.current
     val ready = rememberReadiness()
+    val watcherIssue by ExperimentalCaptureDaemon.watcherIssue.collectAsState()
     val recState by RecordingService.state.collectAsState()
     val enhancedActive by AdbFallbackNotice.enhancedActive.collectAsState()
     val enhancedPaused by AdbFallbackNotice.enhancedPaused.collectAsState()
@@ -579,7 +580,7 @@ private fun HomeScreen(onOpenRecordings: () -> Unit, onOpenAdb: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         com.vrec.app.ui.ShizukuHomeCard(onManageAdb = onOpenAdb)
         com.vrec.app.ui.PermissionDashboardCard()
-        if (recordingEnabled && !ready) {
+        if (recordingEnabled && (!ready || watcherIssue != null)) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = HomePanelStyle.color(),
@@ -587,11 +588,11 @@ private fun HomeScreen(onOpenRecordings: () -> Unit, onOpenAdb: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Enhanced recording unavailable",
+                    Text(if (!ready) "Enhanced recording unavailable" else "Call watcher needs attention",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error)
-                    Text("The recording helper is not ready. Calls cannot be recorded until capture is restored. Check ADB permission and recorder status.",
+                    Text(watcherIssue?.takeIf { ready } ?: "The recording helper is not ready. Calls cannot be recorded until capture is restored. Check ADB permission and recorder status.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

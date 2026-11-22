@@ -1,5 +1,7 @@
 package com.vrec.app.experimental.daemon
 
+import android.os.Build
+import java.io.FileOutputStream
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -48,8 +50,14 @@ class OpusOggWriter(
     opusHead: ByteArray,
 ) : AutoCloseable {
 
-    private val muxer = MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG)
-    private val track: Int
+    private val head = OpusHead.parse(opusHead)
+    // Ogg output format is only available on Android 10 (API 29) and later.
+    // Keep the legacy output stream open: the caller owns the file descriptor.
+    private val legacy = if (Build.VERSION.SDK_INT < 29)
+        LegacyOpusOggMuxer(FileOutputStream(fd), opusHead) else null
+    private val muxer = if (Build.VERSION.SDK_INT >= 29)
+        MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG) else null
+    private var track: Int = -1
     private var started = false
 
     /** Packets written. Zero means the call produced nothing. The timestamp
@@ -57,19 +65,28 @@ class OpusOggWriter(
      *  N x 20ms. See write() for why nothing else works here. */
     var packets: Long = 0L
         private set
+    private var totalSamples: Long = 0L
 
     init {
-        val head = OpusHead.parse(opusHead)
         Log.i(TAG, "ogg: channels=${head.channels} preSkip=${head.preSkip} rate=${head.inputRate} delay=${head.codecDelayNs}ns")
 
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, head.channels)
-        format.setByteBuffer("csd-0", ByteBuffer.wrap(opusHead))
-        format.setByteBuffer("csd-1", littleEndianLong(head.codecDelayNs))
-        format.setByteBuffer("csd-2", littleEndianLong(SEEK_PRE_ROLL_NS))
-
-        track = muxer.addTrack(format)
-        muxer.start()
-        started = true
+        if (legacy != null) {
+            started = true
+        } else {
+            val androidMuxer = requireNotNull(muxer)
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, head.channels)
+            format.setByteBuffer("csd-0", ByteBuffer.wrap(opusHead))
+            format.setByteBuffer("csd-1", littleEndianLong(head.codecDelayNs))
+            format.setByteBuffer("csd-2", littleEndianLong(SEEK_PRE_ROLL_NS))
+            try {
+                track = androidMuxer.addTrack(format)
+                androidMuxer.start()
+                started = true
+            } catch (failure: Exception) {
+                runCatching { androidMuxer.release() }
+                throw failure
+            }
+        }
     }
 
     /**
@@ -96,7 +113,14 @@ class OpusOggWriter(
     fun write(data: ByteArray, @Suppress("UNUSED_PARAMETER") pts: Long) {
         if (!started) return
 
-        val ptsUs = packets * FRAME_US
+        val samples = OpusPacketTiming.samples(data)
+        if (legacy != null) {
+            legacy.write(data)
+            packets++
+            totalSamples += samples
+            return
+        }
+        val ptsUs = totalSamples * 1_000_000L / SAMPLE_RATE
 
         val info = MediaCodec.BufferInfo().apply {
             offset = 0
@@ -104,15 +128,16 @@ class OpusOggWriter(
             presentationTimeUs = ptsUs
             flags = 0
         }
-        muxer.writeSampleData(track, ByteBuffer.wrap(data), info)
+        requireNotNull(muxer).writeSampleData(track, ByteBuffer.wrap(data), info)
         packets++
+        totalSamples += samples
     }
 
     /** Length of what was written, in seconds. Every packet is a frame, the
      *  last one included: this was the last packet's timestamp, which is one
      *  frame short of the audio written. */
     val durationSeconds: Double
-        get() = packets * FRAME_US / 1_000_000.0
+        get() = totalSamples.toDouble() / SAMPLE_RATE
 
     /**
      * Finalises the file. Skipping this leaves an .ogg that no player will
@@ -120,36 +145,17 @@ class OpusOggWriter(
      * the muxer has to be stopped, not merely abandoned.
      */
     override fun close() {
-        finish()
-    }
-
-    /**
-     * Finalise the file, and say whether it worked. A muxer that could not
-     * finish - the storage filled up, typically - leaves a file no player can
-     * open; the saver must then keep the daemon's copy, not delete it as
-     * saved.
-     */
-    fun finish(): Boolean {
-        if (!started) {
-            runCatching { muxer.release() }
-            return true
-        }
+        if (!started) return
         started = false
-        return try {
-            if (packets > 0) {
-                muxer.stop()
-            } else {
-                // Stopping a muxer that was never written to throws. A call
-                // that produced no audio should leave no file rather than an
-                // exception and a zero-byte one.
-                Log.w(TAG, "ogg: no packets written, nothing to finalise")
-            }
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "ogg: could not finalise", t)
-            false
+        if (legacy != null) {
+            legacy.close()
+            return
+        }
+        val androidMuxer = requireNotNull(muxer)
+        try {
+            if (packets > 0) androidMuxer.stop()
         } finally {
-            runCatching { muxer.release() }
+            androidMuxer.release()
         }
     }
 

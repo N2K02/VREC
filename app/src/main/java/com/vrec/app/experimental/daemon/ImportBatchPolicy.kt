@@ -2,6 +2,15 @@ package com.vrec.app.experimental.daemon
 
 /** Preserve damaged shell originals while reporting successful sibling imports. */
 internal object ImportBatchPolicy {
+    enum class Stage(val detail: String) {
+        STORAGE("VRec could not write the recording to storage."),
+        AUDIO("VRec could not transfer or finish the recording audio."),
+        METADATA("VRec could not save the recording details."),
+    }
+
+    fun warning(stage: Stage): String =
+        "${stage.detail} The original shell capture was kept for retry."
+
     /** Never delete a one-sided or unknown recording. */
     fun shouldDiscardSilent(enabled: Boolean, health: String?): Boolean =
         enabled && health != null &&

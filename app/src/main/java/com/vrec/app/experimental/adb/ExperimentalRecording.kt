@@ -68,6 +68,13 @@ object ExperimentalRecording {
         )
     }
 
+    /** Manual Shizuku Start opts in to recovery without claiming verified TCP. */
+    private fun rememberVerifiedShizuku(context: Context) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putBoolean(AUTO_RECOVERY_KEY, true)
+            .apply()
+    }
+
     private fun rememberVerifiedTcp(context: Context) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
             .putBoolean(AUTO_RECOVERY_KEY, true)
@@ -144,7 +151,7 @@ object ExperimentalRecording {
         status.value = Status(busy = true, message = "Verifying Shizuku access…")
         try {
             val session = ShizukuHostAdapter.core(app)
-            if (!session.state.value.connected && !session.retry(auto = automatic)) {
+            if (!session.isConnected && !session.retry(auto = automatic)) {
                 val message = session.state.value.message
                 status.value = Status(message = message)
                 return Result.failure(IllegalStateException(message))
@@ -152,6 +159,7 @@ object ExperimentalRecording {
             status.value = Status(busy = true, connected = true, shellUid = 2000,
                 activeTransport = "Shizuku", message = "Starting recording helper…")
             val result = startHelperTyped(app, manualRepair = !automatic)
+            if (!automatic && result.isSuccess) rememberVerifiedShizuku(app)
             status.value = status.value.copy(message = result.fold(
                 onSuccess = { "Recording helper ready." },
                 onFailure = { it.message ?: "Recording helper could not start." },

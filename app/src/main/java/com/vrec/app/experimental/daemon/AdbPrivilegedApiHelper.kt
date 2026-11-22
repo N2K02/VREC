@@ -83,8 +83,9 @@ object AdbPrivilegedApiHelper {
         }
         when (val outcome = startup) {
             is AdbHelperStartFlow.Outcome.Ready -> {
-                state.value = State.RUNNING
+                ExperimentalCaptureDaemon.watchHealth(app, auditCallHistory = false)
                 ExperimentalCaptureDaemon.ready.value = true
+                state.value = State.RUNNING
                 RecordingFailureNotice.clearAfterHelperRecovered(app)
                 if (outcome.unavailablePermissions.isNotEmpty()) {
                     Log.i("ADB helper started; ${outcome.unavailablePermissions.size} optional Android permissions still require attention")

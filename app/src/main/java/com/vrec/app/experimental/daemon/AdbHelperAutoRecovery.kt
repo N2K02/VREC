@@ -120,7 +120,12 @@ object AdbHelperAutoRecovery {
             lastOutcome.value = Outcome.HELPER_RUNNING
             return Outcome.HELPER_RUNNING
         }
-        if (ShizukuHostAdapter.hasShellAccess() && Prefs.recordingEnabled(app)) {
+        // A deliberate Disconnect revokes automatic helper restarts, even if
+        // the Shizuku service still has shell privileges.
+        if (ExperimentalRecording.recoveryAuthorization(app).allowed &&
+            ShizukuHostAdapter.hasShellAccess() && Prefs.recordingEnabled(app) &&
+            !ExperimentalRecording.awaitingManualRetry &&
+            !ExperimentalRecording.status.value.busy) {
             if (!shizukuBackoff.allowed(SystemClock.elapsedRealtime())) return Outcome.BACKING_OFF
             val restored = AdbLifecycle.coordinateSetup {
                 ExperimentalRecording.connectShizuku(app, automatic = true)
