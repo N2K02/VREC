@@ -757,18 +757,15 @@ object ExperimentalCaptureDaemon {
                     check(dest.isAbsolute && dest.parentFile?.isDirectory == true) {
                         "Recording directory unavailable"
                     }
+                    RecordingAudioPublisher.recover(dest)
                     if (dest.exists() && OggIntegrityVerifier.valid(dest) &&
                         RecordingStore.hasValidMetadata(dest)) {
                         // A previous import completed before the shell copy was removed.
                         delete(context, name)
                         continue
                     }
-                    // The fully validated/metadata-complete case already continued.
-                    // A corrupt Ogg with a valid old sidecar must also be replaced;
-                    // otherwise rename can fail or retain broken audio forever.
-                    if (dest.exists()) {
-                        check(dest.delete()) { "Cannot remove incomplete previous import" }
-                    }
+                    // Keep any existing recording until a replacement is fully
+                    // transferred and validated. Failure must not erase local audio.
                     if (temp.exists()) check(temp.delete()) { "Cannot replace partial import" }
                     stage = ImportBatchPolicy.Stage.AUDIO
                     var durationMs = 0L
@@ -856,8 +853,7 @@ object ExperimentalCaptureDaemon {
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     stage = ImportBatchPolicy.Stage.STORAGE
-                    check(temp.renameTo(dest)) { "Cannot finalize recording" }
-                    check(OggIntegrityVerifier.valid(dest)) { "Final recording integrity verification failed" }
+                    RecordingAudioPublisher.publish(temp, dest)
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
                     // Warn on suspicious VoIP channel levels, but never discard
