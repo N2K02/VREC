@@ -122,6 +122,7 @@ fun SettingsScreen(
                 Triple("Floating controls", "Small recording overlay", Icons.Rounded.Notifications),
                 Triple("VoIP", "Internet call recording", Icons.Rounded.Call),
                 Triple("ADB connection", "Automatic pairing, reboot recovery and network access", Icons.Rounded.Settings),
+                Triple("Logs", "Privacy-safe recording events", Icons.Rounded.Article),
             ).forEach { (name, detail, icon) ->
                 ListItem(
                     headlineContent = { Text(name) },
@@ -143,6 +144,27 @@ fun SettingsScreen(
                 modifier = Modifier.clickable(onClick = onOpenUpdates),
             )
         } else {
+        if (section == "Logs") {
+            var logRefresh by remember { mutableIntStateOf(0) }
+            val events = remember(logRefresh) {
+                com.vrec.app.recording.RecordingDiagnosticEvents.snapshot()
+            }
+            RecordingSettingsCard("Recording events", Icons.Rounded.Article) {
+                Text("Recent recording status only. No numbers, names, audio or file paths are stored.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { logRefresh++ }) { Text("Refresh") }
+                    OutlinedButton(onClick = {
+                        com.vrec.app.recording.RecordingDiagnosticEvents.clear()
+                        logRefresh++
+                    }) { Text("Clear") }
+                }
+                if (events.isEmpty()) Text("No recording events in this session.")
+                else events.forEach { event ->
+                    Text(event, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
         if (section == "Recording") {
             RecordingSettingsCard("Recording behavior", Icons.Rounded.Tune) {
                 ToggleRow("Record calls automatically", "Start recording as soon as a call connects.", autoRecord) {
