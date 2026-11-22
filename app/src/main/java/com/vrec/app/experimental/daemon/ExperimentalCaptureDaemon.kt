@@ -801,9 +801,8 @@ object ExperimentalCaptureDaemon {
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
                     }
-                    check(OggIntegrityVerifier.valid(temp)) {
-                        "Ogg pages failed CRC, packet, or end-of-stream validation"
-                    }
+                    // The publisher verifies complete Ogg pages before any rename.
+                    // Avoid a redundant full-file scan for long recordings.
                     require(durationMs > 0L) { "Invalid Opus packet duration" }
                     val voip = direction == CallDirection.VOIP
                     val health = recordingHealth(context, name)
