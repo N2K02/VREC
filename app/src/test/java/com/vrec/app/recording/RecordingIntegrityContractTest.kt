@@ -66,7 +66,7 @@ class RecordingIntegrityContractTest {
         assertTrue(daemon.contains("check(OggIntegrityVerifier.valid(temp))"))
         assertTrue(daemon.contains("RecordingAudioPublisher.publish(temp, dest, RecordingStore::hasValidMetadata)"))
         val publisher = source("app/src/main/java/com/vrec/app/experimental/daemon/RecordingAudioPublisher.kt")
-        assertTrue(publisher.contains("check(OggIntegrityVerifier.valid(dest))"))
+        assertTrue(publisher.contains("check(OggIntegrityVerifier.valid(dest) && validMetadata(dest))"))
         assertTrue(publisher.contains("move(temp, dest)"))
         assertTrue(publisher.contains("move(incomingMeta, sidecar)"))
         assertTrue(publisher.contains("it.fd.sync()"))
