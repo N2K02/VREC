@@ -35,6 +35,12 @@ class RecordingWatchHealthTest {
         assertTrue(RecordingWatchHealth.unavailableDetail(null).contains("no compatible watch report"))
     }
 
+    @Test fun malformedVoipArmingStatusFailsClosed() {
+        assertNull(RecordingWatchHealth.parse("$valid voiparmed=error"))
+        assertFalse(requireNotNull(RecordingWatchHealth.parse(valid)).voipArmed)
+        assertTrue(requireNotNull(RecordingWatchHealth.parse("$valid voiparmed=1")).voipArmed)
+    }
+
     @Test fun enabledVoipNeedsAnIndependentWatcherAcknowledgement() {
         val simOnly = requireNotNull(RecordingWatchHealth.parse(valid))
         assertNull(RecordingWatchHealth.issue(simOnly, 1, voipExpected = false))
