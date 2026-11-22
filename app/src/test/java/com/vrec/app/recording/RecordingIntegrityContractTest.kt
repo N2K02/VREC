@@ -28,11 +28,12 @@ class RecordingIntegrityContractTest {
     @Test fun importsKeepShellOriginalUntilCompleteMetadataIsDurable() {
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
         assertTrue(daemon.contains("RecordingStore.hasValidMetadata(dest)"))
-        assertTrue(daemon.contains("check(RecordingStore.writeMeta("))
+        assertTrue(daemon.contains("RecordingAudioPublisher.recover(dest, RecordingStore::hasValidMetadata)"))
+        assertTrue(daemon.contains("check(RecordingStore.writeMeta(\n                        temp, direction"))
         assertTrue(daemon.contains("startedAtOverride = started"))
         assertTrue(daemon.contains("audioHealth = health"))
         val metadata = daemon.indexOf("check(RecordingStore.writeMeta(")
-        val publish = daemon.indexOf("check(temp.renameTo(dest))")
+        val publish = daemon.indexOf("RecordingAudioPublisher.publish(temp, dest, RecordingStore::hasValidMetadata)")
         val removeShell = daemon.indexOf("delete(context, name)", metadata)
         assertTrue(metadata in 0 until publish)
         assertTrue(publish in 0 until removeShell)
@@ -44,10 +45,18 @@ class RecordingIntegrityContractTest {
         val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
             .substringAfter("override fun close()")
             .substringBefore("private companion object")
-        assertTrue(writer.contains("if (packets > 0) androidMuxer.stop()"))
-        assertTrue(writer.contains("legacy.close()"))
+        assertTrue(writer.contains("ogg.close()"))
         assertFalse(writer.contains("catch"))
-        assertTrue(writer.contains("finally"))
+        assertFalse(writer.contains("runCatching"))
+    }
+
+    @Test fun adbImportUsesSameValidatedOggWriterOnAllAndroidVersions() {
+        val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
+        assertTrue(writer.contains("LegacyOpusOggMuxer(FileOutputStream(fd), opusHead)"))
+        assertTrue(writer.contains("OpusPacketTiming.samples(data)"))
+        assertFalse(writer.contains("MediaMuxer("))
+        assertFalse(writer.contains("Build.VERSION.SDK_INT"))
+        assertTrue(writer.contains("ogg.close()"))
     }
 
     @Test fun originalShellRecordingRequiresValidatedOggAndDeleteAcknowledgement() {
@@ -55,7 +64,12 @@ class RecordingIntegrityContractTest {
         val validator = source("app/src/main/java/com/vrec/app/experimental/daemon/OggIntegrityVerifier.kt")
         assertTrue(daemon.contains("dest.exists() && OggIntegrityVerifier.valid(dest)"))
         assertTrue(daemon.contains("check(OggIntegrityVerifier.valid(temp))"))
-        assertTrue(daemon.contains("check(OggIntegrityVerifier.valid(dest))"))
+        assertTrue(daemon.contains("RecordingAudioPublisher.publish(temp, dest, RecordingStore::hasValidMetadata)"))
+        val publisher = source("app/src/main/java/com/vrec/app/experimental/daemon/RecordingAudioPublisher.kt")
+        assertTrue(publisher.contains("check(OggIntegrityVerifier.valid(dest) && validMetadata(dest))"))
+        assertTrue(publisher.contains("move(temp, dest)"))
+        assertTrue(publisher.contains("move(incomingMeta, sidecar)"))
+        assertTrue(publisher.contains("it.fd.sync()"))
         assertTrue(daemon.contains("readLine()?.trim() == \"OK\""))
         assertTrue(daemon.contains("Shell recording cleanup was not acknowledged"))
         assertTrue(validator.contains("checksum(packet) != claimed"))
