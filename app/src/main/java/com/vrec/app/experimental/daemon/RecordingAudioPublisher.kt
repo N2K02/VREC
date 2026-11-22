@@ -16,6 +16,12 @@ internal object RecordingAudioPublisher {
     private fun backup(file: File) = File(file.parentFile, file.name + ".previous")
     private fun committed(dest: File) = File(dest.parentFile, dest.name + ".committed")
 
+    private fun syncFile(file: File) {
+        // File content must be durable before a rename-based commit marker.
+        // Opening in append mode does not rewrite the existing recording.
+        FileOutputStream(file, true).use { it.fd.sync() }
+    }
+
     private fun remove(file: File) {
         if (file.exists()) check(file.delete()) { "Cannot remove obsolete recording transaction file" }
     }
@@ -64,6 +70,8 @@ internal object RecordingAudioPublisher {
     fun publish(temp: File, dest: File, validMetadata: (File) -> Boolean) {
         check(OggIntegrityVerifier.valid(temp)) { "Cannot publish invalid recording audio" }
         check(validMetadata(temp)) { "Cannot publish invalid recording metadata" }
+        syncFile(temp)
+        syncFile(metadata(temp))
 
         val incomingMeta = metadata(temp)
         val sidecar = metadata(dest)

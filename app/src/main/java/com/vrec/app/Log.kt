@@ -18,10 +18,12 @@ object Log {
     }
 
     fun i(message: String) {
+        com.vrec.app.recording.RecordingDiagnosticEvents.record(message)
         AndroidLog.i(TAG, redact(message).replace('\n', ' ').replace('\r', ' ').take(1000))
     }
 
     fun w(message: String, error: Throwable? = null) {
+        com.vrec.app.recording.RecordingDiagnosticEvents.record(message)
         val safe = redact(message).replace('\n', ' ').replace('\r', ' ').take(1000)
         AndroidLog.w(TAG, safe + (error?.let { " (${it.javaClass.simpleName})" } ?: ""))
     }
