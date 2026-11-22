@@ -50,6 +50,27 @@ class RecordingIntegrityContractTest {
         assertTrue(writer.contains("finally"))
     }
 
+    @Test fun originalShellRecordingRequiresValidatedOggAndDeleteAcknowledgement() {
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        val validator = source("app/src/main/java/com/vrec/app/experimental/daemon/OggIntegrityVerifier.kt")
+        assertTrue(daemon.contains("dest.exists() && OggIntegrityVerifier.valid(dest)"))
+        assertTrue(daemon.contains("check(OggIntegrityVerifier.valid(temp))"))
+        assertTrue(daemon.contains("check(OggIntegrityVerifier.valid(dest))"))
+        assertTrue(daemon.contains("readLine()?.trim() == \"OK\""))
+        assertTrue(daemon.contains("Shell recording cleanup was not acknowledged"))
+        assertTrue(validator.contains("checksum(packet) != claimed"))
+        assertTrue(validator.contains("sawEos && sawAudio"))
+    }
+
+    @Test fun actualOpusDurationUsedForSavedMetadataAndCancellationIsNotSwallowed() {
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
+        assertTrue(daemon.contains("durationMs = (muxer.durationSeconds * 1000.0).toLong()"))
+        assertFalse(daemon.contains("val durationMs = packets * 20L"))
+        assertTrue(writer.contains("OpusPacketTiming.samples(data)"))
+        assertTrue(daemon.contains("if (it is CancellationException) throw it"))
+    }
+
     @Test fun failedCaptureAndStorageOperationsHaveVisibleWarnings() {
         val notice = source("app/src/main/java/com/vrec/app/recording/RecordingFailureNotice.kt")
         val home = source("app/src/main/java/com/vrec/app/MainActivity.kt")
