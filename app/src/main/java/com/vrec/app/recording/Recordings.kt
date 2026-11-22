@@ -183,6 +183,20 @@ object RecordingStore {
         return writeJsonAtomic(file, json)
     }
 
+    /**
+     * Reimports must not reset user edits on an existing recording.
+     * Only user-editable fields are copied; capture-derived metadata remains
+     * from the new validated import. Both JSON writes remain AtomicFile-based.
+     */
+    fun carryUserEdits(previousAudio: File, newAudio: File): Boolean = synchronized(metadataLock) {
+        val old = readJson(previousAudio) ?: return@synchronized true
+        val updated = readJson(newAudio) ?: return@synchronized false
+        for (field in listOf("notes", "favorite", "bookmarksMs")) {
+            if (old.has(field)) updated.put(field, old.get(field))
+        }
+        writeJsonAtomic(newAudio, updated)
+    }
+
     fun updateDetails(
         recording: Recording,
         notes: String,
