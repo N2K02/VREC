@@ -17,8 +17,7 @@ class LegacyOpusOggMuxerTest {
         val found = mutableListOf<Page>()
         var pos = 0
         while (pos < bytes.size) {
-            val header = ByteBuffer.wrap(bytes, pos, bytes.size - pos)
-                .order(ByteOrder.LITTLE_ENDIAN)
+            val header = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             assertEquals("OggS", String(bytes, pos, 4, Charsets.US_ASCII))
             val segments = bytes[pos + 26].toInt() and 0xff
             var payloadLength = 0
@@ -39,7 +38,7 @@ class LegacyOpusOggMuxerTest {
             assertEquals("Ogg CRC must cover complete page", originalCrc, crc)
             found += Page(
                 flags = bytes[pos + 5].toInt() and 0xff,
-                granule = header.getLong(6),
+                granule = header.getLong(pos + 6),
                 payload = bytes.copyOfRange(pos + 27 + segments, pos + size),
             )
             pos += size
