@@ -49,6 +49,15 @@ class RecordingIntegrityContractTest {
         assertFalse(writer.contains("runCatching"))
     }
 
+    @Test fun adbImportUsesSameValidatedOggWriterOnAllAndroidVersions() {
+        val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
+        assertTrue(writer.contains("LegacyOpusOggMuxer(FileOutputStream(fd), opusHead)"))
+        assertTrue(writer.contains("OpusPacketTiming.samples(data)"))
+        assertFalse(writer.contains("MediaMuxer("))
+        assertFalse(writer.contains("Build.VERSION.SDK_INT"))
+        assertTrue(writer.contains("ogg.close()"))
+    }
+
     @Test fun originalShellRecordingRequiresValidatedOggAndDeleteAcknowledgement() {
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
         val validator = source("app/src/main/java/com/vrec/app/experimental/daemon/OggIntegrityVerifier.kt")
