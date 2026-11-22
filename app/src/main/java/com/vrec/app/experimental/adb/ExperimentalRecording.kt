@@ -149,6 +149,12 @@ object ExperimentalRecording {
         try {
             if (!automatic) allowManualRetry()
             val result = startHelperTyped(context, manualRepair = !automatic)
+            // Direct Start on a verified shared-core ADB session must preserve
+            // the same recovery authorization as a successful fresh connect.
+            // Background recovery must never undo an explicit Disconnect.
+            if (!automatic && result.isSuccess) {
+                if (tcp) rememberVerifiedTcp(context) else rememberVerifiedWireless(context)
+            }
             status.value = status.value.copy(
                 lastFailure = if (result.isSuccess) null else AdbFailure.HELPER_UNAVAILABLE,
                 message = result.fold({ "Recording helper ready." },
