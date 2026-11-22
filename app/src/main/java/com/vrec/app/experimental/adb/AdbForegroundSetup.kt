@@ -78,6 +78,14 @@ object AdbForegroundSetup {
     suspend fun startOrRepair(context: Context): Outcome {
         val app = context.applicationContext
         if (AdbLifecycle.quitting) return Outcome.USER_ACTION_REQUIRED
+        if (AdbTransport.isConnected) {
+            val result = AdbLifecycle.coordinateSetup {
+                ExperimentalRecording.startOnConnectedAdb(app, automatic = false)
+            }
+            LocalAdbMiddleware.lastSetupFailed.value = result.isFailure
+            LocalAdbMiddleware.message.value = ExperimentalRecording.status.value.message
+            return if (result.isSuccess) Outcome.HELPER_READY else Outcome.USER_ACTION_REQUIRED
+        }
         val wireless = LocalWirelessAdb.status.value
         val paired = wireless.paired || ExperimentalRecording.wirelessWasPaired(app)
         if (Routing.next(wireless.connectPort, paired) == Routing.Next.RETRY_PAIRED_WIRELESS) {

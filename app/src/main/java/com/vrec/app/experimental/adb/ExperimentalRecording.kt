@@ -135,6 +135,31 @@ object ExperimentalRecording {
                 ?: IllegalStateException("Android did not confirm advanced detection permission."))
     }
 
+    /** Start on the live transport already authorized by the shared ADB core. */
+    internal suspend fun startOnConnectedAdb(context: Context, automatic: Boolean): Result<Unit> {
+        val live = SharedAdbHostAdapter.current()?.state?.value
+        if (AdbLifecycle.quitting || status.value.busy || live?.connected != true) {
+            return Result.failure(IllegalStateException("ADB shell is no longer connected."))
+        }
+        val tcp = live.transport == dev.n2k02.adb.core.AdbTransportMode.LOCAL_TCP_5555
+        status.value = status.value.copy(busy = true, connected = true, shellUid = 2000,
+            activeTransport = if (tcp) "TCP" else "TLS",
+            activePort = if (tcp) AdbTransport.LEGACY_TCP_PORT else live.connectionPort,
+            message = "ADB shell connected. Verifying the recorder…")
+        try {
+            if (!automatic) allowManualRetry()
+            val result = startHelperTyped(context, manualRepair = !automatic)
+            status.value = status.value.copy(
+                lastFailure = if (result.isSuccess) null else AdbFailure.HELPER_UNAVAILABLE,
+                message = result.fold({ "Recording helper ready." },
+                    { it.message ?: "Recording helper could not start." }),
+            )
+            return result
+        } finally {
+            status.value = status.value.copy(busy = false)
+        }
+    }
+
     /** Connect only to USB-bootstrapped localhost TCP/5555, never external hosts. */
     suspend fun connect(context: Context, automatic: Boolean = false): Result<Int> {
         if (automatic && awaitingManualRetry)

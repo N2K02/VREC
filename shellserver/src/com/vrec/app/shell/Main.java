@@ -24,6 +24,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.system.Os;
 import android.telecom.TelecomManager;
+import android.telephony.PhoneStateListener;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyCallback;
@@ -58,6 +59,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntConsumer;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -305,11 +307,13 @@ public final class Main {
             // in getITelephony() with an NPE (measured). The class that holds
             // it is hidden, so it is set the way scrcpy sets every other piece
             // of app-process furniture this daemon lacks: by reflection.
-            Class<?> initializer = Class.forName("android.telephony.TelephonyFrameworkInitializer");
-            Class<?> managerClass = Class.forName("android.os.TelephonyServiceManager");
-            Object manager = managerClass.getDeclaredConstructor().newInstance();
-            initializer.getDeclaredMethod("setTelephonyServiceManager", managerClass)
-                    .invoke(null, manager);
+            if (Build.VERSION.SDK_INT >= 31) {
+                Class<?> initializer = Class.forName("android.telephony.TelephonyFrameworkInitializer");
+                Class<?> managerClass = Class.forName("android.os.TelephonyServiceManager");
+                Object manager = managerClass.getDeclaredConstructor().newInstance();
+                initializer.getDeclaredMethod("setTelephonyServiceManager", managerClass)
+                        .invoke(null, manager);
+            }
 
             // The manager the system hands back is bound to the system
             // context, whose package is "android" - and telephony checks the
@@ -373,7 +377,8 @@ public final class Main {
             // Into a field, never inline: the framework only holds it weakly.
             // See callWatch.
             callWatch = new CallWatch(token, telephony, audio, handler);
-            telephony.registerTelephonyCallback(handler::post, callWatch);
+            defaultCallRegistration = registerCallState(telephony, handler,
+                    state -> callWatch.onSourceState(MultiSimCalls.DEFAULT_SOURCE, state));
             watching = true;
             Ln.i("callwatch: watching call state as uid " + android.os.Process.myUid());
             // Every SIM, not only the default one. Additive: if Android
@@ -407,6 +412,39 @@ public final class Main {
      * survived every forced GC and heard every call.
      */
     private static CallWatch callWatch;
+    private static Runnable defaultCallRegistration;
+
+    @SuppressWarnings("deprecation")
+    @SuppressLint("MissingPermission")
+    private static Runnable registerCallState(TelephonyManager manager, Handler handler,
+                                               IntConsumer onState) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            return ModernCallState.register(manager, handler, onState);
+        }
+        PhoneStateListener listener = new PhoneStateListener() {
+            @Override public void onCallStateChanged(int state, String ignoredNumber) {
+                onState.accept(state);
+            }
+        };
+        manager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE);
+        return () -> manager.listen(listener, PhoneStateListener.LISTEN_NONE);
+    }
+
+    private static final class ModernCallState extends TelephonyCallback
+            implements TelephonyCallback.CallStateListener {
+        private final IntConsumer onState;
+
+        ModernCallState(IntConsumer onState) { this.onState = onState; }
+
+        @Override public void onCallStateChanged(int state) { onState.accept(state); }
+
+        @SuppressLint("MissingPermission")
+        static Runnable register(TelephonyManager manager, Handler handler, IntConsumer onState) {
+            ModernCallState callback = new ModernCallState(onState);
+            manager.registerTelephonyCallback(handler::post, callback);
+            return () -> manager.unregisterTelephonyCallback(callback);
+        }
+    }
 
     /**
      * WHAT THE CALL WATCH HAS HEARD, FOR THE APP'S SELF-TEST. See COMMAND_WATCH.
@@ -422,8 +460,7 @@ public final class Main {
     private static volatile long lastCallEventAt;
     private static volatile long lastOffHookAt;
 
-    private static final class CallWatch extends TelephonyCallback
-            implements TelephonyCallback.CallStateListener {
+    private static final class CallWatch {
 
         private final String token;
         private final TelephonyManager telephony;
@@ -489,17 +526,12 @@ public final class Main {
             this.endCheck = states::endCheck;
         }
 
-        @Override
-        public void onCallStateChanged(int state) {
-            onSourceState(MultiSimCalls.DEFAULT_SOURCE, state);
-        }
-
         /** Each SIM's state, and the default subscription's, combined into
          *  the single state CallStates has always been fed. */
         private final MultiSimCalls sims = new MultiSimCalls();
         /** Held strongly: the framework only keeps TelephonyCallbacks weakly
          *  (see callWatch). Touched on the main looper only. */
-        private final Map<Integer, SimWatch> simWatches = new HashMap<>();
+        private final Map<Integer, Runnable> simWatches = new HashMap<>();
         private SubscriptionManager subscriptions;
         private SubscriptionManager.OnSubscriptionsChangedListener subscriptionChanges;
 
@@ -628,9 +660,9 @@ public final class Main {
             }
             for (Integer id : new HashSet<>(simWatches.keySet())) {
                 if (!active.contains(id)) {
-                    SimWatch gone = simWatches.remove(id);
+                    Runnable unregister = simWatches.remove(id);
                     try {
-                        gone.manager.unregisterTelephonyCallback(gone);
+                        unregister.run();
                     } catch (Throwable ignored) {
                     }
                 }
@@ -639,9 +671,8 @@ public final class Main {
                 if (simWatches.containsKey(id)) continue;
                 try {
                     TelephonyManager forSim = telephony.createForSubscriptionId(id);
-                    SimWatch watch = new SimWatch(id, forSim);
-                    forSim.registerTelephonyCallback(handler::post, watch);
-                    simWatches.put(id, watch);
+                    Runnable unregister = registerCallState(forSim, handler, state -> onSourceState(id, state));
+                    simWatches.put(id, unregister);
                 } catch (Throwable t) {
                     Ln.w("callwatch: could not watch a SIM; it relies on the default watch: " + t);
                 }
@@ -650,22 +681,6 @@ public final class Main {
             // watch's first state arrives later, through onSourceState.
             Ln.i("callwatch: watching " + simWatches.size() + " of " + active.size() + " SIM(s)"
                     + (sims.defaultTrusted() ? ", default watch counted until each is ready" : ""));
-        }
-
-        private final class SimWatch extends TelephonyCallback
-                implements TelephonyCallback.CallStateListener {
-            final int subId;
-            final TelephonyManager manager;
-
-            SimWatch(int subId, TelephonyManager manager) {
-                this.subId = subId;
-                this.manager = manager;
-            }
-
-            @Override
-            public void onCallStateChanged(int state) {
-                onSourceState(subId, state);
-            }
         }
 
         private void onCombinedState(int state) {

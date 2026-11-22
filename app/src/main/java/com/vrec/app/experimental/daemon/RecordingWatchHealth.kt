@@ -3,6 +3,8 @@ package com.vrec.app.experimental.daemon
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 
+internal class HelperAuthenticationException : IllegalStateException("Recorder authentication failed")
+
 /** Fail closed on malformed or stale daemon health data. No recording is started by this check. */
 internal object RecordingWatchHealth {
     data class Snapshot(
@@ -16,6 +18,7 @@ internal object RecordingWatchHealth {
         val lastEventAt: Long,
         val offHooks: Long,
         val lastOffHookAt: Long,
+        val voipArmed: Boolean = false,
     )
     fun parse(line: String): Snapshot? {
         if (!line.startsWith("WATCH 1 ")) return null
@@ -41,9 +44,11 @@ internal object RecordingWatchHealth {
             lastEventAt = number("lastevent") ?: return null,
             offHooks = number("offhooks") ?: return null,
             lastOffHookAt = number("lastoffhook") ?: return null,
+            voipArmed = entries["voiparmed"] == "1",
         )
     }
     fun unavailableDetail(failure: Throwable?): String = when (failure) {
+        is HelperAuthenticationException -> "The recorder port answered, but VRec could not authenticate the helper"
         is ConnectException -> "Recording helper is stopped. Tap Start under System Status on Home"
         is SocketTimeoutException -> "Recording helper did not respond. Check System Status on Home"
         null -> "Recording helper returned no compatible watch report. Check System Status on Home"
@@ -58,6 +63,12 @@ internal object RecordingWatchHealth {
         snapshot.recordingSince > 0 && !snapshot.inCall -> "Recorder may be stuck recording after a call"
         else -> "Call watcher is healthy; a real test call is still needed to verify both voices"
     }
+    fun issue(snapshot: Snapshot, expectedMode: Int, voipExpected: Boolean): String? = when {
+        !healthy(snapshot, expectedMode) -> verdict(snapshot, expectedMode)
+        voipExpected && !snapshot.voipArmed -> "The VoIP watcher is not armed for the selected apps"
+        else -> null
+    }
+
     fun healthy(snapshot: Snapshot?, expectedMode: Int): Boolean =
         snapshot != null && snapshot.watching && snapshot.looperHealthy &&
             snapshot.mode == expectedMode && (snapshot.recordingSince == 0L || snapshot.inCall)

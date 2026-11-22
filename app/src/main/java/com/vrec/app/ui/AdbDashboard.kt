@@ -46,6 +46,7 @@ import com.vrec.app.experimental.adb.AdbTransport
 import com.vrec.app.experimental.adb.ExperimentalRecording
 import com.vrec.app.experimental.daemon.AdbHelperAutoRecovery
 import com.vrec.app.experimental.daemon.AdbPrivilegedApiHelper
+import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon
 import com.vrec.app.experimental.daemon.ExperimentalCaptureDaemon.QuitResult
 import kotlinx.coroutines.launch
 
@@ -82,7 +83,8 @@ fun AdbDashboard(
 
     // The detached helper can keep recording without an active ADB transport.
     // Readiness is based on helper health and the armed recording state.
-    val allReady = healthy && recordingOn && !busy
+    val watcherIssue by ExperimentalCaptureDaemon.watcherIssue.collectAsState()
+    val allReady = healthy && recordingOn && !busy && watcherIssue == null
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -104,6 +106,7 @@ fun AdbDashboard(
                 Text(
                     when {
                         busy -> "Working · Checking helper connection and readiness"
+                        healthy && watcherIssue != null -> watcherIssue.orEmpty()
                         healthy && verified -> "Connected · Helper active · ADB verified"
                         healthy -> "Ready · Helper active · ADB session detached"
                         failed -> "Check ADB setup or diagnostics"
