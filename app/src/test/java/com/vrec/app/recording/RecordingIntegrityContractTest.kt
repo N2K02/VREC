@@ -44,10 +44,18 @@ class RecordingIntegrityContractTest {
         val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
             .substringAfter("override fun close()")
             .substringBefore("private companion object")
-        assertTrue(writer.contains("if (packets > 0) androidMuxer.stop()"))
-        assertTrue(writer.contains("legacy.close()"))
+        assertTrue(writer.contains("ogg.close()"))
         assertFalse(writer.contains("catch"))
-        assertTrue(writer.contains("finally"))
+        assertFalse(writer.contains("runCatching"))
+    }
+
+    @Test fun shizukuImportUsesSameValidatedOggWriterOnAllAndroidVersions() {
+        val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
+        assertTrue(writer.contains("LegacyOpusOggMuxer(FileOutputStream(fd), opusHead)"))
+        assertTrue(writer.contains("OpusPacketTiming.samples(data)"))
+        assertFalse(writer.contains("MediaMuxer("))
+        assertFalse(writer.contains("Build.VERSION.SDK_INT"))
+        assertTrue(writer.contains("ogg.close()"))
     }
 
     @Test fun originalShellRecordingRequiresValidatedOggAndDeleteAcknowledgement() {
