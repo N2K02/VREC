@@ -639,6 +639,10 @@ object ExperimentalCaptureDaemon {
         if (failure is CancellationException) throw failure
         val snapshot = report.getOrNull()?.let(RecordingWatchHealth::parse)
         if (snapshot == null) {
+            // Never leave an optimistic VoIP armed indicator after the
+            // authenticated watcher becomes unavailable or malformed.
+            voipArmed.value = false
+            voipMessage.value = "VoIP watcher status unavailable; reconnect recorder to verify."
             val detail = RecordingWatchHealth.unavailableDetail(failure)
             watcherIssue.value = detail
             if (auditCallHistory) com.vrec.app.Log.w("Call watcher: $detail", failure)
@@ -647,6 +651,12 @@ object ExperimentalCaptureDaemon {
         val mode = requestedMode(context, Prefs.recordingEnabled(context))
         val simHealthy = RecordingWatchHealth.healthy(snapshot, mode)
         val voipExpected = mode != 0 && EnhancedCapturePreferences.voipPackages(context).isNotEmpty()
+        // Treat the shell's WATCH reply as authoritative, not a cached
+        // acknowledgement from an earlier mode or process lifetime.
+        voipArmed.value = voipExpected && snapshot.voipArmed
+        if (voipExpected && !voipArmed.value) {
+            voipMessage.value = "VoIP watcher is not armed; check shell recorder diagnostics."
+        }
         val issue = RecordingWatchHealth.issue(snapshot, mode, voipExpected)
         watcherIssue.value = issue
         val watcherHealthy = issue == null
@@ -660,6 +670,9 @@ object ExperimentalCaptureDaemon {
                 )
             }
         } else null
+        if (missed == true) {
+            watcherIssue.value = "The call log contains a recent call not observed by the recorder"
+        }
         (watcherHealthy && missed != true) to when (missed) {
             true -> "The call log contains a recent call not observed by the recorder"
             false -> (issue ?: RecordingWatchHealth.verdict(snapshot, mode)) + "; no missing calls found"
