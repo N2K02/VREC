@@ -767,6 +767,7 @@ object ExperimentalCaptureDaemon {
                     }
                     if (temp.exists()) check(temp.delete()) { "Cannot replace partial import" }
                     stage = ImportBatchPolicy.Stage.AUDIO
+                    var durationMs = 0L
                     val packets = open(context, 'F', nameBytes(name)).use { sock ->
                         sock.soTimeout = 30_000
                         AudioStream(sock).use readStream@{ stream ->
@@ -785,6 +786,7 @@ object ExperimentalCaptureDaemon {
                                             muxer.write(packet.data, packet.pts)
                                         }
                                     }
+                                    durationMs = (muxer.durationSeconds * 1000.0).toLong()
                                     muxer.packets
                                 }
                             }
@@ -801,7 +803,7 @@ object ExperimentalCaptureDaemon {
                     check(OggIntegrityVerifier.valid(temp)) {
                         "Ogg pages failed CRC, packet, or end-of-stream validation"
                     }
-                    val durationMs = packets * 20L
+                    require(durationMs > 0L) { "Invalid Opus packet duration" }
                     val voip = direction == CallDirection.VOIP
                     val health = recordingHealth(context, name)
                     if (ImportBatchPolicy.shouldDiscardSilent(Prefs.discardSilent(context), health)) {
