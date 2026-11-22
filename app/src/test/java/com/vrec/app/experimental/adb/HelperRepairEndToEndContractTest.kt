@@ -35,7 +35,7 @@ class HelperRepairEndToEndContractTest {
         val shizuku = link.substringAfter("internal suspend fun connectShizuku(")
             .substringBefore("suspend fun connect(context")
         val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
-        assertTrue(shizuku.indexOf("session.retry(auto = automatic)") in
+        assertTrue(shizuku.indexOf("!session.isConnected && !session.retry(auto = automatic)") in
             0 until shizuku.indexOf("startHelperTyped(app, manualRepair = !automatic)"))
         assertTrue(recovery.contains("ExperimentalRecording.connectShizuku(app, automatic = true)"))
         assertFalse(shizuku.contains("tcpPresent()"))
@@ -52,6 +52,24 @@ class HelperRepairEndToEndContractTest {
         assertTrue(daemon.contains("ShellHelperRepairPolicy.shouldRequestReplacement("))
         assertTrue(daemon.contains("check(exit == \"BYE\")"))
         assertTrue(daemon.contains("Existing shell helper is answering, but configuration could not be confirmed"))
+    }
+
+    @Test fun startupDoesNotSpawnWhenAnExistingHelperCannotBeAuthenticated() {
+        val daemon = code("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        val startup = daemon.substringAfter("suspend fun ensureStarted(").substringBefore("suspend fun setMode(")
+        assertTrue(startup.indexOf("failure == null || failure is ConnectException") in
+            0 until startup.indexOf("runShell(launch)"))
+        assertTrue(startup.contains("helperPresence(context) == HelperPresence.ABSENT"))
+        assertTrue(startup.contains("VREC_LAUNCH_LOG_UNAVAILABLE"))
+    }
+
+    @Test fun callWatcherRetainsTheLegacyAndroidRegistration() {
+        val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
+        val register = shell.substringAfter("private static Runnable registerCallState(")
+            .substringBefore("private static final class ModernCallState")
+        assertTrue(register.contains("Build.VERSION.SDK_INT >= 31"))
+        assertTrue(register.contains("manager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)"))
+        assertTrue(register.contains("manager.listen(listener, PhoneStateListener.LISTEN_NONE)"))
     }
 
     @Test fun oldDaemonIsDetectedBeforeIssuingItsUnknownSimCommand() {

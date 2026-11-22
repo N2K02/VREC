@@ -66,7 +66,7 @@ object ShizukuSessionRegistry {
 
 /** A Shizuku user service is owned by the requesting app, authorized per package.
  * The Binder is never exported as an ordinary Android Service. */
-private class ShizukuBridge(context: Context) {
+private class ShizukuBridge(context: Context, private val onServiceLost: () -> Unit) {
     private val app = context.applicationContext
     private val args = Shizuku.UserServiceArgs(
         ComponentName(app, ShizukuShellService::class.java)
@@ -74,14 +74,21 @@ private class ShizukuBridge(context: Context) {
     private val lock = Mutex()
     @Volatile private var binder: IBinder? = null
     @Volatile private var pending: CompletableDeferred<IBinder>? = null
-    @Volatile private var bound = false
+    @Volatile private var binding: ServiceConnection? = null
 
-    private val connection = object : ServiceConnection {
+    val hasLiveService: Boolean get() = binder?.isBinderAlive == true && authorized()
+
+    private fun newConnection() = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            if (binding !== this) return
             binder = service
             pending?.complete(service)
         }
-        override fun onServiceDisconnected(name: ComponentName) { binder = null }
+        override fun onServiceDisconnected(name: ComponentName) {
+            if (binding !== this) return
+            binder = null
+            onServiceLost()
+        }
     }
 
     private fun authorized(): Boolean = runCatching {
@@ -99,13 +106,15 @@ private class ShizukuBridge(context: Context) {
         try {
             if (binder?.isBinderAlive != true) {
                 val deferred = CompletableDeferred<IBinder>()
+                disconnectLocked()
                 pending = deferred
+                val connection = newConnection()
+                binding = connection
                 try {
                     Shizuku.bindUserService(args, connection)
                 } catch (failure: Exception) {
                     throw IllegalStateException("Shizuku could not bind VRec’s shell service.", failure)
                 }
-                bound = true
                 val received = withTimeoutOrNull(12_000L) { deferred.await() }
                 check(received?.isBinderAlive == true) {
                     "Shizuku did not deliver a live shell service. Check LocalADB and retry."
@@ -152,10 +161,9 @@ private class ShizukuBridge(context: Context) {
 
     private fun disconnectLocked() {
         binder = null
-        if (bound) {
-            runCatching { Shizuku.unbindUserService(args, connection, true) }
-            bound = false
-        }
+        val connection = binding
+        binding = null
+        if (connection != null) runCatching { Shizuku.unbindUserService(args, connection, true) }
     }
     suspend fun close() = lock.withLock { disconnectLocked() }
 }
@@ -166,11 +174,17 @@ class ShizukuSession(
     val preferences: ShizukuPreferences,
     private val hooks: ShizukuHostHooks = object : ShizukuHostHooks {},
 ) {
-    private val bridge = ShizukuBridge(context)
     private val lock = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(ShizukuState(lastVerifiedAt = preferences.lastVerifiedAt()))
     val state: StateFlow<ShizukuState> = _state.asStateFlow()
+    private val bridge = ShizukuBridge(context) {
+        if (_state.value.connected) {
+            _state.value = ShizukuState(phase = ShizukuPhase.NEEDS_SETUP,
+                message = "VRec’s Shizuku shell service disconnected. Repair the recording helper.")
+        }
+    }
+    internal val isConnected: Boolean get() = _state.value.connected && bridge.hasLiveService
     @Volatile private var quit = false
     private var pages = 0
     private var services = 0
@@ -230,7 +244,13 @@ class ShizukuSession(
     suspend fun execVerified(command: String, timeoutMs: Long = 15_000L): String = lock.withLock {
         check(!quit && !preferences.manuallyStopped()) { "Shizuku stopped" }
         check(_state.value.connected) { "Shizuku shell not verified" }
-        val uid = runCatching { bridge.execute("id -u", 3_000L).trim() }.getOrNull()
+        val uid = try {
+            bridge.execute("id -u", 3_000L).trim()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
         if (uid != "2000") {
             _state.value = ShizukuState(phase = ShizukuPhase.NEEDS_SETUP,
                 message = "Shizuku shell identity failed verification")

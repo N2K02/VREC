@@ -51,6 +51,7 @@ fun ShizukuSettingsPage(modifier: Modifier = Modifier) {
     val uid = state.third
     val ready = connected && allowed && uid == Process.SHELL_UID
     val recorderReady by ExperimentalCaptureDaemon.ready.collectAsState()
+    val watcherIssue by ExperimentalCaptureDaemon.watcherIssue.collectAsState()
     val helperSetupBusy by AdbForegroundSetup.busy.collectAsState()
     val helperStatus by ExperimentalRecording.status.collectAsState()
     val setupFailed by LocalAdbMiddleware.lastSetupFailed.collectAsState()
@@ -116,7 +117,15 @@ fun ShizukuSettingsPage(modifier: Modifier = Modifier) {
                     Text("Refresh connection status")
                 }
                 Text("Recording helper", style = MaterialTheme.typography.titleMedium)
-                StatusBadge(if (recorderReady) "READY" else "INACTIVE", recorderReady)
+                val healthy = recorderReady && watcherIssue == null
+                StatusBadge(when {
+                    !recorderReady -> "INACTIVE"
+                    !healthy -> "WATCHER NEEDS ATTENTION"
+                    else -> "READY"
+                }, healthy)
+                if (recorderReady) watcherIssue?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                }
                 if (setupFailed || helperStatus.activeTransport == "Shizuku" || helperSetupBusy) {
                     Text(if (setupFailed) setupMessage else helperStatus.message,
                         style = MaterialTheme.typography.bodySmall)

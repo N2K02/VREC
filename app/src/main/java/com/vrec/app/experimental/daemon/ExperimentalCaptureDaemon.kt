@@ -66,7 +66,7 @@ object ExperimentalCaptureDaemon {
     val adbPrivilegedApiHelper: AdbPrivilegedApiHelper = AdbPrivilegedApiHelper
 
 
-    private fun token(context: Context): String {
+    @Synchronized private fun token(context: Context): String {
         val prefs = context.getSharedPreferences("vrec_experimental_recorder", Context.MODE_PRIVATE)
         prefs.getString(TOKEN_KEY, null)?.let { return it }
         val raw = ByteArray(32).also(random::nextBytes)
@@ -104,8 +104,8 @@ object ExperimentalCaptureDaemon {
             val nonceB = ByteArray(16).also(input::readFully)
             val signature = ByteArray(32).also(input::readFully)
             val key = token(context).toByteArray(Charsets.UTF_8)
-            check(MessageDigest.isEqual(signature, mac(key, "vrec-daemon", nonceA, nonceB))) {
-                "A different process answered the capture socket."
+            if (!MessageDigest.isEqual(signature, mac(key, "vrec-daemon", nonceA, nonceB))) {
+                throw HelperAuthenticationException()
             }
             output.write(mac(key, "vrec-client", nonceA, nonceB))
             output.write(command.code)
@@ -118,25 +118,31 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    /** The authenticated PONG includes a build fingerprint on recent daemons. */
-    private suspend fun pingBanner(context: Context): String? = withContext(Dispatchers.IO) {
+    private val pongFormat = Regex("PONG 2(?: .+)?")
+
+    private suspend fun probeReply(context: Context): Result<String> = withContext(Dispatchers.IO) {
         try {
-            open(context, 'P').use {
-                it.getInputStream().bufferedReader().readLine()?.trim()
+            val reply = open(context, 'P').use {
+                it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
             }
+            check(pongFormat.matches(reply)) { "The recorder replied with an incompatible protocol." }
+            Result.success(reply)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            null
+        } catch (failure: Exception) {
+            Result.failure(failure)
         }
     }
+
+    /** The authenticated PONG includes a build fingerprint on recent daemons. */
+    private suspend fun pingBanner(context: Context): String? = probeReply(context).getOrNull()
 
     /**
      * A PONG proves that the process is alive and authenticated, NOT that
      * recording mode and SIM source configuration have been acknowledged.
      */
     suspend fun probe(context: Context): Boolean {
-        val result = pingBanner(context)?.startsWith("PONG 2") == true
+        val result = probeReply(context).isSuccess
         if (!result) ready.value = false
         return result
     }
@@ -153,7 +159,7 @@ object ExperimentalCaptureDaemon {
     /** Detect an obsolete daemon without sending newer commands it cannot answer. */
     internal suspend fun runningBuildStatus(context: Context): ShellHelperBuildPolicy.Decision {
         val banner = pingBanner(context)
-        if (banner?.startsWith("PONG 2") != true) {
+        if (banner == null) {
             return ShellHelperBuildPolicy.Decision.INCOMPATIBLE_PROTOCOL
         }
         return ShellHelperBuildPolicy.decide(banner, bundledBuild(context))
@@ -248,8 +254,13 @@ object ExperimentalCaptureDaemon {
 
     suspend fun ensureStarted(context: Context, manualRepair: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val runningBanner = pingBanner(context)
-            if (runningBanner?.startsWith("PONG 2") == true) {
+            val initialProbe = probeReply(context)
+            val runningBanner = initialProbe.getOrNull()
+            val failure = initialProbe.exceptionOrNull()
+            check(failure == null || failure is ConnectException) {
+                RecordingWatchHealth.unavailableDetail(failure)
+            }
+            if (runningBanner != null) {
                 val buildDecision = ShellHelperBuildPolicy.decide(runningBanner, bundledBuild(context))
                 if (buildDecision != ShellHelperBuildPolicy.Decision.STALE) {
                     if (confirmSetup(context)) {
@@ -293,7 +304,7 @@ object ExperimentalCaptureDaemon {
                 repeat(15) {
                     if (!exited) {
                         delay(250)
-                        exited = !probe(context)
+                        exited = helperPresence(context) == HelperPresence.ABSENT
                     }
                 }
                 check(exited) { "Old helper did not release its authenticated socket." }
@@ -325,7 +336,11 @@ object ExperimentalCaptureDaemon {
             } finally {
                 sharedStage?.cleanup?.invoke()
             }
-            val launch = "VREC_TOKEN=" + token(context) +
+            val launch = "umask 077; " +
+                "command -v setsid >/dev/null && command -v nohup >/dev/null && " +
+                "command -v app_process >/dev/null || { echo VREC_LAUNCH_TOOLS_MISSING; exit 1; }; " +
+                ": > " + LOG_PATH + " || { echo VREC_LAUNCH_LOG_UNAVAILABLE; exit 1; }; " +
+                "VREC_TOKEN=" + token(context) +
                 " VREC_MODE=" + requestedMode(context, Prefs.recordingEnabled(context)) +
                 " VREC_WAIT_OUTGOING=" + (if (requireOutgoingAnswer(context)) "1" else "0") +
                 " VREC_TRACK=0 VREC_VOIP='" +
@@ -333,15 +348,24 @@ object ExperimentalCaptureDaemon {
                     "' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
                 " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
-                " < /dev/null > " + LOG_PATH + " 2>&1 &"
-            runShell( launch)
-            var started = false
-            repeat(20) {
-                if (!started) {
-                    delay(350)
-                    if (probe(context)) started = true
+                " < /dev/null >> " + LOG_PATH + " 2>&1 & echo VREC_LAUNCH_QUEUED"
+            val launchOutput = runShell(launch).lineSequence().map(String::trim).toSet()
+            check("VREC_LAUNCH_QUEUED" in launchOutput) {
+                when {
+                    "VREC_LAUNCH_TOOLS_MISSING" in launchOutput -> "Recorder launch tools are unavailable in Android shell."
+                    "VREC_LAUNCH_LOG_UNAVAILABLE" in launchOutput -> "Android shell could not open the recorder log."
+                    else -> "Android shell did not confirm that the recorder launch was queued."
                 }
             }
+            val deadline = android.os.SystemClock.elapsedRealtime() + 10_000L
+            var started = false
+            do {
+                delay(350)
+                val status = probeReply(context)
+                val error = status.exceptionOrNull()
+                if (error is HelperAuthenticationException) throw error
+                started = status.isSuccess
+            } while (!started && android.os.SystemClock.elapsedRealtime() < deadline)
             if (!started) {
                 // The shell command can exit successfully even when the detached
                 // app_process immediately crashes. Classify the shell-side log
@@ -500,14 +524,10 @@ object ExperimentalCaptureDaemon {
     internal enum class HelperPresence { RUNNING, ABSENT, UNKNOWN }
 
     internal suspend fun helperPresence(context: Context): HelperPresence = withContext(Dispatchers.IO) {
-        val reply = runCatching {
-            open(context, 'P').use { it.getInputStream().bufferedReader().readLine()?.trim() }
-        }
-        val failure = reply.exceptionOrNull()
-        if (failure is CancellationException) throw failure
+        val reply = probeReply(context)
         when {
-            failure is ConnectException -> HelperPresence.ABSENT
-            reply.getOrNull()?.startsWith("PONG 2") == true -> HelperPresence.RUNNING
+            reply.exceptionOrNull() is ConnectException -> HelperPresence.ABSENT
+            reply.isSuccess -> HelperPresence.RUNNING
             else -> HelperPresence.UNKNOWN
         }
     }
@@ -606,6 +626,8 @@ object ExperimentalCaptureDaemon {
             }.getOrDefault(false)
         }
 
+    val watcherIssue = MutableStateFlow<String?>(null)
+
     /** An authenticated, read-only recorder health inspection. Never disrupt an ongoing call. */
     suspend fun watchHealth(context: Context, auditCallHistory: Boolean = true): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val report = runCatching {
@@ -618,12 +640,17 @@ object ExperimentalCaptureDaemon {
         val snapshot = report.getOrNull()?.let(RecordingWatchHealth::parse)
         if (snapshot == null) {
             val detail = RecordingWatchHealth.unavailableDetail(failure)
+            watcherIssue.value = detail
             if (auditCallHistory) com.vrec.app.Log.w("Call watcher: $detail", failure)
             return@withContext false to "$detail; call log coverage not checked"
         }
         val mode = requestedMode(context, Prefs.recordingEnabled(context))
-        val watcherHealthy = RecordingWatchHealth.healthy(snapshot, mode)
-        val missed = if (auditCallHistory && watcherHealthy && !snapshot.inCall) {
+        val simHealthy = RecordingWatchHealth.healthy(snapshot, mode)
+        val voipExpected = mode != 0 && EnhancedCapturePreferences.voipPackages(context).isNotEmpty()
+        val issue = RecordingWatchHealth.issue(snapshot, mode, voipExpected)
+        watcherIssue.value = issue
+        val watcherHealthy = issue == null
+        val missed = if (auditCallHistory && simHealthy && !snapshot.inCall) {
             val starts = com.vrec.app.calls.MissedCallWatchAudit.recentCellularCalls(
                 context, snapshot.startedAt
             )
@@ -635,8 +662,8 @@ object ExperimentalCaptureDaemon {
         } else null
         (watcherHealthy && missed != true) to when (missed) {
             true -> "The call log contains a recent call not observed by the recorder"
-            false -> RecordingWatchHealth.verdict(snapshot, mode) + "; no missing calls found"
-            null -> RecordingWatchHealth.verdict(snapshot, mode) + "; call log coverage not checked"
+            false -> (issue ?: RecordingWatchHealth.verdict(snapshot, mode)) + "; no missing calls found"
+            null -> (issue ?: RecordingWatchHealth.verdict(snapshot, mode)) + "; call log coverage not checked"
         }
     }
 

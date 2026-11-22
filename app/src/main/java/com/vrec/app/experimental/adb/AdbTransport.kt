@@ -11,7 +11,7 @@ object AdbTransport {
     const val LOOPBACK = "127.0.0.1"
     const val LEGACY_TCP_PORT = 5555
 
-    val isConnected: Boolean get() = ShizukuHostAdapter.current()?.state?.value?.connected == true
+    val isConnected: Boolean get() = ShizukuHostAdapter.current()?.isConnected == true
     val lastKnownConnected: Boolean get() = isConnected
 
     private fun core(context: Context): ShizukuSession = ShizukuHostAdapter.core(context.applicationContext)

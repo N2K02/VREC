@@ -144,7 +144,7 @@ object ExperimentalRecording {
         status.value = Status(busy = true, message = "Verifying Shizuku access…")
         try {
             val session = ShizukuHostAdapter.core(app)
-            if (!session.state.value.connected && !session.retry(auto = automatic)) {
+            if (!session.isConnected && !session.retry(auto = automatic)) {
                 val message = session.state.value.message
                 status.value = Status(message = message)
                 return Result.failure(IllegalStateException(message))
