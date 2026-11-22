@@ -65,6 +65,7 @@ class OpusOggWriter(
      *  N x 20ms. See write() for why nothing else works here. */
     var packets: Long = 0L
         private set
+    private var totalSamples: Long = 0L
 
     init {
         Log.i(TAG, "ogg: channels=${head.channels} preSkip=${head.preSkip} rate=${head.inputRate} delay=${head.codecDelayNs}ns")
@@ -112,12 +113,14 @@ class OpusOggWriter(
     fun write(data: ByteArray, @Suppress("UNUSED_PARAMETER") pts: Long) {
         if (!started) return
 
+        val samples = OpusPacketTiming.samples(data)
         if (legacy != null) {
             legacy.write(data)
             packets++
+            totalSamples += samples
             return
         }
-        val ptsUs = packets * FRAME_US
+        val ptsUs = totalSamples * 1_000_000L / SAMPLE_RATE
 
         val info = MediaCodec.BufferInfo().apply {
             offset = 0
@@ -127,13 +130,14 @@ class OpusOggWriter(
         }
         requireNotNull(muxer).writeSampleData(track, ByteBuffer.wrap(data), info)
         packets++
+        totalSamples += samples
     }
 
     /** Length of what was written, in seconds. Every packet is a frame, the
      *  last one included: this was the last packet's timestamp, which is one
      *  frame short of the audio written. */
     val durationSeconds: Double
-        get() = packets * FRAME_US / 1_000_000.0
+        get() = totalSamples.toDouble() / SAMPLE_RATE
 
     /**
      * Finalises the file. Skipping this leaves an .ogg that no player will
