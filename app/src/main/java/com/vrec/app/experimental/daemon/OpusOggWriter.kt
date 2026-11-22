@@ -71,21 +71,20 @@ class OpusOggWriter(
 
         if (legacy != null) {
             started = true
-            return
-        }
-        val androidMuxer = requireNotNull(muxer)
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, head.channels)
-        format.setByteBuffer("csd-0", ByteBuffer.wrap(opusHead))
-        format.setByteBuffer("csd-1", littleEndianLong(head.codecDelayNs))
-        format.setByteBuffer("csd-2", littleEndianLong(SEEK_PRE_ROLL_NS))
-
-        try {
-            track = androidMuxer.addTrack(format)
-            androidMuxer.start()
-            started = true
-        } catch (failure: Exception) {
-            runCatching { androidMuxer.release() }
-            throw failure
+        } else {
+            val androidMuxer = requireNotNull(muxer)
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, head.channels)
+            format.setByteBuffer("csd-0", ByteBuffer.wrap(opusHead))
+            format.setByteBuffer("csd-1", littleEndianLong(head.codecDelayNs))
+            format.setByteBuffer("csd-2", littleEndianLong(SEEK_PRE_ROLL_NS))
+            try {
+                track = androidMuxer.addTrack(format)
+                androidMuxer.start()
+                started = true
+            } catch (failure: Exception) {
+                runCatching { androidMuxer.release() }
+                throw failure
+            }
         }
     }
 
