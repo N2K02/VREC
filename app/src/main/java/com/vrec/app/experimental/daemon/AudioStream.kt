@@ -16,6 +16,8 @@ import java.net.Socket
 class AudioStream(private val socket: Socket) : AutoCloseable {
 
     private val input: DataInputStream = DataInputStream(socket.getInputStream().buffered())
+    private var completed = false
+    private val completionMarker = "VRECEND!".toByteArray(Charsets.US_ASCII)
 
     /** Sent once, before any packet. */
     val codecId: String = ByteArray(4)
@@ -44,14 +46,19 @@ class AudioStream(private val socket: Socket) : AutoCloseable {
     fun readPacket(): Packet? {
         // EOF exactly between packets is fine. Partial packet headers are
         // corruption, not a clean end-of-recording, and must abort import.
-        val firstByte = input.read()
-        if (firstByte < 0) return null
+        if (completed) return null
         val rawHeader = ByteArray(8)
-        rawHeader[0] = firstByte.toByte()
-        input.readFully(rawHeader, 1, 7)
+        // A socket closing between complete packets is still a truncated fetch.
+        // Require the explicit completion trailer sent by the shell daemon.
+        input.readFully(rawHeader)
+        val length = input.readInt()
+        if (rawHeader.contentEquals(completionMarker)) {
+            if (length != -1) error("Invalid shell recording completion marker")
+            completed = true
+            return null
+        }
         val raw = java.nio.ByteBuffer.wrap(rawHeader)
             .order(java.nio.ByteOrder.BIG_ENDIAN).long
-        val length = input.readInt()
         if (length < 0 || length > MAX_PACKET) {
             error("implausible packet length $length; the stream is out of sync")
         }
