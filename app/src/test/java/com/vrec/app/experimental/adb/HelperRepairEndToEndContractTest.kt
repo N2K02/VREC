@@ -79,6 +79,23 @@ class HelperRepairEndToEndContractTest {
         assertTrue(manager.contains("ShellHelperBuildPolicy.Decision.STALE"))
     }
 
+    @Test fun shellCannotStopWhileAnsweringMachineIsStillRinging() {
+        val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
+        val quit = shell.substringAfter("if (command == COMMAND_QUIT)")
+            .substringBefore("if (command == COMMAND_RECORD)")
+        assertTrue(quit.contains("machine.state() != AnswerMachine.State.IDLE"))
+        assertFalse(quit.contains("machine.state() != AnswerMachine.State.RINGING"))
+    }
+
+    @Test fun verifiedManualStartPreservesRecoveryButAutomaticStartDoesNotOptIn() {
+        val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        val manual = link.substringAfter("internal suspend fun startOnConnectedAdb(")
+            .substringBefore("suspend fun connect(context")
+        assertTrue(manual.contains("if (!automatic && result.isSuccess)"))
+        assertTrue(manual.contains("rememberVerifiedTcp(context)"))
+        assertTrue(manual.contains("rememberVerifiedWireless(context)"))
+    }
+
     @Test fun shellRefusesReplacementDuringActiveCallOrAudioImport() {
         val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
         val quit = shell.substringAfter("if (command == COMMAND_QUIT)")
