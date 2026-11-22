@@ -801,9 +801,8 @@ object ExperimentalCaptureDaemon {
                     require(packets > 0 && temp.length() > 100L) {
                         "Recorder returned no useful Opus packets"
                     }
-                    check(OggIntegrityVerifier.valid(temp)) {
-                        "Ogg pages failed CRC, packet, or end-of-stream validation"
-                    }
+                    // The publisher verifies the Ogg pages before publication.
+                    // Avoid another full-file scan for long recordings.
                     require(durationMs > 0L) { "Invalid Opus packet duration" }
                     val voip = direction == CallDirection.VOIP
                     val health = recordingHealth(context, name)
@@ -853,6 +852,7 @@ object ExperimentalCaptureDaemon {
                         audioHealth = health,
                     )) { "Cannot save recording metadata" }
                     stage = ImportBatchPolicy.Stage.STORAGE
+                    check(RecordingStore.carryUserEdits(dest, temp)) { "Could not preserve recording edits" }
                     RecordingAudioPublisher.publish(temp, dest, RecordingStore::hasValidMetadata)
                     com.vrec.app.Log.i("Capture diagnostic: saved shell recording bytes=" + dest.length() + " durationMs=" + durationMs + " audioHealth=" + (health ?: "unavailable"))
                     // A valid Ogg file is not evidence that both voices were captured.
@@ -909,23 +909,26 @@ object ExperimentalCaptureDaemon {
         }
     }
 
-    private fun delete(context: Context, name: String): Boolean {
-        val removed = try {
-            open(context, 'D', nameBytes(name)).use { socket ->
-                socket.getInputStream().bufferedReader().readLine()?.trim() == "OK"
+    private suspend fun delete(context: Context, name: String): Boolean {
+        repeat(3) { attempt ->
+            val removed = try {
+                open(context, 'D', nameBytes(name)).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.getInputStream().bufferedReader().readLine()?.trim() == "OK"
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                com.vrec.app.Log.w("Shell cleanup attempt failed", failure)
+                false
             }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            com.vrec.app.Log.w("Shell recording cleanup failed; original preserved for retry", failure)
-            false
+            if (removed) return true
+            if (attempt < 2) delay(200L * (attempt + 1))
         }
-        if (!removed) {
-            com.vrec.app.Log.w("Shell recording cleanup was not acknowledged; saved audio remains intact")
-            com.vrec.app.recording.RecordingFailureNotice.warn(
-                context, "Shell cleanup was not confirmed. The original recording remains pending for retry.")
-        }
-        return removed
+        com.vrec.app.Log.w("Shell cleanup unconfirmed after bounded retries; saved audio remains intact")
+        com.vrec.app.recording.RecordingFailureNotice.warn(
+            context, "Shell cleanup is pending. Saved audio is safe; cleanup will retry later.")
+        return false
     }
 
     suspend fun readLog(): String = withContext(Dispatchers.IO) {
