@@ -921,7 +921,7 @@ object ExperimentalCaptureDaemon {
         if (!removed) {
             com.vrec.app.Log.w("Shell recording cleanup was not acknowledged; saved audio remains intact")
             com.vrec.app.recording.RecordingFailureNotice.warn(
-                context, "Recording was saved, but shell cleanup was not confirmed. The original will be retried.")
+                context, "Shell cleanup was not confirmed. The original recording remains pending for retry.")
         }
         return removed
     }
