@@ -2139,8 +2139,7 @@ public final class Main {
                 // A ring with an answer on its way counts as mid-call.
                 AnswerMachine machine = answerMachine;
                 busy = activeRecording != null || callActive || fetches.get() > 0
-                        || (machine != null && machine.state() != AnswerMachine.State.IDLE
-                            && machine.state() != AnswerMachine.State.RINGING);
+                        || (machine != null && machine.state() != AnswerMachine.State.IDLE);
             }
             if (busy) {
                 client.getOutputStream().write("BUSY\n".getBytes(StandardCharsets.UTF_8));
