@@ -68,7 +68,8 @@ class AudioStreamTest {
     }
 
     @Test fun partiallyWrittenPayloadMustFailImport() {
-        val truncated = framed().copyOf(framed().size - 1)
+        // Cut inside the Opus payload, not inside the new completion trailer.
+        val truncated = framed().copyOf(4 + 8 + 4 + 2)
         AudioStream(FakeSocket(truncated)).use {
             assertThrows(EOFException::class.java) { it.readPacket() }
         }
