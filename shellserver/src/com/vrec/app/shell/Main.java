@@ -2435,6 +2435,10 @@ public final class Main {
                 while ((n = in.read(buf)) > 0) {
                     os.write(buf, 0, n);
                 }
+                // Explicit end marker: EOF between frames is not proof that a
+                // transfer completed. Only send this after copying all bytes.
+                os.write(new byte[] {'V', 'R', 'E', 'C', 'E', 'N', 'D', '!',
+                        (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff});
                 os.flush();
             } finally {
                 fetches.decrementAndGet();
