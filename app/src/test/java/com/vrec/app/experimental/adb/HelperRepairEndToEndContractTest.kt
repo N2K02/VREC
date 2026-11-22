@@ -84,6 +84,27 @@ class HelperRepairEndToEndContractTest {
         assertTrue(manager.contains("ShellHelperBuildPolicy.Decision.STALE"))
     }
 
+    @Test fun shellCannotStopWhileAnsweringMachineIsStillRinging() {
+        val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
+        val quit = shell.substringAfter("if (command == COMMAND_QUIT)")
+            .substringBefore("if (command == COMMAND_RECORD)")
+        assertTrue(quit.contains("machine.state() != AnswerMachine.State.IDLE"))
+        assertFalse(quit.contains("machine.state() != AnswerMachine.State.RINGING"))
+    }
+
+    @Test fun shizukuRecoveryRespectsManualConsentAndDisconnect() {
+        val link = code("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        val recovery = code("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        val shizuku = link.substringAfter("internal suspend fun connectShizuku(")
+            .substringBefore("suspend fun connect(context")
+        assertTrue(shizuku.contains("if (!automatic && result.isSuccess) rememberVerifiedShizuku(app)"))
+        assertTrue(link.contains(".putBoolean(AUTO_RECOVERY_KEY, true)"))
+        val recover = recovery.substringAfter("if (ExperimentalRecording.recoveryAuthorization(app).allowed &&")
+            .substringBefore("val restored = AdbLifecycle.coordinateSetup")
+        assertTrue(recover.contains("ShizukuHostAdapter.hasShellAccess()"))
+        assertTrue(recover.contains("!ExperimentalRecording.awaitingManualRetry"))
+    }
+
     @Test fun shellRefusesReplacementDuringActiveCallOrAudioImport() {
         val shell = code("shellserver/src/com/vrec/app/shell/Main.java")
         val quit = shell.substringAfter("if (command == COMMAND_QUIT)")
