@@ -2,6 +2,7 @@ package com.vrec.app.experimental.daemon
 
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlin.io.path.createTempDirectory
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -18,7 +19,7 @@ class RecordingAudioPublisherTest {
     }.toByteArray()
 
     @Test fun invalidReplacementCannotDeleteExistingRecording() {
-        val dir = createTempDir(prefix = "vrec-preserve-")
+        val dir = createTempDirectory("vrec-preserve-").toFile()
         try {
             val dest = File(dir, "recording.ogg")
             val temp = File(dir, "recording.ogg.tmp")
@@ -36,7 +37,7 @@ class RecordingAudioPublisherTest {
     }
 
     @Test fun verifiedReplacementPublishesWithoutLeavingBackup() {
-        val dir = createTempDir(prefix = "vrec-publish-")
+        val dir = createTempDirectory("vrec-publish-").toFile()
         try {
             val dest = File(dir, "recording.ogg")
             val temp = File(dir, "recording.ogg.tmp")
@@ -53,7 +54,7 @@ class RecordingAudioPublisherTest {
     }
 
     @Test fun restartRestoresOriginalWhenPublicationWasInterrupted() {
-        val dir = createTempDir(prefix = "vrec-recovery-")
+        val dir = createTempDirectory("vrec-recovery-").toFile()
         try {
             val dest = File(dir, "recording.ogg")
             val previous = File(dir, "recording.ogg.previous")
