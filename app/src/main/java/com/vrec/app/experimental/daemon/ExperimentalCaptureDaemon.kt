@@ -457,7 +457,7 @@ object ExperimentalCaptureDaemon {
                 open(context, 'V', packet).use {
                     it.getInputStream().bufferedReader().readLine()?.trim().orEmpty()
                 }
-            }.getOrDefault("") else ""
+            }.onFailure { if (it is CancellationException) throw it }.getOrDefault("") else ""
             voipArmed.value = requestedApps.isNotEmpty() &&
                 voipResult == "VOIP ${requestedApps.size} armed"
             voipMessage.value = when {
@@ -489,6 +489,7 @@ object ExperimentalCaptureDaemon {
                 it.getInputStream().bufferedReader().readLine()?.trim() ?: "UNAVAILABLE"
             }
         }.getOrElse { failure ->
+            if (failure is CancellationException) throw failure
             message.value = "Enhanced recording control failed: " + (failure.message ?: "helper unavailable")
             "UNAVAILABLE"
         }
@@ -547,7 +548,7 @@ object ExperimentalCaptureDaemon {
         }
         val reply = runCatching {
             open(context, 'Q').use { it.getInputStream().bufferedReader().readLine()?.trim() }
-        }.getOrNull()
+        }.onFailure { if (it is CancellationException) throw it }.getOrNull()
         when (reply) {
             "BUSY" -> QuitResult.BUSY
             "BYE" -> {
@@ -579,7 +580,7 @@ object ExperimentalCaptureDaemon {
             sock.getInputStream().bufferedReader().readLine()?.trim()
                 ?.takeIf { it.isNotBlank() && it != "UNAVAILABLE" }?.take(600)
         }
-    }.getOrNull()
+    }.onFailure { if (it is CancellationException) throw it }.getOrNull()
 
     /** Daemon protocol returns complete, finished call files one filename per line. */
     suspend fun pending(context: Context): List<String> = withContext(Dispatchers.IO) {
@@ -623,7 +624,7 @@ object ExperimentalCaptureDaemon {
                         attrs["call"] == "1" && attrs["recording"] == "0" &&
                         attrs["mode"] == "0"
                 }
-            }.getOrDefault(false)
+            }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
         }
 
     val watcherIssue = MutableStateFlow<String?>(null)
@@ -689,7 +690,7 @@ object ExperimentalCaptureDaemon {
                 open(context, 'C').use { socket ->
                     socket.getInputStream().bufferedReader().readLine()?.trim() == "ANSWER STARTED"
                 }
-            }.getOrDefault(false)
+            }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
         }
 
     /** Start a new shell segment during an independently confirmed active call.
@@ -709,7 +710,7 @@ object ExperimentalCaptureDaemon {
                     }
                     filename
                 }
-            }
+            }.onFailure { if (it is CancellationException) throw it }
         }
 
     /** Imports only fully muxed files and only deletes the shell copy on success. */
@@ -924,6 +925,9 @@ object ExperimentalCaptureDaemon {
 
     suspend fun readLog(): String = withContext(Dispatchers.IO) {
         runCatching { runShell( "tail -n 80 " + LOG_PATH) }
-            .getOrElse { "Log unavailable: " + it.message }
+            .getOrElse {
+                if (it is CancellationException) throw it
+                "Log unavailable: " + it.message
+            }
     }
 }
