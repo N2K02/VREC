@@ -44,7 +44,8 @@ class RecordingIntegrityContractTest {
         val writer = source("app/src/main/java/com/vrec/app/experimental/daemon/OpusOggWriter.kt")
             .substringAfter("override fun close()")
             .substringBefore("private companion object")
-        assertTrue(writer.contains("if (packets > 0) muxer.stop()"))
+        assertTrue(writer.contains("if (packets > 0) androidMuxer.stop()"))
+        assertTrue(writer.contains("legacy.close()"))
         assertFalse(writer.contains("catch"))
         assertTrue(writer.contains("finally"))
     }
