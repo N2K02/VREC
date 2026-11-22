@@ -889,7 +889,10 @@ object ExperimentalCaptureDaemon {
                         " file=" + name + " cause=" + t.javaClass.simpleName + ": " + (t.message ?: "unknown"))
                     failures++
                     com.vrec.app.recording.RecordingFailureNotice.warn(
-                        context, ImportBatchPolicy.warning(stage), keepUntilDismissed = true)
+                        context,
+                        if (stage == ImportBatchPolicy.Stage.AUDIO) AudioImportDiagnostic.warning(t)
+                        else ImportBatchPolicy.warning(stage),
+                        keepUntilDismissed = true)
                     if (firstFailure == null) firstFailure = t.message ?: t.javaClass.simpleName
                 } finally {
                     if (temp.isAbsolute) temp.delete()
