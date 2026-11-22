@@ -17,7 +17,7 @@ internal class LegacyOpusOggMuxer(
     private val serial: Int = SecureRandom().nextInt(),
 ) : AutoCloseable {
     private var sequence = 0
-    private var packetCount = 0L
+    private var totalSamples = 0L
     private var pending: ByteArray? = null
     private var finished = false
 
@@ -35,15 +35,16 @@ internal class LegacyOpusOggMuxer(
     fun write(packet: ByteArray) {
         check(!finished) { "Ogg output is already finalized" }
         require(packet.isNotEmpty() && packet.size < 65_025) { "Invalid Opus packet length" }
-        pending?.let { writePage(it, packetCount * 960L, 0) }
+        val samples = OpusPacketTiming.samples(packet)
+        pending?.let { writePage(it, totalSamples, 0) }
         pending = packet.copyOf()
-        packetCount++
+        totalSamples += samples
     }
 
     override fun close() {
         if (finished) return
         finished = true
-        pending?.let { writePage(it, packetCount * 960L, 0x04) }
+        pending?.let { writePage(it, totalSamples, 0x04) }
         output.flush()
         pending = null
     }
