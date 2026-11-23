@@ -92,7 +92,15 @@ object LocalWirelessAdb {
             owning = true
             adb.acquireService()
         }
-        if (userInitiated) scope.launch { adb.retry(auto = false) }
+        if (userInitiated) scope.launch {
+            // retry() on a verified TLS session re-runs TLS->TCP promotion,
+            // which can restart adbd and kill the running helper.
+            val verified = adb.state.value.connected
+            val helperAlive = verified && (ExperimentalCaptureDaemon.ready.value ||
+                ExperimentalCaptureDaemon.probe(app))
+            if (AdbdRestartGuard.mayRetryVerifiedSession(verified, helperAlive))
+                adb.retry(auto = false)
+        }
     }
 
     /** Codes may come only from the user-enabled VRec Settings accessibility reader. */
@@ -112,12 +120,33 @@ object LocalWirelessAdb {
         start(context, userInitiated = true)
     }
 
+    /**
+     * Opportunistic TLS->TCP upgrade, only while NO helper is alive.
+     * Promotion may send tcpip:5555; the resulting adbd restart cgroup-kills
+     * the helper. Runs under the transport coordinator so it can never
+     * interleave with an in-flight helper launch, and re-probes the live
+     * helper (not a cached flag) after acquiring that lock.
+     */
     fun promoteVerifiedShellToTcp(context: Context) {
-        if (AdbLifecycle.quitting ||
-            com.vrec.app.calls.CallMonitor.hasLiveCall() ||
-            com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value) return
-        scope.launch { SharedAdbHostAdapter.core(context).retry(auto = true) }
+        val app = context.applicationContext
+        if (!mayPromoteNow(helperReady = ExperimentalCaptureDaemon.ready.value)) return
+        scope.launch {
+            AdbLifecycle.coordinateSetup {
+                val alive = ExperimentalCaptureDaemon.ready.value ||
+                    ExperimentalCaptureDaemon.probe(app)
+                if (mayPromoteNow(helperReady = alive))
+                    SharedAdbHostAdapter.core(app).retry(auto = true)
+            }
+        }
     }
+
+    private fun mayPromoteNow(helperReady: Boolean): Boolean =
+        AdbdRestartGuard.mayPromoteToTcp(AdbdRestartGuard.Signals(
+            quitting = AdbLifecycle.quitting,
+            liveCall = com.vrec.app.calls.CallMonitor.hasLiveCall(),
+            enhancedCaptureActive = com.vrec.app.recording.AdbFallbackNotice.enhancedActive.value,
+            helperAlive = helperReady,
+        ))
 
     fun openSettings(context: Context) {
         start(context, userInitiated = true)

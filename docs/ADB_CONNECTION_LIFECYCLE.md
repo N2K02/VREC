@@ -28,3 +28,22 @@ shutdown. These log messages alone do not prove an application crash.
 
 Upstream reference: `MuntashirAkon/libadb-android` tag `3.1.1`.
 Implementation reference: `N2K02/McpAdbAndroidLogger` PR #30.
+
+## Helper survival across adbd restarts
+
+The recording helper is launched over the ADB shell, so by default it lives in
+adbd's cgroup. Any adbd restart (TLS→TCP `tcpip:5555`, `usb:`, USB debugging
+toggled, Wi-Fi loss without a USB transport) makes init kill that whole cgroup.
+
+- `AdbdRestartGuard`: VRec never promotes TLS→TCP while a helper is alive, a
+  call is live or enhanced capture is active. Promotion runs inside
+  `AdbLifecycle.coordinateSetup` and re-probes the live helper first, so it can
+  never interleave with a helper launch. A user Retry on an already verified
+  session with a live helper does not call the core's `retry()`.
+- Launch: `setsid nohup sh -c '<CGROUP_ESCAPE> exec app_process …'` moves the
+  launcher into the root cgroup (v2, then v1 roots) before exec, like Shizuku's
+  starter. The result is logged as `VREC_CGROUP=…` in
+  `/data/local/tmp/vrec-capture.out`; `unchanged` means Android refused the move
+  and the previous behaviour applies.
+- Recovery is allowed by default once a live UID 2000 shell is verified; only an
+  explicit Disconnect revokes it.
