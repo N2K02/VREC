@@ -914,6 +914,7 @@ public final class Main {
         leftovers.add(Greeting.FILE);
         leftovers.add(Greeting.TAKE);
         leftovers.add(MUTE_MARKER);
+        leftovers.add(SHIELD_OFF);
         File[] recordings = new File(REC_DIR).listFiles((d, n) -> n.startsWith(REC_PREFIX) && n.endsWith(REC_SUFFIX));
         if (recordings != null) {
             leftovers.addAll(java.util.Arrays.asList(recordings));
@@ -1006,6 +1007,9 @@ public final class Main {
      * on a transient hiccup would be harmless but noisy, and a wrong "off" costs
      * nothing more than one idempotent write ten seconds later.
      */
+    /** Present when the app's "Survive Wi-Fi loss" switch is off (WifiLossShield.kt). */
+    static final File SHIELD_OFF = new File("/data/local/tmp/vrec-shield-off");
+
     private static void keepShieldUp() {
         Ln.i("shield: minding adb_enabled every " + (SHIELD_CHECK_INTERVAL_MS / 1000)
                 + "s, from " + new java.util.Date());
@@ -1027,12 +1031,15 @@ public final class Main {
     private static void checkShield(String why) {
         try {
             String usb = readGlobal("adb_enabled");
+            boolean off = SHIELD_OFF.exists();
             if (why != null) {
                 Ln.i("shield: " + why + " adb_enabled=" + usb + " adb_wifi_enabled="
                         + readGlobal("adb_wifi_enabled") + " pings=" + pings.getAndSet(0)
-                        + " sessions=" + sessions.get() + " at " + new java.util.Date());
+                        + " sessions=" + sessions.get() + (off ? " (switched off by user)" : "")
+                        + " at " + new java.util.Date());
             }
-            if (usb != null && !"1".equals(usb)) {
+            // The user's "Survive Wi-Fi loss" switch: off means leave USB debugging alone.
+            if (!off && usb != null && !"1".equals(usb)) {
                 new ProcessBuilder("settings", "put", "global", "adb_enabled", "1")
                         .redirectErrorStream(true)
                         .start()

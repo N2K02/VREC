@@ -269,7 +269,7 @@ fun SettingsScreen(
                         )
                     },
                 )
-            KeepPairingCard()
+            AdbResilienceCard()
         }
 
         if (section == "VoIP") SettingCard("VoIP") {

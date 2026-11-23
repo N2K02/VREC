@@ -97,6 +97,38 @@ class JemRecResilienceTest {
         assertTrue(quit.contains("UsbDebuggingWatch.cancel(app)"))
     }
 
+    @Test fun wifiLossShieldSwitchReachesTheHelper() {
+        assertEquals("rm -f /data/local/tmp/vrec-shield-off && settings put global adb_enabled 1 && echo VREC_SHIELD_ON",
+            WifiLossShield.onCommand())
+        assertEquals("touch /data/local/tmp/vrec-shield-off && echo VREC_SHIELD_OFF", WifiLossShield.offCommand())
+        // Off never turns USB debugging off; it only stops forcing it on.
+        assertFalse(WifiLossShield.offCommand().contains("adb_enabled"))
+        assertTrue(WifiLossShield.applied(true, "x\nVREC_SHIELD_ON"))
+        assertFalse(WifiLossShield.applied(true, "VREC_SHIELD_OFF"))
+        assertTrue(WifiLossShield.applied(false, "VREC_SHIELD_OFF"))
+        assertFalse(WifiLossShield.applied(false, null))
+        val main = source("shellserver/src/com/vrec/app/shell/Main.java")
+        assertTrue(main.contains("new File(\"/data/local/tmp/vrec-shield-off\")"))
+        assertTrue(main.contains("if (!off && usb != null && !\"1\".equals(usb))"))
+        assertTrue(main.contains("leftovers.add(SHIELD_OFF);"))
+        val helper = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbPrivilegedApiHelper.kt")
+        assertTrue(helper.contains("WifiLossShield.apply(app)"))
+    }
+
+    @Test fun usbWatchDoesNotRestoreShieldWhenSwitchedOff() {
+        assertFalse(UsbDebuggingWatch.shouldRestoreShield(
+            UsbDebuggingWatch.Signals(false, false, true, true, shieldOn = false)))
+        assertTrue(UsbDebuggingWatch.shouldRestoreShield(
+            UsbDebuggingWatch.Signals(false, false, true, true, shieldOn = true)))
+    }
+
+    @Test fun settingsShowBothResilienceSwitches() {
+        val card = source("app/src/main/java/com/vrec/app/ui/AdbResilienceCard.kt")
+        assertTrue(card.contains("Toggle(\"Keep pairing past 7 days\""))
+        assertTrue(card.contains("Toggle(\"Survive Wi-Fi loss\""))
+        assertTrue(source("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt").contains("AdbResilienceCard()"))
+    }
+
     @Test fun helperFilesNoLongerCollideWithJemRec() {
         val greeting = source("shellserver/src/com/vrec/app/shell/Greeting.java")
         assertTrue(greeting.contains("/data/local/tmp/vrec-greeting.pcm"))

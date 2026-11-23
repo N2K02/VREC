@@ -26,15 +26,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vrec.app.experimental.adb.AdbUserChoices
 import com.vrec.app.experimental.adb.PairingTimeout
+import com.vrec.app.experimental.adb.WifiLossShield
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-/** Settings switch for the ADB authorization timeout (see PairingTimeout). */
+/** "Keep the recorder running": pairing expiry and the Wi-Fi-loss shield (ADB build). */
 @Composable
-fun KeepPairingCard(modifier: Modifier = Modifier) {
+fun AdbResilienceCard(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var keep by remember { mutableStateOf(AdbUserChoices.keepPaired(context)) }
+    var shield by remember { mutableStateOf(AdbUserChoices.wifiLossShield(context)) }
     val last by PairingTimeout.last.collectAsState()
     val status = PairingStatusText.of(keep, last)
     Card(
@@ -42,23 +44,24 @@ fun KeepPairingCard(modifier: Modifier = Modifier) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Pairing", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Row(
-                Modifier.fillMaxWidth().clickable { keep = !keep; onChange(context, keep, scope) },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text("Keep pairing past 7 days", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Android forgets ADB pairings after 7 days, so the recorder could not start " +
-                            "again after a restart. This also keeps any computer you paired authorized. " +
-                            "Turning it off restores Android's previous setting.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = keep, onCheckedChange = { keep = it; onChange(context, it, scope) })
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Keep the recorder running", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold)
+            Toggle("Keep pairing past 7 days",
+                "Android forgets ADB pairings after 7 days; then the recorder cannot start after a " +
+                    "restart until you pair again. Also keeps any paired computer authorized. Turning " +
+                    "it off restores Android's previous setting.", keep) {
+                keep = it
+                AdbUserChoices.setKeepPaired(context, it)
+                // Applied now when a verified shell exists, otherwise at the next helper start.
+                scope.launch(Dispatchers.IO) { PairingTimeout.apply(context.applicationContext) }
+            }
+            Toggle("Survive Wi-Fi loss",
+                "Keeps USB debugging on (no cable needed). Without it Android restarts ADB when " +
+                    "Wi-Fi drops, which stops the recorder until Wi-Fi returns.", shield) {
+                shield = it
+                AdbUserChoices.setWifiLossShield(context, it)
+                scope.launch(Dispatchers.IO) { WifiLossShield.apply(context.applicationContext) }
             }
             if (status != null) Text(status, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -66,13 +69,19 @@ fun KeepPairingCard(modifier: Modifier = Modifier) {
     }
 }
 
-private fun onChange(
-    context: android.content.Context, enabled: Boolean,
-    scope: kotlinx.coroutines.CoroutineScope,
-) {
-    AdbUserChoices.setKeepPaired(context, enabled)
-    // Applied now when a verified shell exists, otherwise at the next helper start.
-    scope.launch(Dispatchers.IO) { PairingTimeout.apply(context.applicationContext) }
+@Composable
+private fun Toggle(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }
 
 internal object PairingStatusText {
