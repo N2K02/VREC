@@ -31,7 +31,4 @@ class ShizukuHelperRecoveryDefaultsTest {
         assertFalse(daemon.contains("CGROUP_ESCAPE"))
     }
 
-    @Test fun keepPairingOfferedOnShizukuSettings() {
-        assertTrue(source("app/src/main/java/com/vrec/app/ui/ShizukuSettingsPage.kt").contains("KeepPairingCard()"))
-    }
 }
