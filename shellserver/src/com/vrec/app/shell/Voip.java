@@ -903,7 +903,7 @@ final class Voip {
             this.name = name;
             this.record = record;
             this.queue = new PcmRing(SAMPLE_RATE * channels * 2);
-            this.thread = new Thread(this, "jemrec-voip-" + name);
+            this.thread = new Thread(this, "vrec-voip-" + name);
         }
 
         void start() {

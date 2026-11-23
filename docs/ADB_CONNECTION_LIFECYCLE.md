@@ -28,3 +28,17 @@ shutdown. These log messages alone do not prove an application crash.
 
 Upstream reference: `MuntashirAkon/libadb-android` tag `3.1.1`.
 Implementation reference: `N2K02/McpAdbAndroidLogger` PR #30.
+
+## Pairing expiry and USB debugging changes (both tracks)
+
+Adapted from JemRec (Apache-2.0).
+
+- `PairingTimeout`: after each verified helper start VRec sets
+  `adb_allowed_connection_time` to 0 (switch "Keep pairing past 7 days", on by
+  default), recording the previous value in `/data/local/tmp/vrec-pairing-timeout`.
+  Turning the switch off, or uninstalling VRec (helper custodian), puts it back
+  while it still reads 0. On the Shizuku track this also keeps LocalADB's pairing.
+- `UsbDebuggingWatch`: a content-URI WorkManager trigger on `adb_enabled` wakes
+  VRec within about a second when USB debugging changes (adbd stops and init
+  kills everything in its cgroup), restores the shield when VRec holds
+  WRITE_SECURE_SETTINGS, and runs recovery.

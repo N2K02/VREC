@@ -63,7 +63,11 @@ object ExperimentalRecording {
     fun recoveryAuthorization(context: Context): RecoveryAuthorization {
         val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         return RecoveryAuthorization(
-            allowed = prefs.getBoolean(AUTO_RECOVERY_KEY, false),
+            // Allowed unless the user deliberately pressed Disconnect (which
+            // writes false). Every recovery path still re-verifies a live
+            // UID 2000 shell before starting the helper, so a fresh install or
+            // cleared data no longer leaves "ADB verified" with a stopped helper.
+            allowed = prefs.getBoolean(AUTO_RECOVERY_KEY, true),
             tcpVerified = prefs.getBoolean(VERIFIED_TCP_KEY, false),
         )
     }
