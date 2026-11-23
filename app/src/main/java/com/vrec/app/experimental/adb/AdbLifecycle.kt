@@ -65,6 +65,10 @@ object AdbLifecycle {
         // receiver) calls startBackground. Otherwise Application.onCreate would
         // bypass the Start on boot preference before BOOT_COMPLETED is handled.
         LocalWirelessAdb.start(app)
+        // Event-driven, not periodic: wakes VRec within a second when USB
+        // debugging changes (adbd stops and takes the Shizuku server and helper with it).
+        catchingNonCancellation { UsbDebuggingWatch.arm(app) }
+            .onFailure { Log.w("USB debugging watch unavailable", it) }
         // The watchdog switch controls BOTH periodic in-process recovery and
         // the persisted WorkManager safety net. Manual and boot recovery remain
         // independent and available when periodic monitoring is disabled.
@@ -223,6 +227,8 @@ object AdbLifecycle {
         AdbUserChoices.setManuallyStopped(app, true)
         catchingNonCancellation { AdbRecoveryWorker.cancel(app) }
             .onFailure { Log.w("ADB watchdog cancel unavailable", it) }
+        catchingNonCancellation { UsbDebuggingWatch.cancel(app) }
+            .onFailure { Log.w("USB debugging watch cancel unavailable", it) }
         quitting = true
         loop?.cancel()
         loop = null

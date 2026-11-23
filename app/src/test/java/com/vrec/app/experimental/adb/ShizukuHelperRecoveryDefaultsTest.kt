@@ -24,15 +24,14 @@ class ShizukuHelperRecoveryDefaultsTest {
         assertTrue(recovery.contains("ShizukuHostAdapter.hasShellAccess()"))
     }
 
-    @Test fun helperLaunchLeavesParentCgroupBeforeExec() {
+    @Test fun helperLaunchStaysTheProvenSetsidForm() {
+        // Shell cannot leave adbd's cgroup on Android 17 (measured by JemRec).
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
-        assertTrue(daemon.contains("setsid nohup sh -c '\" + CGROUP_ESCAPE"))
-        assertTrue(daemon.contains("\"exec app_process / \" + DAEMON_CLASS"))
-        assertFalse(daemon.contains("setsid nohup app_process"))
-        val escape = daemon.substringAfter("internal const val CGROUP_ESCAPE =")
-            .substringBefore("private ")
-        for (root in listOf("/sys/fs/cgroup", "/acct", "/dev/cg2_bpf")) assertTrue(escape.contains(root))
-        assertTrue(escape.contains("VREC_CGROUP="))
-        assertFalse(escape.contains("'"))
+        assertTrue(daemon.contains("setsid nohup app_process / "))
+        assertFalse(daemon.contains("CGROUP_ESCAPE"))
+    }
+
+    @Test fun keepPairingOfferedOnShizukuSettings() {
+        assertTrue(source("app/src/main/java/com/vrec/app/ui/ShizukuSettingsPage.kt").contains("KeepPairingCard()"))
     }
 }
