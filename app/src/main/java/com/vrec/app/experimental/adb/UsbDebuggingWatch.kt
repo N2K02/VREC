@@ -39,6 +39,7 @@ class UsbDebuggingWatch(context: Context, params: WorkerParameters) :
             quitting = AdbLifecycle.quitting,
             recordingEnabled = Prefs.recordingEnabled(app),
             mayWriteSecureSettings = AdbSelfRecovery.hasSecureSettings(app),
+            shieldOn = AdbUserChoices.wifiLossShield(app),
         )
         if (!shouldRevive(signals)) return Result.success()
         Log.i("USB debugging changed; checking the recording helper")
@@ -63,6 +64,7 @@ class UsbDebuggingWatch(context: Context, params: WorkerParameters) :
         val quitting: Boolean,
         val recordingEnabled: Boolean,
         val mayWriteSecureSettings: Boolean,
+        val shieldOn: Boolean = true,
     )
 
     companion object {
@@ -78,7 +80,7 @@ class UsbDebuggingWatch(context: Context, params: WorkerParameters) :
             !s.manuallyStopped && !s.quitting && s.recordingEnabled
 
         fun shouldRestoreShield(s: Signals): Boolean =
-            shouldRevive(s) && s.mayWriteSecureSettings
+            shouldRevive(s) && s.mayWriteSecureSettings && s.shieldOn
 
         /** Null when Android hides the value (Android 17 restricts reads of adb_enabled). */
         private fun readUsbDebugging(context: Context): Boolean? = try {

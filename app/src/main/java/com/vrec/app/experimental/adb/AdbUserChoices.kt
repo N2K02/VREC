@@ -18,6 +18,7 @@ object AdbUserChoices {
     private const val PREFS = "vrec_adb_user_choices"
     private const val RESTORE_AFTER_RESTART = "restore_after_restart"
     private const val KEEP_PAIRED = "keep_pairing_past_timeout"
+    private const val WIFI_LOSS_SHIELD = "usb_debugging_shield"
     private const val TCP_MODE = "tcp_5555_mode"
     private const val VERIFIED_BOOT = "last_verified_wireless_boot"
     private const val VERIFIED_PORT = "last_verified_wireless_port"
@@ -111,6 +112,13 @@ object AdbUserChoices {
 
     fun setKeepPaired(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEEP_PAIRED, enabled).apply()
+    }
+
+    /** Keep USB debugging on so adbd (and the helper) survive Wi-Fi loss (see WifiLossShield). */
+    fun wifiLossShield(context: Context): Boolean = prefs(context).getBoolean(WIFI_LOSS_SHIELD, true)
+
+    fun setWifiLossShield(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(WIFI_LOSS_SHIELD, enabled).apply()
     }
 
     fun tcpMode(context: Context): Boolean = prefs(context).getBoolean(TCP_MODE, true)

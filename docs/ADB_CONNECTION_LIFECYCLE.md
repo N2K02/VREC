@@ -53,3 +53,7 @@ toggled, Wi-Fi loss without a USB transport) makes init kill that whole cgroup.
   while it still reads 0.
 - Recovery is allowed by default once a live UID 2000 shell is verified; only an
   explicit Disconnect revokes it.
+
+- "Survive Wi-Fi loss" (on by default, ADB build): the helper keeps
+  `adb_enabled=1` every 10 s unless `/data/local/tmp/vrec-shield-off` exists,
+  which VRec writes when the switch is off. Off never turns USB debugging off.

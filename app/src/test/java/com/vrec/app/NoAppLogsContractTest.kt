@@ -5,11 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 class NoAppLogsContractTest {
     private fun src(p: String) = listOf(File(p), File("../$p")).first { it.isFile }.readText()
-    @Test fun settingsProvidePrivacySafeLogsWithoutSeparateScreen() {
+    @Test fun settingsHaveNoLogsSubmenu() {
         val ui=src("app/src/main/java/com/vrec/app/ui/SettingsScreen.kt")
         assertFalse(ui.contains("onOpenLog"))
-        assertTrue(ui.contains("Triple(\"Logs\""))
-        assertTrue(ui.contains("RecordingDiagnosticEvents.snapshot()"))
+        assertFalse(ui.contains("Triple(\"Logs\""))
+        assertFalse(ui.contains("section == \"Logs\""))
+        assertFalse(ui.contains("RecordingDiagnosticEvents.snapshot()"))
         assertFalse(ui.contains("headlineContent = { Text(\"ADB diagnostics\") }"))
         assertTrue(ui.contains("headlineContent = { Text(\"About & updates\") }"))
         assertFalse(src("app/src/main/java/com/vrec/app/MainActivity.kt").contains("Screen.LOG"))
