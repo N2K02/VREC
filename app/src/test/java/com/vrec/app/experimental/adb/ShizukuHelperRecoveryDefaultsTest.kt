@@ -1,0 +1,38 @@
+package com.vrec.app.experimental.adb
+
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Ported from the ADB track: helper auto-start after reinstall, and detached launch. */
+class ShizukuHelperRecoveryDefaultsTest {
+    private fun source(path: String): String = listOf(File(path), File("../$path"))
+        .firstOrNull { it.isFile }?.readText() ?: error("Missing $path")
+
+    @Test fun recoveryAllowedByDefaultButDisconnectStillRevokesIt() {
+        val recording = source("app/src/main/java/com/vrec/app/experimental/adb/ExperimentalRecording.kt")
+        assertTrue(recording.contains("allowed = prefs.getBoolean(AUTO_RECOVERY_KEY, true)"))
+        assertFalse(recording.contains("getBoolean(AUTO_RECOVERY_KEY, false)"))
+        val disconnect = recording.substringAfter("suspend fun disconnect(context: Context)")
+        assertTrue(disconnect.contains(".putBoolean(AUTO_RECOVERY_KEY, false)"))
+    }
+
+    @Test fun shizukuRecoveryStillRequiresAuthorizationAndShellAccess() {
+        val recovery = source("app/src/main/java/com/vrec/app/experimental/daemon/AdbHelperAutoRecovery.kt")
+        assertTrue(recovery.contains("ExperimentalRecording.recoveryAuthorization(app).allowed &&"))
+        assertTrue(recovery.contains("ShizukuHostAdapter.hasShellAccess()"))
+    }
+
+    @Test fun helperLaunchLeavesParentCgroupBeforeExec() {
+        val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
+        assertTrue(daemon.contains("setsid nohup sh -c '\" + CGROUP_ESCAPE"))
+        assertTrue(daemon.contains("\"exec app_process / \" + DAEMON_CLASS"))
+        assertFalse(daemon.contains("setsid nohup app_process"))
+        val escape = daemon.substringAfter("internal const val CGROUP_ESCAPE =")
+            .substringBefore("private ")
+        for (root in listOf("/sys/fs/cgroup", "/acct", "/dev/cg2_bpf")) assertTrue(escape.contains(root))
+        assertTrue(escape.contains("VREC_CGROUP="))
+        assertFalse(escape.contains("'"))
+    }
+}
