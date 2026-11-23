@@ -139,8 +139,6 @@ fun ShizukuSettingsPage(modifier: Modifier = Modifier) {
                 }
             }
         }
-        // Also keeps LocalADB's pairing, which starts the Shizuku server.
-        KeepPairingCard()
     }
 }
 
