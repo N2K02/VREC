@@ -30,8 +30,8 @@ import java.io.OutputStream;
  */
 final class Greeting {
 
-    static final File FILE = new File("/data/local/tmp/jemrec-greeting.pcm");
-    static final File TAKE = new File("/data/local/tmp/jemrec-greeting-take.pcm");
+    static final File FILE = new File("/data/local/tmp/vrec-greeting.pcm");
+    static final File TAKE = new File("/data/local/tmp/vrec-greeting-take.pcm");
     static final int RATE = GreetingPlayer.RATE;
     /** Thirty seconds, and a little room. */
     static final long MAX_MS = 30_000L;
@@ -49,7 +49,7 @@ final class Greeting {
             return false;
         }
         stopRequested = false;
-        Thread t = new Thread(Greeting::recordTake, "jemrec-greeting-take");
+        Thread t = new Thread(Greeting::recordTake, "vrec-greeting-take");
         t.setDaemon(true);
         recording = t;
         t.start();

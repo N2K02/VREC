@@ -28,3 +28,28 @@ shutdown. These log messages alone do not prove an application crash.
 
 Upstream reference: `MuntashirAkon/libadb-android` tag `3.1.1`.
 Implementation reference: `N2K02/McpAdbAndroidLogger` PR #30.
+
+## Helper survival across adbd restarts
+
+The recording helper is launched over the ADB shell, so by default it lives in
+adbd's cgroup. Any adbd restart (TLS→TCP `tcpip:5555`, `usb:`, USB debugging
+toggled, Wi-Fi loss without a USB transport) makes init kill that whole cgroup.
+
+- `AdbdRestartGuard`: VRec never promotes TLS→TCP while a helper is alive, a
+  call is live or enhanced capture is active. Promotion runs inside
+  `AdbLifecycle.coordinateSetup` and re-probes the live helper first, so it can
+  never interleave with a helper launch. A user Retry on an already verified
+  session with a live helper does not call the core's `retry()`.
+- The helper cannot leave adbd's cgroup: on Android 17 every `cgroup.procs`
+  is `system:system` and shell is not in that group (measured by JemRec). So
+  the helper's USB-debugging shield stays, and `UsbDebuggingWatch` (a
+  content-URI WorkManager trigger on `adb_enabled`) wakes VRec within about a
+  second when USB debugging changes, puts the shield back when VRec holds
+  WRITE_SECURE_SETTINGS, and runs recovery.
+- `PairingTimeout`: after each verified helper start VRec sets
+  `adb_allowed_connection_time` to 0 (switch "Keep pairing past 7 days", on by
+  default), recording the previous value in `/data/local/tmp/vrec-pairing-timeout`.
+  Turning the switch off, or uninstalling VRec (helper custodian), puts it back
+  while it still reads 0.
+- Recovery is allowed by default once a live UID 2000 shell is verified; only an
+  explicit Disconnect revokes it.

@@ -94,7 +94,7 @@ final class GreetingPlayer {
         stop();
         Session session = new Session();
         current = session;
-        Thread t = new Thread(() -> run(session, audio, route, checkTone, greeting, listener), "jemrec-greeting");
+        Thread t = new Thread(() -> run(session, audio, route, checkTone, greeting, listener), "vrec-greeting");
         t.setDaemon(true);
         t.start();
     }

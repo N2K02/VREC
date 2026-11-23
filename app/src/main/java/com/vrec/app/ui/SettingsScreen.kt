@@ -291,6 +291,7 @@ fun SettingsScreen(
                         )
                     },
                 )
+            KeepPairingCard()
         }
 
         if (section == "VoIP") SettingCard("VoIP") {

@@ -17,6 +17,7 @@ import android.provider.Settings
 object AdbUserChoices {
     private const val PREFS = "vrec_adb_user_choices"
     private const val RESTORE_AFTER_RESTART = "restore_after_restart"
+    private const val KEEP_PAIRED = "keep_pairing_past_timeout"
     private const val TCP_MODE = "tcp_5555_mode"
     private const val VERIFIED_BOOT = "last_verified_wireless_boot"
     private const val VERIFIED_PORT = "last_verified_wireless_port"
@@ -103,6 +104,13 @@ object AdbUserChoices {
 
     fun setRestoreAfterRestart(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(RESTORE_AFTER_RESTART, enabled).apply()
+    }
+
+    /** Keep Android from forgetting the ADB pairing after 7 days (see PairingTimeout). */
+    fun keepPaired(context: Context): Boolean = prefs(context).getBoolean(KEEP_PAIRED, true)
+
+    fun setKeepPaired(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEEP_PAIRED, enabled).apply()
     }
 
     fun tcpMode(context: Context): Boolean = prefs(context).getBoolean(TCP_MODE, true)
