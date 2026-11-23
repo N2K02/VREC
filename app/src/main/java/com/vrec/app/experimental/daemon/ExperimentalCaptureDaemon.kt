@@ -49,22 +49,6 @@ object ExperimentalCaptureDaemon {
     private const val PORT = 28473
     private const val TOKEN_KEY = "shell_daemon_token"
     private const val DAEMON_CLASS = "com.vrec.app.shell.Main"
-
-    /**
-     * adbd runs as an init service. Whenever it restarts (tcpip/usb switch,
-     * USB debugging toggled, Wi-Fi loss without a USB transport), init kills
-     * EVERY process left in adbd's cgroup (uid_2000/pid_<adbd>); setsid/nohup
-     * do not escape that. Move the launcher shell into the root cgroup before
-     * exec'ing app_process, as Shizuku's starter does, so the helper outlives
-     * adbd. Tries cgroup v2, then legacy v1 roots; the outcome is written to
-     * the helper log. If Android refuses, the helper still starts (old
-     * behaviour) and the off-Wi-Fi shield remains the fallback.
-     * Single-quoted by the caller: must not contain a single quote.
-     */
-    internal const val CGROUP_ESCAPE =
-        "moved=; for c in /sys/fs/cgroup /acct /dev/cg2_bpf; do " +
-            "if echo \$\$ 2>/dev/null > \$c/cgroup.procs; then moved=\$c; break; fi; done; " +
-            "echo VREC_CGROUP=\${moved:-unchanged} \$(cat /proc/self/cgroup 2>/dev/null | tr \"\\n\" \" \"); "
     private const val HELLO = 'A'
     private val random = SecureRandom()
     val message = MutableStateFlow("Recorder not started.")
@@ -363,8 +347,7 @@ object ExperimentalCaptureDaemon {
                     EnhancedCapturePreferences.voipPackages(context).joinToString(",") +
                     "' VREC_ANSWER='' " +
                 "CLASSPATH=" + DEVICE_PATH +
-                " setsid nohup sh -c '" + CGROUP_ESCAPE +
-                "exec app_process / " + DAEMON_CLASS + " " + PORT + "'" +
+                " setsid nohup app_process / " + DAEMON_CLASS + " " + PORT +
                 " < /dev/null >> " + LOG_PATH + " 2>&1 & echo VREC_LAUNCH_QUEUED"
             val launchOutput = runShell(launch).lineSequence().map(String::trim).toSet()
             check("VREC_LAUNCH_QUEUED" in launchOutput) {

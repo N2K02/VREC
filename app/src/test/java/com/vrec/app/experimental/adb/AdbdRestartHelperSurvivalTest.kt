@@ -55,18 +55,12 @@ class AdbdRestartHelperSurvivalTest {
         assertTrue(start.contains("AdbdRestartGuard.mayRetryVerifiedSession("))
     }
 
-    @Test fun helperLaunchLeavesAdbdCgroupBeforeExec() {
+    @Test fun helperLaunchStaysTheProvenSetsidForm() {
+        // Shell cannot leave adbd's cgroup on Android 17 (cgroup.procs is
+        // system:system; measured by JemRec). No pretend escape in the launch.
         val daemon = source("app/src/main/java/com/vrec/app/experimental/daemon/ExperimentalCaptureDaemon.kt")
-        assertTrue(daemon.contains("setsid nohup sh -c '\" + CGROUP_ESCAPE"))
-        assertTrue(daemon.contains("\"exec app_process / \" + DAEMON_CLASS"))
-        assertFalse(daemon.contains("setsid nohup app_process"))
-        val escape = daemon.substringAfter("internal const val CGROUP_ESCAPE =")
-            .substringBefore("private ")
-        for (root in listOf("/sys/fs/cgroup", "/acct", "/dev/cg2_bpf")) assertTrue(escape.contains(root))
-        assertTrue(escape.contains("cgroup.procs"))
-        assertTrue(escape.contains("VREC_CGROUP="))
-        // Embedded in a single-quoted sh -c script.
-        assertFalse(escape.contains("'"))
+        assertTrue(daemon.contains("setsid nohup app_process / "))
+        assertFalse(daemon.contains("CGROUP_ESCAPE"))
     }
 
     @Test fun recoveryAllowedByDefaultButDisconnectStillRevokesIt() {

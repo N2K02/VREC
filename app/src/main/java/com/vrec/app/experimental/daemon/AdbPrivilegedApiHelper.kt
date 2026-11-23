@@ -91,6 +91,9 @@ object AdbPrivilegedApiHelper {
                 ExperimentalCaptureDaemon.ready.value = true
                 state.value = State.RUNNING
                 RecordingFailureNotice.clearAfterHelperRecovered(app)
+                // Same verified shell: apply the 7-day pairing-expiry choice.
+                // Best effort; never fails a helper that is already running.
+                com.vrec.app.experimental.adb.PairingTimeout.apply(app)
                 if (outcome.unavailablePermissions.isNotEmpty()) {
                     Log.i("ADB helper started; ${outcome.unavailablePermissions.size} optional Android permissions still require attention")
                 }

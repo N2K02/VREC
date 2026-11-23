@@ -40,10 +40,16 @@ toggled, Wi-Fi loss without a USB transport) makes init kill that whole cgroup.
   `AdbLifecycle.coordinateSetup` and re-probes the live helper first, so it can
   never interleave with a helper launch. A user Retry on an already verified
   session with a live helper does not call the core's `retry()`.
-- Launch: `setsid nohup sh -c '<CGROUP_ESCAPE> exec app_process …'` moves the
-  launcher into the root cgroup (v2, then v1 roots) before exec, like Shizuku's
-  starter. The result is logged as `VREC_CGROUP=…` in
-  `/data/local/tmp/vrec-capture.out`; `unchanged` means Android refused the move
-  and the previous behaviour applies.
+- The helper cannot leave adbd's cgroup: on Android 17 every `cgroup.procs`
+  is `system:system` and shell is not in that group (measured by JemRec). So
+  the helper's USB-debugging shield stays, and `UsbDebuggingWatch` (a
+  content-URI WorkManager trigger on `adb_enabled`) wakes VRec within about a
+  second when USB debugging changes, puts the shield back when VRec holds
+  WRITE_SECURE_SETTINGS, and runs recovery.
+- `PairingTimeout`: after each verified helper start VRec sets
+  `adb_allowed_connection_time` to 0 (switch "Keep pairing past 7 days", on by
+  default), recording the previous value in `/data/local/tmp/vrec-pairing-timeout`.
+  Turning the switch off, or uninstalling VRec (helper custodian), puts it back
+  while it still reads 0.
 - Recovery is allowed by default once a live UID 2000 shell is verified; only an
   explicit Disconnect revokes it.

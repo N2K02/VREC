@@ -232,11 +232,11 @@ public final class Main {
 
             final int bound = port;
             listenPort = bound;
-            Thread acceptor = new Thread(() -> acceptLoop(bound), "jemrec-acceptor");
+            Thread acceptor = new Thread(() -> acceptLoop(bound), "vrec-acceptor");
             acceptor.setDaemon(true);
             acceptor.start();
 
-            Thread custodian = new Thread(Main::watchForUninstall, "jemrec-custodian");
+            Thread custodian = new Thread(Main::watchForUninstall, "vrec-custodian");
             custodian.setDaemon(true);
             custodian.start();
 
@@ -832,7 +832,7 @@ public final class Main {
                 // A message under way: its caller hung up on first, and the
                 // microphone given back as the call ends - then the rest. A
                 // call the user took over is theirs, left to go on.
-                Ln.i("custodian: JemRec is no longer installed; ending the message first");
+                Ln.i("custodian: VREC is no longer installed; ending the message first");
                 try {
                     onMain(() -> {
                         machine.hangUpNow();
@@ -847,10 +847,10 @@ public final class Main {
                 // A mute a predecessor left mid-message, and a call up: given
                 // back once it is over. Cleaning up now would take its marker
                 // with the rest, and nothing would look again.
-                Ln.i("custodian: JemRec is no longer installed; cleaning up once the call is over");
+                Ln.i("custodian: VREC is no longer installed; cleaning up once the call is over");
                 continue;
             }
-            Ln.i("custodian: JemRec is no longer installed, cleaning up and exiting");
+            Ln.i("custodian: VREC is no longer installed, cleaning up and exiting");
             cleanUpAfterApp();
             System.exit(0);
         }
@@ -927,6 +927,7 @@ public final class Main {
                 Ln.w("custodian: could not remove " + file.getName());
             }
         }
+        givePairingTimeoutBack();
         // Both debugging switches. Wireless was turned on for setup; USB is the
         // off-Wi-Fi shield this daemon keeps up (see keepShieldUp) - and with the
         // app gone, nothing else will ever turn either of them back off.
@@ -1047,6 +1048,30 @@ public final class Main {
         }
     }
 
+    /** Recorded by the app (PairingTimeout.kt) before it turned the ADB
+     *  authorization timeout off. Put back only while it still reads 0, so a
+     *  value the user changed since is left alone; anything but a plain number
+     *  restores Android's default. Adapted from JemRec (Apache-2.0). */
+    static final File PAIRING_TIMEOUT_RECORD = new File("/data/local/tmp/vrec-pairing-timeout");
+
+    private static void givePairingTimeoutBack() {
+        if (!PAIRING_TIMEOUT_RECORD.exists()) return;
+        try {
+            String recorded = new String(java.nio.file.Files.readAllBytes(PAIRING_TIMEOUT_RECORD.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8).trim();
+            if ("0".equals(readGlobal("adb_allowed_connection_time"))) {
+                ProcessBuilder restore = recorded.matches("[0-9]+")
+                        ? new ProcessBuilder("settings", "put", "global", "adb_allowed_connection_time", recorded)
+                        : new ProcessBuilder("settings", "delete", "global", "adb_allowed_connection_time");
+                restore.start().waitFor();
+                Ln.i("custodian: ADB authorization timeout put back");
+            }
+            if (!PAIRING_TIMEOUT_RECORD.delete()) Ln.w("custodian: could not remove the pairing record");
+        } catch (Throwable t) {
+            Ln.w("custodian: could not put the ADB authorization timeout back");
+        }
+    }
+
     /** `settings get global name`, trimmed; null if it could not be read. */
     private static String readGlobal(String name) {
         try {
@@ -1123,7 +1148,7 @@ public final class Main {
                     continue;
                 }
                 sessions.incrementAndGet();
-                Thread worker = new Thread(() -> serve(client), "jemrec-session");
+                Thread worker = new Thread(() -> serve(client), "vrec-session");
                 worker.setDaemon(true);
                 worker.start();
             }
@@ -1136,7 +1161,7 @@ public final class Main {
     private static void serve(Socket client) {
         try {
             if (!fromJemRec(client)) {
-                refuse(client, "not JemRec");
+                refuse(client, "not VREC");
                 return;
             }
             session(client);
@@ -2009,7 +2034,7 @@ public final class Main {
      */
     private static final java.util.concurrent.ExecutorService WAKES =
             java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
-                Thread thread = new Thread(task, "jemrec-wake");
+                Thread thread = new Thread(task, "vrec-wake");
                 thread.setDaemon(true);
                 return thread;
             });
@@ -3016,7 +3041,7 @@ public final class Main {
                 // recording when picked up. Off the looper: stopping the
                 // encoder can take a moment.
                 AnswerMachine.Outcome part = machine.messageSoFar();
-                new Thread(() -> splitOffMessage(part), "jemrec-split").start();
+                new Thread(() -> splitOffMessage(part), "vrec-split").start();
                 return;
             }
             wake(ACTION_MESSAGE_TAKEN, true, "", null);
@@ -3038,7 +3063,7 @@ public final class Main {
             testRoute = AnswerSettings.ROUTE_MUSIC.equals(answerSettings.route) ? on : -1;
             Ln.i("answer: test greeting on the in-call music output: "
                     + (on == 1 ? "yes" : on == 0 ? "no" : "cannot tell"));
-        }, "jemrec-route-check").start();
+        }, "vrec-route-check").start();
     }
 
     /** This phone's own side of the recording - the uplink, left - is not
