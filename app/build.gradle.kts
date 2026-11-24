@@ -95,7 +95,7 @@ dependencies {
  // Opt-in compile-only shared library evaluation; no production runtime cutover.
 dependencies {
     implementation("dev.n2k02:theme:0.1.15")
-        implementation("dev.n2k02:updater:0.1.38")
+        implementation("dev.n2k02:updater:0.1.39")
     implementation("dev.n2k02:adb-core:0.1.8")
 }
 
