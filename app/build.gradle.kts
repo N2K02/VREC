@@ -15,7 +15,7 @@ val appVersionCode = appVersion.split(".").let { (major, minor) ->
 
 android {
     namespace = "com.vrec.app"
-    compileSdk = 37
+    compileSdk { version = release(37) { minorApiLevel = 2 } }
     // Needed by the source-built shell-side recorder jar (d8 36.0.0).
     buildToolsVersion = "36.0.0"
 
@@ -70,7 +70,7 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
+    val composeBom = platform("androidx.compose:compose-bom:2026.11.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
     implementation("androidx.activity:activity-compose:1.9.2")
@@ -78,14 +78,14 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     // Match n2k02theme and n2k02updater's Material 3 ABI. A stale 1.3.0 runtime
     // crashes when users open ModalBottomSheet with NoSuchMethodError.
-    implementation("androidx.compose.material3:material3:1.5.0-rc01")
+    implementation("androidx.compose.material3:material3:1.6.0-alpha01")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("androidx.work:work-runtime-ktx:2.12.0") // persistent periodic ADB watchdog
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.compose.material:material-icons-extended")
     // Apache-2.0 alternative of libadb; TLS pairing and X509 identity dependencies.
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.86")
-    implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.87")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.87")
     implementation("org.conscrypt:conscrypt-android:2.9.0")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
@@ -93,7 +93,7 @@ dependencies {
 
  // Opt-in compile-only shared library evaluation; no production runtime cutover.
 dependencies {
-    implementation("dev.n2k02:theme:0.1.14")
+    implementation("dev.n2k02:theme:0.1.15")
         implementation("dev.n2k02:updater:0.1.38")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
@@ -123,7 +123,7 @@ val verifyComposeMaterial3RuntimeAbi = tasks.register("verifyComposeMaterial3Run
     group = "verification"
     description = "Fail the build if Material 3's compile and runtime versions diverge"
     doLast {
-        val expected = "1.5.0-rc01"
+        val expected = "1.6.0-alpha01"
         listOf("debugCompileClasspath", "debugRuntimeClasspath").forEach { configurationName ->
             val selectedVersions = configurations.getByName(configurationName)
                 .incoming.resolutionResult.allComponents
