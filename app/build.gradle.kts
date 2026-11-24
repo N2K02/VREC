@@ -15,7 +15,7 @@ val appVersionCode = appVersion.split(".").let { (major, minor) ->
 
 android {
     namespace = "com.vrec.app"
-    compileSdk = 37
+    compileSdk { version = release(37) { minorApiLevel = 2 } }
     // Needed by the source-built shell-side recorder jar (d8 36.0.0).
     buildToolsVersion = "36.0.0"
 
@@ -123,7 +123,7 @@ val verifyComposeMaterial3RuntimeAbi = tasks.register("verifyComposeMaterial3Run
     group = "verification"
     description = "Fail the build if Material 3's compile and runtime versions diverge"
     doLast {
-        val expected = "1.5.0-rc01"
+        val expected = "1.6.0-alpha01"
         listOf("debugCompileClasspath", "debugRuntimeClasspath").forEach { configurationName ->
             val selectedVersions = configurations.getByName(configurationName)
                 .incoming.resolutionResult.allComponents
