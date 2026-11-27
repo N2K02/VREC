@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '11 2 * * *'
+    - cron: '11 */4 * * *'
 permissions:
   actions: write
   contents: write
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   prune:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Preserve current builds; prune obsolete storage
         uses: actions/github-script@v9
@@ -136,8 +136,7 @@ jobs:
             const activeBuild=runs.some(r=>r.id!==context.runId&&r.status!=='completed'&&/build|apk|ci|release/i.test(r.name+' '+r.path));
             // Never delete a sole channel or unrecognized release. Stable tags remain
             // permanent version high-water marks. Non-APK releases are untouched.
-            const tracked=['adb','shizuku'].some(t=>buckets.has('stable:'+t)||buckets.has('experimental:'+t));
-            const ready=tracked?['stable:adb','stable:shizuku','experimental:adb','experimental:shizuku'].every(k=>buckets.has(k)):buckets.has('stable:legacy')&&buckets.has('experimental:legacy');
+            const ready=['adb','shizuku','legacy'].some(t=>buckets.has('stable:'+t)&&buckets.has('experimental:'+t));
             if(ready&&!activeBuild){
               for(const r of releases){
                 const p=classify(r);
@@ -151,12 +150,12 @@ jobs:
               const tags=await github.paginate(github.rest.repos.listTags,{owner,repo,per_page:100});
               for(const t of tags){
                 const p=parse(t.name);
-                if(p?.channel!=='experimental'||liveTags.has(t.name)||activePRs.has(p.pr)||p.number>=(maxima.get(p.track)||0)||removedTags>=300)continue;
+                if(p?.channel!=='experimental'||!buckets.has('stable:'+p.track)||!buckets.has('experimental:'+p.track)||liveTags.has(t.name)||activePRs.has(p.pr)||p.number>=(maxima.get(p.track)||0)||removedTags>=300)continue;
                 if(await remove(()=>github.rest.git.deleteRef({owner,repo,ref:'tags/'+t.name}),'tag '+t.name))removedTags++;
               }
             }else core.info('APK releases/tags unchanged: missing verified channel or active build.');
             for(const id of obsolete){
-              if(removedRuns>=500)break;
+              if(removedRuns>=1000)break;
               if(await remove(()=>github.rest.actions.deleteWorkflowRun({owner,repo,run_id:id}),'run '+id))removedRuns++;
             }
             // Only evict old, inactive-reference caches; never flush current caches.
@@ -167,6 +166,7 @@ jobs:
                 if(await remove(()=>github.rest.actions.deleteActionsCacheById({owner,repo,cache_id:c.id}),'cache '+c.id)){removedCaches++;cacheBytes+=c.size_in_bytes||0;}
               }
             }catch(e){core.warning('Cache inventory unavailable: '+e.message);}
+            core.info('Remaining obsolete workflow candidates: '+Math.max(0,obsolete.size-removedRuns));
             core.info('Published packages are retained: cross-repository consumers may pin any version.');
             core.info('Retained APK releases: '+releases.filter(r=>keep.has(r.id)).map(r=>r.tag_name).join(', '));
             core.info((dry?'DRY RUN candidates: ':'Deleted: ')+'artifacts='+removedArtifacts+' ('+bytes+' bytes), runs='+removedRuns+', APK releases='+removedReleases+', experimental tags='+removedTags+', caches='+removedCaches+' ('+cacheBytes+' bytes)');
